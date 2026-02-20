@@ -13,6 +13,7 @@ import { GoalHierarchy } from './components/goals/GoalHierarchy';
 import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
+import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
 import { DEFAULT_STATE } from './data/defaultData';
@@ -178,6 +179,35 @@ export default function App() {
           projects={projects}
           goals={goals}
           notes={notes}
+        />
+
+        {/* Voice Command Layer */}
+        <VoiceCommandLayer
+          onNavigate={setActiveSection}
+          activeSection={activeSection}
+          identity={identity}
+          contacts={contacts}
+          projects={projects}
+          goals={goals}
+          notes={notes}
+          timeBlocks={timeBlocks}
+          timeCategories={timeCategories}
+          habits={habits}
+          habitTracker={habitTracker}
+          courses={courses}
+          financialEntries={financialEntries}
+          ventureFinancials={ventureFinancials}
+          readingItems={readingItems}
+          dailyEvents={dailyEvents}
+          scratchpad={scratchpad}
+          setNotes={setNotes}
+          setTimeBlocks={setTimeBlocks}
+          setGoals={setGoals}
+          setContacts={setContacts}
+          setHabitTracker={setHabitTracker}
+          setReadingItems={setReadingItems}
+          setScratchpad={setScratchpad}
+          setDailyEvents={setDailyEvents}
         />
       </div>
     </ThemeContext.Provider>

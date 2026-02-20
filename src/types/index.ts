@@ -256,6 +256,28 @@ export interface DailyMoodLog {
   note: string;
 }
 
+// ─── VOICE ───────────────────────────────────────────────────────────────────
+
+export interface VoiceSettings {
+  ttsEnabled: boolean;
+  chimeEnabled: boolean;
+  pushToTalk: boolean;
+  speechRate: number;
+  speechPitch: number;
+  preferredVoice: string;
+  showWaveform: boolean;
+  alwaysOn: boolean;
+}
+
+export interface VoiceCommandEntry {
+  id: string;
+  ts: string;
+  transcript: string;
+  intent: string;
+  response: string;
+  success: boolean;
+}
+
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
 
 export interface AppState {
