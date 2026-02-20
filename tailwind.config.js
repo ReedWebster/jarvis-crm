@@ -9,38 +9,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        gold: '#FFD700',
-        'arc-blue': '#00CFFF',
-        'caesar-red': '#C0392B',
+        // Neutral accent replacing neon blue — focus rings, active indicators
+        'arc-blue': '#737373',
+        // Soft neutral replacing gold
+        gold: '#a3a3a3',
+        // Danger
+        'caesar-red': '#dc2626',
+        // Neutral dark grays (replaces navy)
         navy: {
-          950: '#05080f',
-          900: '#080d1a',
-          800: '#0d1428',
-          700: '#121c35',
-          600: '#1a2744',
-          500: '#1e3055',
-        },
-        // Light-theme specific surfaces
-        light: {
-          bg:      '#F4F6F9',  // main background
-          card:    '#FFFFFF',  // card surface
-          sidebar: '#E8EBF0',  // sidebar / top bar
-          elevated:'#ECEEF2',  // kanban columns, hover states
-          border:  '#D1D5DB',  // subtle borders
-          text:    '#1A1A2E',  // primary text
-          muted:   '#6B7280',  // secondary text
-          input:   '#FFFFFF',  // input backgrounds
+          950: '#0c0c0c',
+          900: '#111111',
+          800: '#161616',
+          700: '#1e1e1e',
+          600: '#262626',
+          500: '#2c2c2c',
         },
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       boxShadow: {
-        'glow-gold': '0 0 20px rgba(255, 215, 0, 0.3)',
-        'glow-blue': '0 0 20px rgba(0, 207, 255, 0.3)',
-        'glow-red':  '0 0 20px rgba(192, 57, 43, 0.3)',
-        'card':      '0 4px 24px rgba(0,0,0,0.4)',
-        'card-light':'0 2px 12px rgba(0,0,0,0.08)',
+        'glow-gold': '0 0 0 2px rgba(163,163,163,0.25)',
+        'glow-blue': '0 0 0 2px rgba(115,115,115,0.25)',
+        'glow-red':  '0 0 0 2px rgba(220,38,38,0.25)',
+        'card':      '0 2px 12px rgba(0,0,0,0.5)',
+        'card-light':'0 1px 6px rgba(0,0,0,0.07)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

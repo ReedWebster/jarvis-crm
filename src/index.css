@@ -10,42 +10,42 @@
 
 /* ─── CSS Variables — Light (default) ──────────────────────────────────────── */
 :root {
-  --bg:               #F4F6F9;
-  --bg-card:          #FFFFFF;
-  --bg-sidebar:       #E8EBF0;
-  --bg-elevated:      #ECEEF2;
-  --bg-input:         #FFFFFF;
-  --bg-hover:         #E2E5EB;
-  --border:           #D1D5DB;
-  --border-strong:    #B0B7C3;
-  --text-primary:     #1A1A2E;
-  --text-secondary:   #4B5563;
-  --text-muted:       #9CA3AF;
-  --text-placeholder: #9CA3AF;
-  --shadow-card:      0 2px 12px rgba(0,0,0,0.08);
-  --sb-track:         #E8EBF0;
-  --sb-thumb:         #C4C9D4;
-  --sb-thumb-hover:   #9CA3AF;
+  --bg:               #f7f7f7;
+  --bg-card:          #ffffff;
+  --bg-sidebar:       #f2f2f2;
+  --bg-elevated:      #ebebeb;
+  --bg-input:         #ffffff;
+  --bg-hover:         #e8e8e8;
+  --border:           #e2e2e2;
+  --border-strong:    #cccccc;
+  --text-primary:     #111111;
+  --text-secondary:   #555555;
+  --text-muted:       #8a8a8a;
+  --text-placeholder: #aaaaaa;
+  --shadow-card:      0 1px 6px rgba(0,0,0,0.07);
+  --sb-track:         #ebebeb;
+  --sb-thumb:         #cccccc;
+  --sb-thumb-hover:   #aaaaaa;
 }
 
 /* ─── CSS Variables — Dark ──────────────────────────────────────────────────── */
 .dark {
-  --bg:               #05080f;
-  --bg-card:          #0d1428;
-  --bg-sidebar:       #080d1a;
-  --bg-elevated:      #121c35;
-  --bg-input:         #121c35;
-  --bg-hover:         #1a2744;
-  --border:           #1a2744;
-  --border-strong:    #1e3055;
-  --text-primary:     #FFFFFF;
-  --text-secondary:   #D1D5DB;
-  --text-muted:       #6B7280;
-  --text-placeholder: #6B7280;
-  --shadow-card:      0 4px 24px rgba(0,0,0,0.4);
-  --sb-track:         #080d1a;
-  --sb-thumb:         #1a2744;
-  --sb-thumb-hover:   #1e3055;
+  --bg:               #0c0c0c;
+  --bg-card:          #161616;
+  --bg-sidebar:       #111111;
+  --bg-elevated:      #1e1e1e;
+  --bg-input:         #1e1e1e;
+  --bg-hover:         #262626;
+  --border:           #2c2c2c;
+  --border-strong:    #3a3a3a;
+  --text-primary:     #ededed;
+  --text-secondary:   #a3a3a3;
+  --text-muted:       #525252;
+  --text-placeholder: #525252;
+  --shadow-card:      0 2px 12px rgba(0,0,0,0.5);
+  --sb-track:         #111111;
+  --sb-thumb:         #2c2c2c;
+  --sb-thumb-hover:   #3a3a3a;
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────────── */
@@ -120,18 +120,23 @@
     @apply px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 cursor-pointer;
   }
   .caesar-btn-primary {
-    @apply caesar-btn bg-arc-blue text-navy-950 hover:brightness-110 hover:shadow-glow-blue;
+    background-color: var(--text-primary);
+    color: var(--bg);
+    @apply caesar-btn hover:opacity-80;
   }
   .caesar-btn-gold {
-    @apply caesar-btn bg-gold text-navy-950 hover:brightness-110 hover:shadow-glow-gold;
+    background-color: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    @apply caesar-btn hover:opacity-80;
   }
   .caesar-btn-ghost {
     border: 1px solid var(--border);
     color: var(--text-secondary);
-    @apply caesar-btn bg-transparent hover:border-arc-blue hover:text-arc-blue;
+    @apply caesar-btn bg-transparent hover:border-[var(--border-strong)] hover:text-[var(--text-primary)];
   }
   .caesar-btn-danger {
-    @apply caesar-btn bg-caesar-red text-white hover:brightness-110 hover:shadow-glow-red;
+    @apply caesar-btn bg-red-600 text-white hover:bg-red-700;
   }
 
   /* Section typography */
@@ -149,10 +154,10 @@
   /* Tag / badge shell */
   .tag { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium; }
 
-  /* Glows */
-  .glow-gold { box-shadow: 0 0 20px rgba(255, 215, 0, 0.25); }
-  .glow-blue { box-shadow: 0 0 20px rgba(0, 207, 255, 0.25); }
-  .glow-red  { box-shadow: 0 0 20px rgba(192, 57, 43, 0.25); }
+  /* Subtle ring for accessibility focus indication */
+  .glow-gold { box-shadow: 0 0 0 2px rgba(163,163,163,0.3); }
+  .glow-blue { box-shadow: 0 0 0 2px rgba(115,115,115,0.3); }
+  .glow-red  { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3); }
 
   /* Animations */
   .animate-fade-in  { animation: fadeIn 0.3s ease-in-out; }
@@ -179,8 +184,8 @@
   to   { opacity: 1; transform: translateX(0); }
 }
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 8px rgba(0, 207, 255, 0.4); }
-  50%       { box-shadow: 0 0 24px rgba(0, 207, 255, 0.8); }
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
 }
 .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 

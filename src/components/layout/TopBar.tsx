@@ -4,10 +4,10 @@ import { Zap, Sun, Moon } from 'lucide-react';
 import type { StatusMode, Identity } from '../../types';
 
 const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
-  'deep-work': { label: 'Deep Work', color: '#00CFFF', glow: 'rgba(0,207,255,0.5)' },
-  available:   { label: 'Available', color: '#22c55e', glow: 'rgba(34,197,94,0.5)' },
-  break:       { label: 'Break',     color: '#eab308', glow: 'rgba(234,179,8,0.5)' },
-  out:         { label: 'Out',       color: '#6b7280', glow: 'rgba(107,114,128,0.3)' },
+  'deep-work': { label: 'Deep Work', color: '#737373', glow: 'rgba(115,115,115,0.2)' },
+  available:   { label: 'Available', color: '#5a8a5a', glow: 'rgba(90,138,90,0.2)'  },
+  break:       { label: 'Break',     color: '#8a7a50', glow: 'rgba(138,122,80,0.2)' },
+  out:         { label: 'Out',       color: '#555555', glow: 'rgba(85,85,85,0.2)'   },
 };
 
 interface TopBarProps {
@@ -46,12 +46,12 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
       <div className="relative">
         <button
           onClick={() => setShowStatusMenu(!showStatusMenu)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-200 hover:border-arc-blue"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
         >
           <span
             className="w-2 h-2 rounded-full"
-            style={{ backgroundColor: statusCfg.color, boxShadow: `0 0 8px ${statusCfg.glow}` }}
+            style={{ backgroundColor: statusCfg.color }}
           />
           <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
             {statusCfg.label}
@@ -86,7 +86,7 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
       {/* Theme toggle */}
       <button
         onClick={onThemeToggle}
-        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-gold"
+        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       >
@@ -95,8 +95,8 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
 
       {/* Power indicator */}
       <div className="flex items-center gap-1.5">
-        <Zap size={14} className="fill-arc-blue text-arc-blue" />
-        <span className="text-xs font-mono font-medium text-arc-blue">ONLINE</span>
+        <Zap size={14} className="fill-current" style={{ color: "var(--text-muted)" }} />
+        <span className="text-xs font-mono font-medium" style={{ color: "var(--text-muted)" }}>ONLINE</span>
       </div>
     </header>
   );

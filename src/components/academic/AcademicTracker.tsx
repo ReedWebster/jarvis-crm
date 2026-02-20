@@ -9,7 +9,6 @@ import {
   Clock,
   ChevronRight,
   Award,
-  Target,
   AlertCircle,
   CheckCircle,
   ChevronLeft,
@@ -19,8 +18,6 @@ import type { Course, Assignment, AssignmentStatus } from '../../types';
 import {
   generateId,
   todayStr,
-  gradeToGPA,
-  calcWeightedGPA,
   formatDate,
   daysUntil,
   isOverdue,
@@ -81,77 +78,36 @@ function gradeColor(percent: number): string {
   return '#ef4444';
 }
 
-function gpaColor(gpa: number): string {
-  if (gpa >= 3.5) return '#22c55e';
-  if (gpa >= 3.0) return '#eab308';
-  return '#ef4444';
-}
-
 // ─── STATS ROW ────────────────────────────────────────────────────────────────
 
 function StatsRow({ courses }: { courses: Course[] }) {
-  const currentGPA = useMemo(() => {
-    if (courses.length === 0) return 0;
-    const grades = courses.map((c) => ({ grade: gradeToGPA(c.currentGrade), credits: c.credits }));
-    return calcWeightedGPA(grades);
-  }, [courses]);
-
-  const targetGPA = useMemo(() => {
-    if (courses.length === 0) return 0;
-    const grades = courses.map((c) => ({ grade: gradeToGPA(c.targetGrade), credits: c.credits }));
-    return calcWeightedGPA(grades);
-  }, [courses]);
-
   const totalCredits = courses.reduce((s, c) => s + c.credits, 0);
 
-  const gColor = gpaColor(currentGPA);
-
   const stats = [
-    {
-      label: 'Current GPA',
-      value: currentGPA.toFixed(2),
-      icon: Award,
-      color: gColor,
-      large: true,
-    },
-    {
-      label: 'Target GPA',
-      value: targetGPA.toFixed(2),
-      icon: Target,
-      color: '#FFD700',
-      large: false,
-    },
     {
       label: 'Total Credits',
       value: totalCredits,
       icon: BookOpen,
-      color: '#00CFFF',
-      large: false,
     },
     {
       label: 'Courses',
       value: courses.length,
       icon: GraduationCap,
-      color: '#8b5cf6',
-      large: false,
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      {stats.map(({ label, value, icon: Icon, color, large }) => (
+    <div className="grid grid-cols-2 gap-3 mb-6">
+      {stats.map(({ label, value, icon: Icon }) => (
         <div key={label} className="caesar-card flex items-center gap-3 transition-colors duration-300">
           <div
             className="flex items-center justify-center rounded-xl flex-shrink-0"
-            style={{ width: 40, height: 40, backgroundColor: `${color}20` }}
+            style={{ width: 40, height: 40, backgroundColor: 'var(--bg-elevated)' }}
           >
-            <Icon size={18} style={{ color }} />
+            <Icon size={18} style={{ color: 'var(--text-secondary)' }} />
           </div>
           <div>
-            <p
-              className="font-bold leading-tight"
-              style={{ fontSize: large ? '1.5rem' : '1.25rem', color }}
-            >
+            <p className="text-2xl font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
               {value}
             </p>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p>

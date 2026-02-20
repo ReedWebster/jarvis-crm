@@ -25,17 +25,17 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'command', label: 'Command Brief', icon: <LayoutDashboard size={18} />, accent: '#FFD700' },
-  { id: 'identity', label: 'Core Identity', icon: <User size={18} />, accent: '#00CFFF' },
-  { id: 'projects', label: 'Projects', icon: <Briefcase size={18} />, accent: '#00CFFF' },
-  { id: 'time', label: 'Time Tracker', icon: <Clock size={18} />, accent: '#8b5cf6' },
-  { id: 'contacts', label: 'Contacts CRM', icon: <Users size={18} />, accent: '#22c55e' },
-  { id: 'academic', label: 'Academic', icon: <GraduationCap size={18} />, accent: '#6366f1' },
-  { id: 'financial', label: 'Financial', icon: <DollarSign size={18} />, accent: '#22c55e' },
-  { id: 'goals', label: 'Goal Hierarchy', icon: <Target size={18} />, accent: '#FFD700' },
-  { id: 'reading', label: 'Reading Pipeline', icon: <BookOpen size={18} />, accent: '#ec4899' },
-  { id: 'recruitment', label: 'Recruitment', icon: <UserPlus size={18} />, accent: '#f59e0b' },
-  { id: 'notes', label: 'Notes & Intel', icon: <FileText size={18} />, accent: '#6b7280' },
+  { id: 'command',     label: 'Command Brief',   icon: <LayoutDashboard size={18} /> },
+  { id: 'identity',   label: 'Core Identity',    icon: <User size={18} /> },
+  { id: 'projects',   label: 'Projects',         icon: <Briefcase size={18} /> },
+  { id: 'time',       label: 'Time Tracker',     icon: <Clock size={18} /> },
+  { id: 'contacts',   label: 'Contacts CRM',     icon: <Users size={18} /> },
+  { id: 'academic',   label: 'Academic',         icon: <GraduationCap size={18} /> },
+  { id: 'financial',  label: 'Financial',        icon: <DollarSign size={18} /> },
+  { id: 'goals',      label: 'Goal Hierarchy',   icon: <Target size={18} /> },
+  { id: 'reading',    label: 'Reading Pipeline', icon: <BookOpen size={18} /> },
+  { id: 'recruitment',label: 'Recruitment',      icon: <UserPlus size={18} /> },
+  { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
 ];
 
 interface SidebarProps {
@@ -54,8 +54,8 @@ export function Sidebar({ active, onNavigate, onSearch }: SidebarProps) {
       <div className="p-5 transition-colors duration-300" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center gap-3">
           <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold text-navy-950 flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #FFD700 0%, #00CFFF 100%)' }}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+            style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg)' }}
           >
             J
           </div>
@@ -105,10 +105,10 @@ export function Sidebar({ active, onNavigate, onSearch }: SidebarProps) {
                 {isActive && (
                   <div
                     className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r"
-                    style={{ backgroundColor: item.accent ?? '#00CFFF' }}
+                    style={{ backgroundColor: 'var(--text-primary)' }}
                   />
                 )}
-                <span style={{ color: isActive ? (item.accent ?? '#00CFFF') : 'inherit' }}>
+                <span style={{ color: isActive ? 'var(--text-primary)' : 'inherit' }}>
                   {item.icon}
                 </span>
                 <span>{item.label}</span>

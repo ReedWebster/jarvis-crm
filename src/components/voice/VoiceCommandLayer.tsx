@@ -115,11 +115,11 @@ interface CommandCard {
 }
 
 const STATUS_COLORS: Record<NonNullable<CardStatus>, string> = {
-  listening: '#00CFFF',
-  processing: '#00CFFF',
-  success: '#22c55e',
-  'low-confidence': '#FFD700',
-  error: '#ef4444',
+  listening: '#737373',
+  processing: '#737373',
+  success: '#4f8f54',
+  'low-confidence': '#8a7a50',
+  error: '#c0392b',
 };
 
 // ─── Life area mapper (spoken → GoalArea) ────────────────────────────────────
@@ -900,9 +900,9 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
       {alwaysOnActive && (
         <div
           className="fixed top-0 left-56 z-30 px-3 py-1 text-xs font-mono flex items-center gap-1.5"
-          style={{ color: '#00CFFF', opacity: 0.7 }}
+          style={{ color: 'var(--text-muted)', opacity: 0.7 }}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-arc-blue animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-pulse" />
           J.A.R.V.I.S. ready
         </div>
       )}
@@ -931,7 +931,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                         key={i}
                         className="w-1 rounded-full voice-bar"
                         style={{
-                          backgroundColor: '#00CFFF',
+                          backgroundColor: 'var(--text-secondary)',
                           animationDelay: `${i * 80}ms`,
                           height: '100%',
                         }}
@@ -939,7 +939,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                     ))}
                   </div>
                 )}
-                <span className="text-sm font-medium" style={{ color: '#00CFFF' }}>
+                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
                   Listening...
                 </span>
               </div>
@@ -977,7 +977,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                     <button
                       onClick={confirmPending}
                       className="flex-1 py-1.5 rounded-lg text-xs font-medium"
-                      style={{ backgroundColor: '#FFD70020', color: '#FFD700', border: '1px solid #FFD70040' }}
+                      style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border-strong)' }}
                     >
                       Yes, do it
                     </button>
@@ -1088,7 +1088,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                         title="Retry"
                         className="flex-shrink-0 p-1 rounded-lg transition-colors"
                         style={{ color: 'var(--text-muted)' }}
-                        onMouseEnter={e => (e.currentTarget.style.color = '#00CFFF')}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
                         onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
                       >
                         <RotateCcw size={13} />
@@ -1144,7 +1144,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                   <button
                     onClick={() => setVoiceSettings(prev => ({ ...prev, [key]: !prev[key] }))}
                     className="relative w-10 h-5 rounded-full transition-colors duration-200"
-                    style={{ backgroundColor: voiceSettings[key] ? '#00CFFF' : 'var(--bg-elevated)' }}
+                    style={{ backgroundColor: voiceSettings[key] ? 'var(--text-primary)' : 'var(--bg-elevated)' }}
                   >
                     <span
                       className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200"
@@ -1239,9 +1239,9 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
           >
             <div
               className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-              style={{ backgroundColor: '#00CFFF20', border: '1px solid #00CFFF40' }}
+              style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-strong)' }}
             >
-              <Mic size={24} style={{ color: '#00CFFF' }} />
+              <Mic size={24} style={{ color: 'var(--text-primary)' }} />
             </div>
             <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
               Microphone Access
@@ -1261,7 +1261,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
               <button
                 onClick={grantPermission}
                 className="flex-1 py-2 rounded-lg text-sm font-medium"
-                style={{ backgroundColor: '#00CFFF', color: '#05080f' }}
+                style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg)' }}
               >
                 Allow Access
               </button>
@@ -1283,7 +1283,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
               border: '1px solid var(--border)',
               color: 'var(--text-muted)',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00CFFF'; (e.currentTarget as HTMLElement).style.color = '#00CFFF'; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
           >
             <History size={14} />
@@ -1297,7 +1297,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
               border: '1px solid var(--border)',
               color: voiceSettings.ttsEnabled ? 'var(--text-muted)' : '#6b7280',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#FFD700'; (e.currentTarget as HTMLElement).style.color = '#FFD700'; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
           >
             {voiceSettings.ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
@@ -1310,19 +1310,17 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
           title={isListening ? 'Cancel (Esc)' : voiceSettings.pushToTalk ? 'Hold Space to talk' : 'Start voice command'}
           className="relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200"
           style={{
-            backgroundColor: isListening ? '#00CFFF' : 'var(--bg-card)',
-            border: `2px solid ${isListening ? '#00CFFF' : 'var(--border)'}`,
-            boxShadow: isListening
-              ? '0 0 20px rgba(0,207,255,0.5), 0 0 40px rgba(0,207,255,0.25)'
-              : 'var(--shadow-card)',
-            color: isListening ? '#05080f' : '#00CFFF',
+            backgroundColor: isListening ? 'var(--text-primary)' : 'var(--bg-card)',
+            border: `2px solid ${isListening ? 'var(--text-primary)' : 'var(--border)'}`,
+            boxShadow: 'var(--shadow-card)',
+            color: 'var(--text-primary)',
           }}
         >
           {/* Pulse ring while listening */}
           {isListening && (
             <span
               className="absolute inset-0 rounded-full animate-ping"
-              style={{ backgroundColor: '#00CFFF', opacity: 0.2 }}
+              style={{ backgroundColor: 'var(--text-secondary)', opacity: 0.2 }}
             />
           )}
           {isListening ? <MicOff size={22} /> : <Mic size={22} />}
