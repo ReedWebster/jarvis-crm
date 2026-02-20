@@ -1,0 +1,191 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--sb-track); }
+::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+
+/* ─── CSS Variables — Light (default) ──────────────────────────────────────── */
+:root {
+  --bg:               #F4F6F9;
+  --bg-card:          #FFFFFF;
+  --bg-sidebar:       #E8EBF0;
+  --bg-elevated:      #ECEEF2;
+  --bg-input:         #FFFFFF;
+  --bg-hover:         #E2E5EB;
+  --border:           #D1D5DB;
+  --border-strong:    #B0B7C3;
+  --text-primary:     #1A1A2E;
+  --text-secondary:   #4B5563;
+  --text-muted:       #9CA3AF;
+  --text-placeholder: #9CA3AF;
+  --shadow-card:      0 2px 12px rgba(0,0,0,0.08);
+  --sb-track:         #E8EBF0;
+  --sb-thumb:         #C4C9D4;
+  --sb-thumb-hover:   #9CA3AF;
+}
+
+/* ─── CSS Variables — Dark ──────────────────────────────────────────────────── */
+.dark {
+  --bg:               #05080f;
+  --bg-card:          #0d1428;
+  --bg-sidebar:       #080d1a;
+  --bg-elevated:      #121c35;
+  --bg-input:         #121c35;
+  --bg-hover:         #1a2744;
+  --border:           #1a2744;
+  --border-strong:    #1e3055;
+  --text-primary:     #FFFFFF;
+  --text-secondary:   #D1D5DB;
+  --text-muted:       #6B7280;
+  --text-placeholder: #6B7280;
+  --shadow-card:      0 4px 24px rgba(0,0,0,0.4);
+  --sb-track:         #080d1a;
+  --sb-thumb:         #1a2744;
+  --sb-thumb-hover:   #1e3055;
+}
+
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+@layer base {
+  * { box-sizing: border-box; }
+  html {
+    scroll-behavior: smooth;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  body {
+    background-color: var(--bg);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ─── Component Classes — Theme-aware via CSS variables ────────────────────── */
+@layer components {
+
+  /* Cards */
+  .caesar-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+    @apply rounded-xl p-5 transition-colors duration-300;
+  }
+  .caesar-card-sm {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-card);
+    @apply rounded-lg p-4 transition-colors duration-300;
+  }
+
+  /* Inputs */
+  .caesar-input {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200
+      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+  }
+  .caesar-input::placeholder { color: var(--text-placeholder); }
+
+  /* Textareas (same as input) */
+  .caesar-textarea {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200 resize-none
+      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+  }
+  .caesar-textarea::placeholder { color: var(--text-placeholder); }
+
+  /* Selects */
+  .caesar-select {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200
+      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+  }
+
+  /* Labels */
+  .caesar-label {
+    color: var(--text-muted);
+    @apply text-xs font-medium uppercase tracking-wider mb-1 block;
+  }
+
+  /* Buttons */
+  .caesar-btn {
+    @apply px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 cursor-pointer;
+  }
+  .caesar-btn-primary {
+    @apply caesar-btn bg-arc-blue text-navy-950 hover:brightness-110 hover:shadow-glow-blue;
+  }
+  .caesar-btn-gold {
+    @apply caesar-btn bg-gold text-navy-950 hover:brightness-110 hover:shadow-glow-gold;
+  }
+  .caesar-btn-ghost {
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    @apply caesar-btn bg-transparent hover:border-arc-blue hover:text-arc-blue;
+  }
+  .caesar-btn-danger {
+    @apply caesar-btn bg-caesar-red text-white hover:brightness-110 hover:shadow-glow-red;
+  }
+
+  /* Section typography */
+  .section-title   { color: var(--text-primary); @apply text-lg font-semibold tracking-tight; }
+  .section-subtitle { color: var(--text-muted);  @apply text-xs uppercase tracking-wider; }
+  .metric-value    { color: var(--text-primary); @apply text-2xl font-bold; }
+  .metric-label    { color: var(--text-muted);   @apply text-xs; }
+
+  /* Kanban */
+  .kanban-col {
+    background-color: var(--bg-elevated);
+    @apply rounded-xl p-3 min-h-48 transition-colors duration-300;
+  }
+
+  /* Tag / badge shell */
+  .tag { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium; }
+
+  /* Glows */
+  .glow-gold { box-shadow: 0 0 20px rgba(255, 215, 0, 0.25); }
+  .glow-blue { box-shadow: 0 0 20px rgba(0, 207, 255, 0.25); }
+  .glow-red  { box-shadow: 0 0 20px rgba(192, 57, 43, 0.25); }
+
+  /* Animations */
+  .animate-fade-in  { animation: fadeIn 0.3s ease-in-out; }
+  .animate-slide-in { animation: slideIn 0.3s ease-out; }
+
+  /* Table */
+  .caesar-table-row {
+    border-bottom: 1px solid var(--border);
+    @apply transition-colors duration-200;
+  }
+  .caesar-table-row:hover { background-color: var(--bg-hover); }
+
+  /* Dividers */
+  .caesar-divider { border-color: var(--border); }
+}
+
+/* ─── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 207, 255, 0.4); }
+  50%       { box-shadow: 0 0 24px rgba(0, 207, 255, 0.8); }
+}
+.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+/* ─── Modal backdrop ────────────────────────────────────────────────────────── */
+.modal-backdrop { backdrop-filter: blur(4px); }
+
+/* ─── Recharts overrides ────────────────────────────────────────────────────── */
+.recharts-tooltip-wrapper { outline: none; }

@@ -1,0 +1,103 @@
+import React, { useState } from 'react';
+import { format } from 'date-fns';
+import { Zap, Sun, Moon } from 'lucide-react';
+import type { StatusMode, Identity } from '../../types';
+
+const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
+  'deep-work': { label: 'Deep Work', color: '#00CFFF', glow: 'rgba(0,207,255,0.5)' },
+  available:   { label: 'Available', color: '#22c55e', glow: 'rgba(34,197,94,0.5)' },
+  break:       { label: 'Break',     color: '#eab308', glow: 'rgba(234,179,8,0.5)' },
+  out:         { label: 'Out',       color: '#6b7280', glow: 'rgba(107,114,128,0.3)' },
+};
+
+interface TopBarProps {
+  identity: Identity;
+  sectionTitle: string;
+  onStatusChange: (status: StatusMode) => void;
+  onThemeToggle: () => void;
+  isDark: boolean;
+}
+
+export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark }: TopBarProps) {
+  const now = new Date();
+  const statusCfg = STATUS_CONFIG[identity.status];
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+
+  return (
+    <header
+      className="fixed top-0 left-56 right-0 h-14 z-30 flex items-center px-6 gap-4 transition-colors duration-300"
+      style={{
+        backgroundColor: 'var(--bg-sidebar)',
+        borderBottom: '1px solid var(--border)',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
+      {/* Section title */}
+      <div className="flex-1">
+        <h1 className="text-sm font-semibold transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
+          {sectionTitle}
+        </h1>
+        <div className="text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
+          {format(now, 'EEEE, MMMM d, yyyy')} · {format(now, 'h:mm a')}
+        </div>
+      </div>
+
+      {/* Status indicator */}
+      <div className="relative">
+        <button
+          onClick={() => setShowStatusMenu(!showStatusMenu)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-200 hover:border-arc-blue"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+        >
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: statusCfg.color, boxShadow: `0 0 8px ${statusCfg.glow}` }}
+          />
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            {statusCfg.label}
+          </span>
+        </button>
+
+        {showStatusMenu && (
+          <div
+            className="absolute right-0 top-full mt-1 rounded-xl shadow-2xl w-40 overflow-hidden z-50 border"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+          >
+            {(Object.entries(STATUS_CONFIG) as [StatusMode, typeof STATUS_CONFIG[StatusMode]][]).map(([mode, cfg]) => (
+              <button
+                key={mode}
+                onClick={() => { onStatusChange(mode); setShowStatusMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors"
+                style={{
+                  color: identity.status === mode ? cfg.color : 'var(--text-muted)',
+                  backgroundColor: identity.status === mode ? 'var(--bg-elevated)' : 'transparent',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = identity.status === mode ? 'var(--bg-elevated)' : 'transparent')}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cfg.color }} />
+                {cfg.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Theme toggle */}
+      <button
+        onClick={onThemeToggle}
+        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-gold"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {isDark ? <Sun size={15} /> : <Moon size={15} />}
+      </button>
+
+      {/* Power indicator */}
+      <div className="flex items-center gap-1.5">
+        <Zap size={14} className="fill-arc-blue text-arc-blue" />
+        <span className="text-xs font-mono font-medium text-arc-blue">ONLINE</span>
+      </div>
+    </header>
+  );
+}

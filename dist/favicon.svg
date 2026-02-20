@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Black rounded-rectangle background -->
+  <rect width="1024" height="1024" rx="230" ry="230" fill="#000000"/>
+  <!-- White serif R, centered -->
+  <text
+    x="524"
+    y="738"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="630"
+    font-weight="bold"
+    fill="#FFFFFF"
+    text-anchor="middle"
+  >R</text>
+</svg>
