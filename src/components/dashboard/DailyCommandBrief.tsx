@@ -53,7 +53,6 @@ interface Props {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SEMESTER_END = '2025-05-01';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -152,15 +151,6 @@ export default function DailyCommandBrief({
 
   const greeting = getGreeting();
   const dailyQuote = getDailyQuote();
-
-  const daysLeftInSemester = useMemo(() => {
-    try {
-      const diff = differenceInDays(parseISO(SEMESTER_END), todayDate);
-      return Math.max(0, diff);
-    } catch {
-      return 0;
-    }
-  }, []);
 
   const todayFormatted = format(todayDate, 'EEEE, MMMM d, yyyy');
 
@@ -319,15 +309,6 @@ export default function DailyCommandBrief({
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-[#00CFFF]" />
                 {todayFormatted}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4 text-[#FFD700]" />
-                <span>
-                  <span className="text-[#FFD700] font-semibold">
-                    {daysLeftInSemester}
-                  </span>{' '}
-                  days left in semester
-                </span>
               </span>
             </div>
           </div>
