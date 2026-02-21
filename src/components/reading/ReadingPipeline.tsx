@@ -45,12 +45,12 @@ import { useTheme } from '../../hooks/useTheme';
 
 const READING_TYPES: ReadingType[] = ['book', 'article', 'course', 'podcast', 'video'];
 
-const TYPE_COLORS: Record<ReadingType, string> = {
-  book: '#FFD700',
-  article: '#00CFFF',
-  course: '#8b5cf6',
-  podcast: '#f59e0b',
-  video: '#ef4444',
+const TYPE_COLORS: Record<string, string> = {
+  book:    'var(--text-muted)',
+  article: 'var(--text-muted)',
+  course:  'var(--text-muted)',
+  podcast: 'var(--text-muted)',
+  video:   'var(--text-muted)',
 };
 
 const TYPE_HOURS: Record<ReadingType, number> = {
@@ -93,8 +93,8 @@ function TypeEmoji({ type }: { type: ReadingType }) {
 }
 
 function PriorityIcon({ priority }: { priority: number }) {
-  if (priority === 1) return <span style={{ color: '#ef4444', fontSize: 12 }}>▲▲▲</span>;
-  if (priority === 2) return <span style={{ color: '#f59e0b', fontSize: 12 }}>▲▲</span>;
+  if (priority === 1) return <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>▲▲▲</span>;
+  if (priority === 2) return <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>▲▲</span>;
   return <span style={{ color: '#6b7280', fontSize: 12 }}>▲</span>;
 }
 
@@ -124,8 +124,8 @@ function StarRating({
         >
           <Star
             size={14}
-            fill={(hover || value || 0) >= s ? '#FFD700' : 'transparent'}
-            stroke={(hover || value || 0) >= s ? '#FFD700' : 'var(--text-muted)'}
+            fill={(hover || value || 0) >= s ? 'var(--text-muted)' : 'transparent'}
+            stroke={(hover || value || 0) >= s ? 'var(--text-muted)' : 'var(--text-muted)'}
           />
         </button>
       ))}
@@ -382,7 +382,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
             </button>
             <button
               onClick={() => deleteItem(item.id)}
-              className="p-1 transition-colors hover:text-red-400 rounded"
+              className="p-1 transition-colors hover:text-[var(--text-secondary)] rounded"
               style={{ color: 'var(--text-secondary)' }}
               title="Delete"
             >
@@ -424,7 +424,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="section-title flex items-center gap-2">
-            <BookOpen size={22} style={{ color: '#FFD700' }} />
+            <BookOpen size={22} style={{ color: 'var(--text-muted)' }} />
             Reading Pipeline
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Track your learning journey</p>
@@ -442,25 +442,25 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
             label: 'Books This Month',
             value: stats.booksThisMonth,
             icon: <TypeIcon type="book" size={16} />,
-            color: '#FFD700',
+            color: 'var(--text-muted)',
           },
           {
             label: 'Articles This Month',
             value: stats.articlesThisMonth,
             icon: <TypeIcon type="article" size={16} />,
-            color: '#00CFFF',
+            color: 'var(--text-muted)',
           },
           {
             label: 'Total Completed',
             value: stats.totalCompleted,
             icon: <Award size={16} />,
-            color: '#22c55e',
+            color: 'var(--text-secondary)',
           },
           {
             label: 'Hours Invested',
             value: `${stats.hoursEstimated.toFixed(0)}h`,
             icon: <Clock size={16} />,
-            color: '#8b5cf6',
+            color: 'var(--text-muted)',
           },
         ].map((s) => (
           <div key={s.label} className="caesar-card p-4 rounded-xl transition-colors duration-300">
@@ -481,7 +481,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
           className="px-3 py-1 rounded-full text-xs font-medium transition-all border"
           style={
             filterType === 'all'
-              ? { backgroundColor: 'rgba(0,207,255,0.15)', color: '#00CFFF', borderColor: 'rgba(0,207,255,0.4)' }
+              ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }
               : { color: 'var(--text-secondary)', borderColor: 'var(--border)', backgroundColor: 'transparent' }
           }
         >
@@ -495,9 +495,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
             style={
               filterType === t
                 ? {
-                    backgroundColor: `${TYPE_COLORS[t]}20`,
-                    color: TYPE_COLORS[t],
-                    borderColor: `${TYPE_COLORS[t]}50`,
+                    backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', borderColor: 'var(--border-strong)',
                   }
                 : {
                     color: 'var(--text-secondary)',
@@ -529,9 +527,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
               <span
                 className="text-xs font-medium px-2 py-0.5 rounded-full"
                 style={{
-                  background: 'rgba(0,207,255,0.1)',
-                  color: '#00CFFF',
-                  border: '1px solid rgba(0,207,255,0.3)',
+                  background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border)',
                 }}
               >
                 {columnItems[col.key].length}
@@ -551,7 +547,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
       {/* ── Chart ── */}
       <div className="caesar-card p-5 rounded-2xl transition-colors duration-300">
         <div className="flex items-center gap-2 mb-4">
-          <TrendingUp size={18} style={{ color: '#00CFFF' }} />
+          <TrendingUp size={18} style={{ color: 'var(--text-muted)' }} />
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Completions Per Month</h2>
         </div>
         <ResponsiveContainer width="100%" height={220}>
@@ -598,7 +594,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
       <div className="caesar-card p-5 rounded-2xl transition-colors duration-300">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div className="flex items-center gap-2">
-            <Lightbulb size={18} style={{ color: '#FFD700' }} />
+            <Lightbulb size={18} style={{ color: 'var(--text-muted)' }} />
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
               Insights Vault
             </h2>

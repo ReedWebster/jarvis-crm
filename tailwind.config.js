@@ -4,36 +4,33 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  // Class-based dark mode: add/remove `dark` on <html>
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Neutral accent replacing neon blue — focus rings, active indicators
-        'arc-blue': '#737373',
-        // Soft neutral replacing gold
-        gold: '#a3a3a3',
-        // Danger
-        'caesar-red': '#dc2626',
-        // Neutral dark grays (replaces navy)
+        'arc-blue': '#555555',
+        gold: '#888888',
+        'caesar-red': '#333333',
         navy: {
-          950: '#0c0c0c',
-          900: '#111111',
-          800: '#161616',
-          700: '#1e1e1e',
-          600: '#262626',
-          500: '#2c2c2c',
+          950: '#080808',
+          900: '#0c0c0c',
+          800: '#111111',
+          700: '#1a1a1a',
+          600: '#222222',
+          500: '#2a2a2a',
         },
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+        sans: ["'Times New Roman'", 'Times', 'Georgia', 'serif'],
+        serif: ["'Times New Roman'", 'Times', 'Georgia', 'serif'],
+        mono: ["'Times New Roman'", 'Times', 'Georgia', 'serif'],
       },
       boxShadow: {
-        'glow-gold': '0 0 0 2px rgba(163,163,163,0.25)',
-        'glow-blue': '0 0 0 2px rgba(115,115,115,0.25)',
-        'glow-red':  '0 0 0 2px rgba(220,38,38,0.25)',
+        'glow-gold': '0 0 0 2px rgba(128,128,128,0.3)',
+        'glow-blue': '0 0 0 2px rgba(128,128,128,0.3)',
+        'glow-red':  '0 0 0 2px rgba(64,64,64,0.4)',
         'card':      '0 2px 12px rgba(0,0,0,0.5)',
-        'card-light':'0 1px 6px rgba(0,0,0,0.07)',
+        'card-light':'0 1px 4px rgba(0,0,0,0.08)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

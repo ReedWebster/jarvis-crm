@@ -76,9 +76,9 @@ export function calcRelationshipHealth(lastContacted: string): number {
 }
 
 export function getHealthColor(score: number): string {
-  if (score >= 70) return '#22c55e';
-  if (score >= 40) return '#eab308';
-  return '#ef4444';
+  if (score >= 70) return 'var(--text-primary)';
+  if (score >= 40) return 'var(--text-secondary)';
+  return 'var(--text-muted)';
 }
 
 export function calcWeightedGPA(grades: { grade: number; credits: number }[]): number {

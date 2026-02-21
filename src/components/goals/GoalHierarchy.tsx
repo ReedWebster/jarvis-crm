@@ -59,13 +59,13 @@ const PERIOD_CHILD_MAP: Record<GoalPeriod, GoalPeriod | null> = {
 };
 
 const LIFE_AREAS: { value: LifeArea; label: string; color: string; Icon: React.FC<any> }[] = [
-  { value: 'ventures', label: 'Ventures', color: '#00CFFF', Icon: Zap },
-  { value: 'academic', label: 'Academic', color: '#818cf8', Icon: BookOpen },
-  { value: 'health', label: 'Health', color: '#22c55e', Icon: Heart },
-  { value: 'spiritual', label: 'Spiritual', color: '#FFD700', Icon: Star },
-  { value: 'financial', label: 'Financial', color: '#34d399', Icon: DollarSign },
-  { value: 'relationships', label: 'Relationships', color: '#f472b6', Icon: Users },
-  { value: 'personal', label: 'Personal', color: '#a78bfa', Icon: User },
+  { value: 'ventures',      label: 'Ventures',      color: 'var(--text-muted)',     Icon: Zap },
+  { value: 'academic',      label: 'Academic',      color: 'var(--text-secondary)', Icon: BookOpen },
+  { value: 'health',        label: 'Health',        color: 'var(--text-secondary)', Icon: Heart },
+  { value: 'spiritual',     label: 'Spiritual',     color: 'var(--text-muted)',     Icon: Star },
+  { value: 'financial',     label: 'Financial',     color: 'var(--text-secondary)', Icon: DollarSign },
+  { value: 'relationships', label: 'Relationships', color: 'var(--text-muted)',     Icon: Users },
+  { value: 'personal',      label: 'Personal',      color: 'var(--text-muted)',     Icon: User },
 ];
 
 const STATUSES: { value: GoalStatus; label: string }[] = [
@@ -85,12 +85,12 @@ function getAreaConfig(area: LifeArea) {
 
 function getStatusColor(status: GoalStatus): string {
   const map: Record<GoalStatus, string> = {
-    'not-started': '#6b7280',
-    'in-progress': '#00CFFF',
-    completed: '#22c55e',
-    blocked: '#ef4444',
+    'not-started': '#555555',
+    'in-progress': 'var(--text-muted)',
+    completed:     'var(--text-secondary)',
+    blocked:       'var(--text-secondary)',
   };
-  return map[status];
+  return map[status] ?? '#555555';
 }
 
 // ─── FORM TYPES ───────────────────────────────────────────────────────────────
@@ -186,10 +186,10 @@ function GoalCard({
   const childPeriod = PERIOD_CHILD_MAP[goal.period];
 
   const periodColors: Record<GoalPeriod, string> = {
-    annual: '#FFD700',
-    quarterly: '#00CFFF',
-    weekly: '#a78bfa',
-    daily: '#34d399',
+    annual:    'var(--text-muted)',
+    quarterly: 'var(--text-secondary)',
+    weekly:    'var(--text-muted)',
+    daily:     'var(--text-secondary)',
   };
 
   return (
@@ -232,7 +232,7 @@ function GoalCard({
                   style={{
                     width: `${goal.progress}%`,
                     backgroundColor: area.color,
-                    boxShadow: `0 0 6px ${area.color}80`,
+                    
                   }}
                 />
               </div>
@@ -246,7 +246,7 @@ function GoalCard({
                 {days !== null && (
                   <span
                     className={`ml-1 font-medium ${
-                      days < 0 ? 'text-red-400' : days <= 7 ? 'text-yellow-400' : ''
+                      days < 0 ? 'text-[var(--text-secondary)]' : days <= 7 ? 'text-[var(--text-muted)]' : ''
                     }`}
                     style={days >= 8 ? { color: 'var(--text-secondary)' } : {}}
                   >
@@ -279,7 +279,7 @@ function GoalCard({
               </button>
               <button
                 onClick={() => onDelete(goal.id)}
-                className="p-1 rounded transition-colors hover:text-red-400"
+                className="p-1 rounded transition-colors hover:text-[var(--text-secondary)]"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 <Trash2 size={13} />
@@ -582,12 +582,12 @@ export function GoalHierarchy({
                   cy="50"
                   r="40"
                   fill="none"
-                  stroke={alignmentScore >= 70 ? '#22c55e' : alignmentScore >= 40 ? '#FFD700' : '#ef4444'}
+                  stroke='var(--text-muted)'
                   strokeWidth="10"
                   strokeLinecap="round"
                   strokeDasharray={`${2 * Math.PI * 40}`}
                   strokeDashoffset={`${2 * Math.PI * 40 * (1 - alignmentScore / 100)}`}
-                  style={{ transition: 'stroke-dashoffset 0.8s ease', filter: 'drop-shadow(0 0 6px currentColor)' }}
+                  style={{ transition: 'stroke-dashoffset 0.8s ease', filter: 'none' }}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -603,7 +603,7 @@ export function GoalHierarchy({
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               {alignmentScore}% of your daily tasks trace back to an annual goal.
               {alignmentScore < 60 && (
-                <span className="text-yellow-400 ml-1">
+                <span className="text-[var(--text-muted)] ml-1">
                   Consider linking more daily tasks to your annual priorities.
                 </span>
               )}
@@ -648,7 +648,7 @@ export function GoalHierarchy({
                   className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
                   style={
                     isActive
-                      ? { backgroundColor: '#00CFFF', color: '#05080f' }
+                      ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-strong)' }
                       : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }
                   }
                 >
@@ -657,7 +657,7 @@ export function GoalHierarchy({
                     className="px-1.5 py-0.5 rounded text-xs"
                     style={
                       isActive
-                        ? { backgroundColor: 'rgba(5,8,15,0.3)' }
+                        ? { backgroundColor: 'var(--bg-elevated)' }
                         : { backgroundColor: 'var(--bg-hover)', color: 'var(--text-muted)' }
                     }
                   >
@@ -693,7 +693,7 @@ export function GoalHierarchy({
       <div className="caesar-card transition-colors duration-300">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Award size={18} style={{ color: '#FFD700' }} />
+            <Award size={18} style={{ color: 'var(--text-muted)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Weekly Review</h3>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>({sortedReviews.length} logged)</span>
           </div>
@@ -710,7 +710,7 @@ export function GoalHierarchy({
             <button
               onClick={openWizard}
               className="caesar-btn-primary text-xs flex items-center gap-1"
-              style={{ backgroundColor: '#FFD700', color: '#05080f' }}
+              style={{ backgroundColor: 'var(--text-muted)', color: '#05080f' }}
             >
               <Star size={12} /> Start Weekly Review
             </button>
@@ -734,7 +734,7 @@ export function GoalHierarchy({
                       <div
                         key={n}
                         className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: n <= r.energyAvg ? '#FFD700' : 'var(--bg-hover)' }}
+                        style={{ backgroundColor: n <= r.energyAvg ? 'var(--text-muted)' : 'var(--bg-hover)' }}
                       />
                     ))}
                   </div>
@@ -748,19 +748,19 @@ export function GoalHierarchy({
                   )}
                   {r.misses && (
                     <div>
-                      <p className="text-red-400 font-medium mb-1">Misses</p>
+                      <p className="text-[var(--text-secondary)] font-medium mb-1">Misses</p>
                       <p className="leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{r.misses}</p>
                     </div>
                   )}
                   {r.blockers && (
                     <div>
-                      <p className="text-yellow-400 font-medium mb-1">Blockers</p>
+                      <p className="text-[var(--text-muted)] font-medium mb-1">Blockers</p>
                       <p className="leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{r.blockers}</p>
                     </div>
                   )}
                   {r.focusNextWeek && (
                     <div>
-                      <p style={{ color: '#00CFFF' }} className="font-medium mb-1">Next Week Focus</p>
+                      <p style={{ color: 'var(--text-muted)' }} className="font-medium mb-1">Next Week Focus</p>
                       <p className="leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{r.focusNextWeek}</p>
                     </div>
                   )}
@@ -775,7 +775,7 @@ export function GoalHierarchy({
       <div className="caesar-card transition-colors duration-300">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Brain size={18} style={{ color: '#00CFFF' }} />
+            <Brain size={18} style={{ color: 'var(--text-muted)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Decision Log</h3>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>({decisionLogs.length} decisions)</span>
           </div>
@@ -830,7 +830,7 @@ export function GoalHierarchy({
                               {reviewDue && (
                                 <span
                                   className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium"
-                                  style={{ backgroundColor: '#FFD70020', color: '#FFD700' }}
+                                  style={{ backgroundColor: 'var(--text-muted)20', color: 'var(--text-muted)' }}
                                 >
                                   <AlertCircle size={9} />
                                   Review Due
@@ -858,7 +858,7 @@ export function GoalHierarchy({
                             </button>
                             <button
                               onClick={() => deleteDecision(d.id)}
-                              className="p-1 rounded transition-colors hover:text-red-400"
+                              className="p-1 rounded transition-colors hover:text-[var(--text-secondary)]"
                               style={{ color: 'var(--text-muted)' }}
                             >
                               <Trash2 size={12} />
@@ -1026,9 +1026,9 @@ export function GoalHierarchy({
                 className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold transition-all"
                 style={
                   idx < wizardStep
-                    ? { backgroundColor: '#22c55e', color: '#fff' }
+                    ? { backgroundColor: 'var(--text-secondary)', color: '#fff' }
                     : idx === wizardStep
-                    ? { backgroundColor: '#FFD700', color: '#05080f' }
+                    ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-strong)' }
                     : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }
                 }
               >
@@ -1037,7 +1037,7 @@ export function GoalHierarchy({
               {idx < 4 && (
                 <div
                   className="flex-1 h-0.5"
-                  style={{ backgroundColor: idx < wizardStep ? '#22c55e' : 'var(--bg-elevated)' }}
+                  style={{ backgroundColor: idx < wizardStep ? 'var(--text-secondary)' : 'var(--bg-elevated)' }}
                 />
               )}
             </React.Fragment>
@@ -1096,13 +1096,13 @@ export function GoalHierarchy({
                       key={n}
                       className="w-4 h-4 rounded-full transition-all"
                       style={{
-                        backgroundColor: n <= wizardForm.energyAvg ? '#FFD700' : 'var(--bg-hover)',
-                        boxShadow: n <= wizardForm.energyAvg ? '0 0 6px #FFD700' : 'none',
+                        backgroundColor: n <= wizardForm.energyAvg ? 'var(--text-muted)' : 'var(--bg-hover)',
+                        boxShadow: n <= wizardForm.energyAvg ? '0 0 6px var(--text-muted)' : 'none',
                       }}
                     />
                   ))}
                 </div>
-                <span className="text-lg font-bold" style={{ color: '#FFD700' }}>{wizardForm.energyAvg}/5</span>
+                <span className="text-lg font-bold" style={{ color: 'var(--text-muted)' }}>{wizardForm.energyAvg}/5</span>
               </div>
             </div>
 
@@ -1116,10 +1116,10 @@ export function GoalHierarchy({
                 <p><span className="text-emerald-400">Wins:</span> <span style={{ color: 'var(--text-secondary)' }}>{wizardForm.wins.slice(0, 80)}{wizardForm.wins.length > 80 ? '...' : ''}</span></p>
               )}
               {wizardForm.misses && (
-                <p><span className="text-red-400">Misses:</span> <span style={{ color: 'var(--text-secondary)' }}>{wizardForm.misses.slice(0, 80)}{wizardForm.misses.length > 80 ? '...' : ''}</span></p>
+                <p><span className="text-[var(--text-secondary)]">Misses:</span> <span style={{ color: 'var(--text-secondary)' }}>{wizardForm.misses.slice(0, 80)}{wizardForm.misses.length > 80 ? '...' : ''}</span></p>
               )}
               {wizardForm.focusNextWeek && (
-                <p><span style={{ color: '#00CFFF' }}>Focus:</span> <span style={{ color: 'var(--text-secondary)' }}>{wizardForm.focusNextWeek.slice(0, 80)}{wizardForm.focusNextWeek.length > 80 ? '...' : ''}</span></p>
+                <p><span style={{ color: 'var(--text-muted)' }}>Focus:</span> <span style={{ color: 'var(--text-secondary)' }}>{wizardForm.focusNextWeek.slice(0, 80)}{wizardForm.focusNextWeek.length > 80 ? '...' : ''}</span></p>
               )}
             </div>
 
@@ -1130,7 +1130,7 @@ export function GoalHierarchy({
               <button
                 onClick={submitReview}
                 className="flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all"
-                style={{ backgroundColor: '#FFD700', color: '#05080f' }}
+                style={{ backgroundColor: 'var(--text-muted)', color: '#05080f' }}
               >
                 <span className="flex items-center justify-center gap-1">
                   <Check size={14} /> Submit Review

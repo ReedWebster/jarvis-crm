@@ -5,8 +5,8 @@ import type { StatusMode, Identity } from '../../types';
 
 const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
   'deep-work': { label: 'Deep Work', color: '#737373', glow: 'rgba(115,115,115,0.2)' },
-  available:   { label: 'Available', color: '#5a8a5a', glow: 'rgba(90,138,90,0.2)'  },
-  break:       { label: 'Break',     color: '#8a7a50', glow: 'rgba(138,122,80,0.2)' },
+  available:   { label: 'Available', color: 'var(--text-secondary)', glow: 'rgba(90,138,90,0.2)'  },
+  break:       { label: 'Break',     color: '#737373', glow: 'rgba(115,115,115,0.2)' },
   out:         { label: 'Out',       color: '#555555', glow: 'rgba(85,85,85,0.2)'   },
 };
 

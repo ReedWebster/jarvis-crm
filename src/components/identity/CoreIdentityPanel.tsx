@@ -22,10 +22,10 @@ interface Props {
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS: { value: StatusMode; label: string; color: string; bg: string }[] = [
-  { value: 'deep-work', label: 'Deep Work', color: '#00CFFF', bg: 'rgba(0,207,255,0.15)' },
-  { value: 'available', label: 'Available',  color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
-  { value: 'break',     label: 'On Break',   color: '#FFD700', bg: 'rgba(255,215,0,0.15)'  },
-  { value: 'out',       label: 'Out',        color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
+  { value: 'deep-work', label: 'Deep Work', color: 'var(--text-muted)',     bg: 'var(--bg-elevated)' },
+  { value: 'available', label: 'Available',  color: 'var(--text-secondary)', bg: 'var(--bg-elevated)' },
+  { value: 'break',     label: 'On Break',   color: 'var(--text-muted)',     bg: 'var(--bg-elevated)' },
+  { value: 'out',       label: 'Out',        color: 'var(--text-secondary)', bg: 'var(--bg-elevated)' },
 ];
 
 function getStatusConfig(status: StatusMode) {
@@ -100,14 +100,14 @@ function InlineEdit({
         )}
         <button
           onClick={handleSave}
-          className="p-1.5 rounded-lg bg-[#00CFFF]/20 text-[#00CFFF] hover:bg-[#00CFFF]/30 transition-colors flex-shrink-0"
+          className="p-1.5 rounded-lg bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] transition-colors flex-shrink-0"
           aria-label="Save"
         >
           <Check className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleCancel}
-          className="p-1.5 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
+          className="p-1.5 rounded-lg  transition-colors flex-shrink-0"
           style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
           aria-label="Cancel"
         >
@@ -224,7 +224,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <h1 className="section-title glow-gold">Core Identity</h1>
+      <h1 className="section-title ">Core Identity</h1>
 
       <div className="grid grid-cols-3 gap-6 items-start">
 
@@ -235,7 +235,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
           <div className="caesar-card flex flex-col items-center gap-4 py-6">
             <div className="relative group">
               <div
-                className="w-32 h-32 rounded-full overflow-hidden ring-2 ring-[#FFD700]/40 ring-offset-2 transition-colors duration-300"
+                className="w-32 h-32 rounded-full overflow-hidden ring-2 ring-[var(--text-muted)]/40 ring-offset-2 transition-colors duration-300"
                 style={{ '--tw-ring-offset-color': 'var(--bg-card)' } as React.CSSProperties}
               >
                 {identity.photoUrl ? (
@@ -248,7 +248,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
                   <div
                     className="w-full h-full flex items-center justify-center text-3xl font-bold"
                     style={{
-                      background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
+                      background: 'var(--bg-elevated)',
                       color: 'var(--bg)',
                     }}
                   >
@@ -389,7 +389,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
                 value={identity.role}
                 onSave={(v) => update({ role: v })}
                 displayAs="p"
-                className="text-[#00CFFF] font-medium"
+                className="text-[var(--text-muted)] font-medium"
                 placeholder="Your primary role"
               />
             </div>
@@ -401,12 +401,12 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
                 {identity.titles.map((title, idx) => (
                   <span
                     key={idx}
-                    className="group flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-[#FFD700]/30 bg-[#FFD700]/10 text-[#FFD700] transition-colors hover:border-[#FFD700]/60"
+                    className="group flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] transition-colors "
                   >
                     {title}
                     <button
                       onClick={() => removeTitle(idx)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--text-secondary)]"
                       aria-label={`Remove ${title}`}
                     >
                       <X className="w-3 h-3" />
@@ -430,13 +430,13 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
                     />
                     <button
                       onClick={addTitle}
-                      className="p-1 rounded-md bg-[#FFD700]/20 text-[#FFD700] hover:bg-[#FFD700]/30 transition-colors"
+                      className="p-1 rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] transition-colors"
                     >
                       <Check className="w-3 h-3" />
                     </button>
                     <button
                       onClick={() => { setNewTitle(''); setAddingTitle(false); }}
-                      className="p-1 rounded-md hover:bg-white/10 transition-colors"
+                      className="p-1 rounded-md  transition-colors"
                       style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
                     >
                       <X className="w-3 h-3" />
@@ -445,7 +445,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
                 ) : (
                   <button
                     onClick={() => setAddingTitle(true)}
-                    className="flex items-center gap-1 px-3 py-1 rounded-full text-xs border border-dashed hover:border-[#FFD700]/40 hover:text-[#FFD700] transition-colors duration-300"
+                    className="flex items-center gap-1 px-3 py-1 rounded-full text-xs border border-dashed   transition-colors duration-300"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
                   >
                     <Plus className="w-3 h-3" />
@@ -493,7 +493,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
 
             <button
               onClick={addPriority}
-              className="caesar-btn-ghost flex items-center gap-1.5 text-sm w-full justify-center py-2 border-dashed border hover:border-[#FFD700]/30 hover:text-[#FFD700] transition-colors rounded-xl duration-300"
+              className="caesar-btn-ghost flex items-center gap-1.5 text-sm w-full justify-center py-2 border-dashed border   transition-colors rounded-xl duration-300"
               style={{ borderColor: 'var(--border)' }}
             >
               <Plus className="w-4 h-4" />
@@ -545,7 +545,7 @@ function PriorityCard({
     setEditing(false);
   }
 
-  const rankColors = ['#FFD700', '#00CFFF', '#a78bfa', '#22c55e', '#f97316'];
+  const rankColors = ['#aaaaaa','#888888','#666666','#555555','#444444'];
   const rankColor = rankColors[index] ?? '#6b7280';
 
   return (
@@ -593,13 +593,13 @@ function PriorityCard({
             />
             <button
               onClick={handleSave}
-              className="p-1 rounded-md bg-[#00CFFF]/20 text-[#00CFFF] hover:bg-[#00CFFF]/30 transition-colors flex-shrink-0"
+              className="p-1 rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] transition-colors flex-shrink-0"
             >
               <Check className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleCancel}
-              className="p-1 rounded-md hover:bg-white/10 transition-colors flex-shrink-0"
+              className="p-1 rounded-md  transition-colors flex-shrink-0"
               style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
             >
               <X className="w-3.5 h-3.5" />
@@ -627,7 +627,7 @@ function PriorityCard({
           <button
             onClick={onMoveUp}
             disabled={index === 0}
-            className="p-0.5 rounded hover:text-[#FFD700] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            className="p-0.5 rounded  disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             style={{ color: 'var(--text-muted)' }}
             aria-label="Move up"
           >
@@ -636,7 +636,7 @@ function PriorityCard({
           <button
             onClick={onMoveDown}
             disabled={index === total - 1}
-            className="p-0.5 rounded hover:text-[#FFD700] disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+            className="p-0.5 rounded  disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             style={{ color: 'var(--text-muted)' }}
             aria-label="Move down"
           >
@@ -649,7 +649,7 @@ function PriorityCard({
       {!editing && (
         <button
           onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-300 p-0.5 flex-shrink-0"
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-secondary)] hover:text-[var(--text-secondary)] p-0.5 flex-shrink-0"
           aria-label="Delete priority"
         >
           <Trash2 className="w-3.5 h-3.5" />

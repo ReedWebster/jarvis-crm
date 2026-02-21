@@ -28,9 +28,9 @@ interface Props {
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const PRIORITY_CONFIG: Record<TodoPriority, { label: string; color: string }> = {
-  high:   { label: 'High',   color: '#c0392b' },
-  medium: { label: 'Medium', color: '#8a7a50' },
-  low:    { label: 'Low',    color: '#525252' },
+  high:   { label: 'High',   color: 'var(--text-primary)' },
+  medium: { label: 'Medium', color: 'var(--text-secondary)' },
+  low:    { label: 'Low',    color: 'var(--text-muted)' },
 };
 
 const STATUS_CONFIG: Record<TodoStatus, { label: string }> = {
@@ -69,8 +69,8 @@ function dueDateColor(dateStr?: string): string {
   if (!dateStr) return 'var(--text-muted)';
   try {
     const d = parseISO(dateStr);
-    if (isPast(d) && !isToday(d)) return '#c0392b';
-    if (isToday(d)) return '#8a7a50';
+    if (isPast(d) && !isToday(d)) return 'var(--text-secondary)';
+    if (isToday(d)) return 'var(--text-secondary)';
     return 'var(--text-muted)';
   } catch { return 'var(--text-muted)'; }
 }
@@ -260,7 +260,7 @@ function Checklist({ todoId, checklist, onUpdate }: ChecklistProps) {
               className="h-1 rounded-full transition-all duration-300"
               style={{
                 width: `${checklist.length > 0 ? (checkedCount / checklist.length) * 100 : 0}%`,
-                backgroundColor: checkedCount === checklist.length && checklist.length > 0 ? '#4f8f54' : 'var(--text-muted)',
+                backgroundColor: checkedCount === checklist.length && checklist.length > 0 ? 'var(--text-secondary)' : 'var(--text-muted)',
               }}
             />
           </div>
@@ -276,10 +276,10 @@ function Checklist({ todoId, checklist, onUpdate }: ChecklistProps) {
           <button
             onClick={() => toggle(item.id)}
             className="flex-shrink-0 transition-colors"
-            style={{ color: item.checked ? '#4f8f54' : 'var(--text-muted)' }}
+            style={{ color: item.checked ? 'var(--text-secondary)' : 'var(--text-muted)' }}
           >
             {item.checked
-              ? <CheckSquare size={14} style={{ color: '#4f8f54' }} />
+              ? <CheckSquare size={14} style={{ color: 'var(--text-secondary)' }} />
               : <Square size={14} />
             }
           </button>
@@ -409,7 +409,7 @@ function TodoCard({ todo, onToggle, onEdit, onDelete, onChecklistUpdate }: TodoC
           <button onClick={onEdit} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--text-muted)' }}>
             <Edit3 size={13} />
           </button>
-          <button onClick={onDelete} className="p-1.5 rounded-lg transition-colors hover:text-red-400" style={{ color: 'var(--text-muted)' }}>
+          <button onClick={onDelete} className="p-1.5 rounded-lg transition-colors hover:text-[var(--text-secondary)]" style={{ color: 'var(--text-muted)' }}>
             <Trash2 size={13} />
           </button>
         </div>
@@ -556,7 +556,7 @@ export function TodoList({
           { label: 'Overdue',   value: stats.overdue, warn: stats.overdue > 0 },
         ].map(s => (
           <div key={s.label} className="caesar-card text-center py-3 transition-colors duration-300">
-            <p className="text-2xl font-bold" style={{ color: s.warn ? '#c0392b' : 'var(--text-primary)' }}>
+            <p className="text-2xl font-bold" style={{ color: s.warn ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
               {s.value}
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>

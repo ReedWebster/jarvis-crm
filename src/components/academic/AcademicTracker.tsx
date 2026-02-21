@@ -44,15 +44,15 @@ const STATUS_LABELS: Record<AssignmentStatus, string> = {
 };
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
-  'not-started': '#6b7280',
-  'in-progress': '#00CFFF',
-  'submitted': '#8b5cf6',
-  'graded': '#22c55e',
+  'not-started': '#555555',
+  'in-progress': '#888888',
+  'submitted':   '#aaaaaa',
+  'graded':      '#333333',
 };
 
 const COURSE_COLORS = [
-  '#00CFFF', '#FFD700', '#22c55e', '#ec4899', '#f97316',
-  '#8b5cf6', '#14b8a6', '#ef4444', '#3b82f6', '#a78bfa',
+  '#111111','#222222','#333333','#444444','#555555',
+  '#666666','#777777','#888888','#999999','#aaaaaa',
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -73,9 +73,9 @@ function gradeToLetter(percent: number): string {
 }
 
 function gradeColor(percent: number): string {
-  if (percent >= 87) return '#22c55e';
-  if (percent >= 73) return '#eab308';
-  return '#ef4444';
+  if (percent >= 87) return 'var(--text-primary)';
+  if (percent >= 73) return 'var(--text-secondary)';
+  return 'var(--text-muted)';
 }
 
 // ─── STATS ROW ────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ function CourseCard({
   onAddAssignment,
   onAssignmentStatusChange,
 }: CourseCardProps) {
-  const color = course.color || '#00CFFF';
+  const color = course.color || 'var(--text-muted)';
   const letter = gradeToLetter(course.currentGrade);
   const gColor = gradeColor(course.currentGrade);
 
@@ -160,7 +160,7 @@ function CourseCard({
         <div className="flex items-start gap-3 flex-1 min-w-0">
           <div
             className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
-            style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}60` }}
+            style={{ backgroundColor: color, boxShadow: '0 0 0 1px var(--border)' }}
           />
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-sm leading-tight truncate" style={{ color: 'var(--text-primary)' }}>{course.name}</h3>
@@ -180,7 +180,7 @@ function CourseCard({
           </button>
           <button
             onClick={onDelete}
-            className="p-1.5 rounded-lg transition-colors hover:text-red-400"
+            className="p-1.5 rounded-lg transition-colors hover:text-[var(--text-secondary)]"
             style={{ color: 'var(--text-muted)' }}
           >
             <Trash2 size={13} />
@@ -209,7 +209,7 @@ function CourseCard({
             />
           </div>
           {course.currentGrade < course.targetGrade && (
-            <p className="text-xs text-yellow-400/70 mt-1">
+            <p className="text-xs text-[var(--text-muted)] mt-1">
               {(course.targetGrade - course.currentGrade).toFixed(1)}% below target
             </p>
           )}
@@ -227,7 +227,7 @@ function CourseCard({
             <p className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)' }}>{nextAssignment.title}</p>
             <p
               className="text-xs"
-              style={{ color: isOverdue(nextAssignment.dueDate) ? '#ef4444' : 'var(--text-muted)' }}
+              style={{ color: isOverdue(nextAssignment.dueDate) ? 'var(--text-secondary)' : 'var(--text-muted)' }}
             >
               {isOverdue(nextAssignment.dueDate)
                 ? `Overdue by ${Math.abs(daysUntil(nextAssignment.dueDate))}d`
@@ -241,7 +241,7 @@ function CourseCard({
           className="flex items-center gap-2 p-2.5 rounded-lg"
           style={{ backgroundColor: 'var(--bg-elevated)' }}
         >
-          <CheckCircle size={13} style={{ color: '#22c55e' }} />
+          <CheckCircle size={13} style={{ color: 'var(--text-secondary)' }} />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No pending assignments</span>
         </div>
       )}
@@ -251,14 +251,14 @@ function CourseCard({
         <div
           className="flex items-center gap-2 p-2.5 rounded-lg border"
           style={{
-            backgroundColor: 'rgba(255,215,0,0.06)',
-            borderColor: 'rgba(255,215,0,0.2)',
+            backgroundColor: 'var(--bg-elevated)',
+            borderColor: 'var(--bg-elevated)',
           }}
         >
-          <Calendar size={13} style={{ color: '#FFD700' }} className="flex-shrink-0" />
+          <Calendar size={13} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)' }}>{nextExam.title}</p>
-            <p className="text-xs" style={{ color: '#FFD700' }}>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {daysUntil(nextExam.date) === 0
                 ? 'Today!'
                 : daysUntil(nextExam.date) === 1
@@ -408,7 +408,7 @@ function CourseFormModal({ isOpen, onClose, onSave, initial, title }: CourseForm
                 className="w-7 h-7 rounded-full transition-all duration-150"
                 style={{
                   backgroundColor: c,
-                  boxShadow: form.color === c ? `0 0 0 2px var(--bg-card), 0 0 0 4px ${c}` : 'none',
+                  boxShadow: form.color === c ? '0 0 0 2px var(--bg-card), 0 0 0 4px var(--border)' : 'none',
                   transform: form.color === c ? 'scale(1.15)' : 'scale(1)',
                 }}
               />
@@ -601,15 +601,15 @@ interface KanbanProps {
 function AssignmentKanban({ courses, onStatusChange, onAddAssignment, onDeleteAssignment }: KanbanProps) {
   const allAssignments = useMemo(() => {
     return courses.flatMap((course) =>
-      course.assignments.map((a) => ({ ...a, courseName: course.name, courseColor: course.color || '#00CFFF', courseId: course.id }))
+      course.assignments.map((a) => ({ ...a, courseName: course.name, courseColor: course.color || 'var(--text-muted)', courseId: course.id }))
     );
   }, [courses]);
 
   const columns: { status: AssignmentStatus; icon: React.ReactNode }[] = [
     { status: 'not-started', icon: <Clock size={13} style={{ color: '#6b7280' }} /> },
-    { status: 'in-progress', icon: <ChevronRight size={13} style={{ color: '#00CFFF' }} /> },
-    { status: 'submitted', icon: <CheckCircle size={13} style={{ color: '#8b5cf6' }} /> },
-    { status: 'graded', icon: <Award size={13} style={{ color: '#22c55e' }} /> },
+    { status: 'in-progress', icon: <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} /> },
+    { status: 'submitted', icon: <CheckCircle size={13} style={{ color: 'var(--text-muted)' }} /> },
+    { status: 'graded', icon: <Award size={13} style={{ color: 'var(--text-secondary)' }} /> },
   ];
 
   const moveStatus = (
@@ -673,7 +673,7 @@ function AssignmentKanban({ courses, onStatusChange, onAddAssignment, onDeleteAs
                     <div
                       key={assignment.id}
                       className="caesar-card !p-3 flex flex-col gap-2 transition-colors duration-300"
-                      style={overdue ? { borderColor: 'rgba(239,68,68,0.3)' } : {}}
+                      style={overdue ? { borderColor: 'var(--bg-elevated)' } : {}}
                     >
                       {/* Course dot + title */}
                       <div className="flex items-start gap-2">
@@ -691,10 +691,10 @@ function AssignmentKanban({ courses, onStatusChange, onAddAssignment, onDeleteAs
 
                       {/* Due date */}
                       <div className="flex items-center gap-1 pl-4">
-                        <Calendar size={10} style={{ color: overdue ? '#ef4444' : 'var(--text-muted)' }} />
+                        <Calendar size={10} style={{ color: overdue ? 'var(--text-secondary)' : 'var(--text-muted)' }} />
                         <span
                           className="text-xs"
-                          style={{ color: overdue ? '#ef4444' : 'var(--text-muted)' }}
+                          style={{ color: overdue ? 'var(--text-secondary)' : 'var(--text-muted)' }}
                         >
                           {overdue
                             ? `Overdue ${Math.abs(daysUntil(assignment.dueDate))}d`
@@ -738,7 +738,7 @@ function AssignmentKanban({ courses, onStatusChange, onAddAssignment, onDeleteAs
                         </button>
                         <button
                           onClick={() => onDeleteAssignment(assignment.courseId, assignment.id)}
-                          className="p-1 rounded transition-colors hover:text-red-400 ml-auto"
+                          className="p-1 rounded transition-colors hover:text-[var(--text-secondary)] ml-auto"
                           style={{ color: 'var(--text-muted)' }}
                         >
                           <Trash2 size={11} />
@@ -767,7 +767,7 @@ function ExamCountdown({ courses }: { courses: Course[] }) {
           .map((e) => ({
             ...e,
             courseName: course.name,
-            courseColor: course.color || '#00CFFF',
+            courseColor: course.color || 'var(--text-muted)',
             days: daysUntil(e.date),
           }))
       )
@@ -777,15 +777,15 @@ function ExamCountdown({ courses }: { courses: Course[] }) {
   if (upcomingExams.length === 0) return null;
 
   const urgencyColor = (days: number) => {
-    if (days <= 2) return '#ef4444';
-    if (days <= 7) return '#eab308';
-    return '#22c55e';
+    if (days <= 2) return 'var(--text-secondary)';
+    if (days <= 7) return 'var(--text-muted)';
+    return 'var(--text-secondary)';
   };
 
   return (
     <div className="flex flex-col gap-3">
       <h2 className="section-title text-base flex items-center gap-2">
-        <Calendar size={16} style={{ color: '#FFD700' }} />
+        <Calendar size={16} style={{ color: 'var(--text-muted)' }} />
         Exam Countdown
       </h2>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -965,7 +965,7 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
       {/* Course Cards */}
       <div className="flex flex-col gap-4">
         <h2 className="section-title text-base flex items-center gap-2">
-          <BookOpen size={16} style={{ color: '#00CFFF' }} />
+          <BookOpen size={16} style={{ color: 'var(--text-muted)' }} />
           My Courses
         </h2>
         {courses.length === 0 ? (

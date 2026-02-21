@@ -23,11 +23,11 @@ import { Badge, StatusBadge } from '../shared/Badge';
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES: { key: CandidateStatus; label: string; color: string }[] = [
-  { key: 'contacted',   label: 'Contacted',   color: '#3b82f6' },
-  { key: 'interviewed', label: 'Interviewed', color: '#f59e0b' },
-  { key: 'offered',     label: 'Offered',     color: '#8b5cf6' },
-  { key: 'joined',      label: 'Joined',      color: '#22c55e' },
-  { key: 'declined',    label: 'Declined',    color: '#ef4444' },
+  { key: 'contacted',   label: 'Contacted',   color: 'var(--text-muted)' },
+  { key: 'interviewed', label: 'Interviewed', color: 'var(--text-secondary)' },
+  { key: 'offered',     label: 'Offered',     color: 'var(--text-muted)' },
+  { key: 'joined',      label: 'Joined',      color: 'var(--text-secondary)' },
+  { key: 'declined',    label: 'Declined',    color: 'var(--text-secondary)' },
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ function FunnelChart({ counts }: { counts: Record<CandidateStatus, number> }) {
   return (
     <div className="caesar-card p-5 rounded-2xl">
       <div className="flex items-center gap-2 mb-5">
-        <TrendingUp size={18} style={{ color: '#00CFFF' }} />
+        <TrendingUp size={18} style={{ color: 'var(--text-muted)' }} />
         <h2 className="text-sm font-semibold text-white">Pipeline Funnel</h2>
       </div>
 
@@ -82,15 +82,15 @@ function FunnelChart({ counts }: { counts: Record<CandidateStatus, number> }) {
           return (
             <div key={stage.key} className="flex items-center gap-3">
               <div className="w-20 text-right">
-                <span className="text-xs text-gray-400">{stage.label}</span>
+                <span className="text-xs ">{stage.label}</span>
               </div>
               <div className="flex-1 relative h-8 flex items-center">
                 <div
                   className="h-full rounded transition-all duration-500 flex items-center justify-end pr-3"
                   style={{
                     width: `${widthPct}%`,
-                    background: `linear-gradient(90deg, ${stage.color}30 0%, ${stage.color}60 100%)`,
-                    border: `1px solid ${stage.color}50`,
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
                   }}
                 >
                   <span
@@ -113,7 +113,7 @@ function FunnelChart({ counts }: { counts: Record<CandidateStatus, number> }) {
       </div>
 
       {/* Declined row separate */}
-      <div className="mt-3 pt-3 border-t border-navy-700 flex items-center gap-3">
+      <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center gap-3">
         <div className="w-20 text-right">
           <span className="text-xs text-gray-500">Declined</span>
         </div>
@@ -122,12 +122,12 @@ function FunnelChart({ counts }: { counts: Record<CandidateStatus, number> }) {
             className="h-6 rounded flex items-center justify-end pr-3"
             style={{
               width: `${Math.max(8, (counts.declined / Math.max(counts.contacted, 1)) * 100)}%`,
-              background: 'rgba(239,68,68,0.15)',
-              border: '1px solid rgba(239,68,68,0.3)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--bg-elevated)',
               maxWidth: '40%',
             }}
           >
-            <span className="text-xs font-bold text-red-400">{counts.declined}</span>
+            <span className="text-xs font-bold text-[var(--text-secondary)]">{counts.declined}</span>
           </div>
         </div>
       </div>
@@ -290,19 +290,19 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
         key={c.id}
         className={`caesar-card p-4 rounded-xl border transition-all duration-200 ${
           isSelected
-            ? 'border-arc-blue/60'
-            : 'border-navy-600 hover:border-navy-500'
+            ? 'border-[var(--border)]'
+            : 'border-[var(--border)] hover:border-[var(--border)]'
         }`}
-        style={{ background: 'rgba(13,20,40,0.9)' }}
+        style={{ background: 'var(--bg-elevated)' }}
       >
         {/* Top row */}
         <div className="flex items-start gap-2 mb-2">
           <button
             onClick={() => toggleSelect(c.id)}
-            className="mt-0.5 text-gray-500 hover:text-arc-blue transition-colors shrink-0"
+            className="mt-0.5 text-gray-500  transition-colors shrink-0"
           >
             {isSelected ? (
-              <CheckSquare size={16} style={{ color: '#00CFFF' }} />
+              <CheckSquare size={16} style={{ color: 'var(--text-muted)' }} />
             ) : (
               <Square size={16} />
             )}
@@ -314,14 +314,14 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
                 <h3 className="text-white font-semibold text-sm leading-tight truncate">
                   {c.name}
                 </h3>
-                <p className="text-gray-400 text-xs mt-0.5 truncate">{c.role}</p>
+                <p className=" text-xs mt-0.5 truncate">{c.role}</p>
               </div>
               <div className="shrink-0 flex flex-col items-end gap-1">
                 <StatusBadge status={c.status} />
                 {c.organization && (
                   <Badge
                     label={c.organization}
-                    color="#FFD700"
+                    color="var(--text-muted)"
                     size="xs"
                     variant="outline"
                   />
@@ -334,7 +334,7 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
         {/* Last contact */}
         <div className="flex items-center gap-1 mb-2 ml-6">
           <span className="text-gray-500 text-xs">Last contact:</span>
-          <span className="text-gray-400 text-xs">{formatDate(c.lastContactDate)}</span>
+          <span className=" text-xs">{formatDate(c.lastContactDate)}</span>
           <span
             className="text-xs font-medium ml-1"
             style={{ color: stageConfig.color }}
@@ -354,7 +354,7 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
             {c.email && (
               <a
                 href={`mailto:${c.email}`}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-arc-blue transition-colors"
+                className="flex items-center gap-1 text-xs   transition-colors"
               >
                 <Mail size={12} />
                 <span className="truncate max-w-[120px]">{c.email}</span>
@@ -365,7 +365,7 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
                 href={c.linkedIn.startsWith('http') ? c.linkedIn : `https://${c.linkedIn}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-arc-blue transition-colors"
+                className="flex items-center gap-1 text-xs   transition-colors"
               >
                 <svg
                   width="12"
@@ -384,18 +384,18 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-navy-700 ml-6">
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--border)] ml-6">
           <div className="flex items-center gap-1">
             <button
               onClick={() => openEdit(c)}
-              className="p-1 text-gray-400 hover:text-arc-blue transition-colors rounded"
+              className="p-1   transition-colors rounded"
               title="Edit"
             >
               <Edit3 size={13} />
             </button>
             <button
               onClick={() => deleteCandidate(c.id)}
-              className="p-1 text-gray-400 hover:text-red-400 transition-colors rounded"
+              className="p-1  hover:text-[var(--text-secondary)] transition-colors rounded"
               title="Delete"
             >
               <Trash2 size={13} />
@@ -445,7 +445,7 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="section-title flex items-center gap-2">
-            <UserPlus size={22} style={{ color: '#00CFFF' }} />
+            <UserPlus size={22} style={{ color: 'var(--text-muted)' }} />
             Recruitment Tracker
           </h1>
           <p className="text-gray-500 text-sm mt-0.5">Build your team pipeline</p>
@@ -463,31 +463,31 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
             label: 'Total Candidates',
             value: stats.total,
             icon: <Users size={16} />,
-            color: '#00CFFF',
+            color: 'var(--text-muted)',
           },
           {
             label: 'Active Pipeline',
             value: stats.active,
             icon: <TrendingUp size={16} />,
-            color: '#FFD700',
+            color: 'var(--text-muted)',
           },
           {
             label: 'Joined',
             value: stats.joined,
             icon: <UserPlus size={16} />,
-            color: '#22c55e',
+            color: 'var(--text-secondary)',
           },
           {
             label: 'Conversion Rate',
             value: `${stats.conversionRate}%`,
             icon: <ArrowRight size={16} />,
-            color: '#8b5cf6',
+            color: 'var(--text-muted)',
           },
         ].map((s) => (
           <div key={s.label} className="caesar-card p-4 rounded-xl">
             <div className="flex items-center gap-2 mb-1" style={{ color: s.color }}>
               {s.icon}
-              <span className="text-xs text-gray-400">{s.label}</span>
+              <span className="text-xs ">{s.label}</span>
             </div>
             <p className="text-2xl font-bold text-white">{s.value}</p>
           </div>
@@ -503,8 +503,8 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
               onClick={() => setFilterOrg(filterOrg === org ? 'all' : org)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
                 filterOrg === org
-                  ? 'bg-gold/20 text-gold border-gold/40'
-                  : 'text-gray-400 border-navy-600 hover:text-white'
+                  ? 'bg-[var(--bg-elevated)]  border-[var(--border)]'
+                  : ' border-[var(--border)] '
               }`}
             >
               {org} ({count})
@@ -571,14 +571,14 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
       {/* ── Bulk actions ── */}
       {selectedIds.size > 0 && (
         <div
-          className="flex items-center gap-3 p-3 rounded-xl border border-arc-blue/30 flex-wrap"
-          style={{ background: 'rgba(0,207,255,0.05)' }}
+          className="flex items-center gap-3 p-3 rounded-xl border border-[var(--border)] flex-wrap"
+          style={{ background: 'var(--bg-elevated)' }}
         >
-          <span className="text-arc-blue text-sm font-medium">
+          <span className=" text-sm font-medium">
             {selectedIds.size} selected
           </span>
           <div className="flex items-center gap-2">
-            <span className="text-gray-400 text-sm">Move to:</span>
+            <span className=" text-sm">Move to:</span>
             <select
               value={bulkStatus}
               onChange={(e) => setBulkStatus(e.target.value as CandidateStatus)}
@@ -607,10 +607,10 @@ export function RecruitmentTracker({ candidates, setCandidates }: Props) {
       <div className="flex items-center justify-between">
         <button
           onClick={toggleSelectAll}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-sm   transition-colors"
         >
           {selectedIds.size === filteredCandidates.length && filteredCandidates.length > 0 ? (
-            <CheckSquare size={15} style={{ color: '#00CFFF' }} />
+            <CheckSquare size={15} style={{ color: 'var(--text-muted)' }} />
           ) : (
             <Square size={15} />
           )}

@@ -26,16 +26,16 @@ import { Badge } from '../shared/Badge';
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
 const TAG_COLORS: Record<ContactTag, string> = {
-  Investor: '#FFD700',
-  Professor: '#00CFFF',
-  Resident: '#a78bfa',
-  Partner: '#f97316',
-  Friend: '#22c55e',
-  Recruit: '#ec4899',
-  Mentor: '#14b8a6',
-  Client: '#3b82f6',
-  Colleague: '#8b5cf6',
-  Family: '#ef4444',
+  Investor: 'var(--text-muted)',
+  Professor: 'var(--text-muted)',
+  Resident: 'var(--text-muted)',
+  Partner: 'var(--text-muted)',
+  Friend: 'var(--text-secondary)',
+  Recruit: 'var(--text-muted)',
+  Mentor: 'var(--text-muted)',
+  Client: 'var(--text-muted)',
+  Colleague: 'var(--text-muted)',
+  Family: 'var(--text-secondary)',
   Other: '#6b7280',
 };
 
@@ -136,9 +136,9 @@ function StatsRow({ contacts }: { contacts: Contact[] }) {
     : 0;
 
   const stats = [
-    { label: 'Total Contacts', value: contacts.length, icon: User, color: '#00CFFF' },
-    { label: 'Follow Up Needed', value: followUpCount, icon: Clock, color: '#ef4444' },
-    { label: 'Birthdays This Month', value: birthdaysThisMonth, icon: Calendar, color: '#FFD700' },
+    { label: 'Total Contacts', value: contacts.length, icon: User, color: 'var(--text-muted)' },
+    { label: 'Follow Up Needed', value: followUpCount, icon: Clock, color: 'var(--text-secondary)' },
+    { label: 'Birthdays This Month', value: birthdaysThisMonth, icon: Calendar, color: 'var(--text-muted)' },
     { label: 'Avg Health Score', value: `${avgHealth}`, icon: Heart, color: getHealthColor(avgHealth) },
   ];
 
@@ -199,8 +199,8 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
             onClick={onDetail}
             className="text-left text-base font-bold leading-tight truncate block w-full transition-colors duration-200"
             style={{ color: 'var(--text-primary)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#00CFFF')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
           >
             {contact.name}
           </button>
@@ -240,14 +240,14 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
         </div>
         {contact.followUpNeeded && (
           <div className="flex items-center gap-1">
-            <Calendar size={11} style={{ color: '#ef4444' }} />
-            <span className="text-xs font-medium" style={{ color: '#ef4444' }}>Follow up</span>
+            <Calendar size={11} style={{ color: 'var(--text-secondary)' }} />
+            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Follow up</span>
           </div>
         )}
         {hasBirthdaySoon && (
           <div className="flex items-center gap-1">
-            <Star size={11} style={{ color: '#FFD700' }} />
-            <span className="text-xs font-medium" style={{ color: '#FFD700' }}>Birthday soon</span>
+            <Star size={11} style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Birthday soon</span>
           </div>
         )}
       </div>
@@ -273,7 +273,7 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
         </button>
         <button
           onClick={onDelete}
-          className="text-xs flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg transition-colors hover:text-red-400 hover:bg-red-400/10"
+          className="text-xs flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg transition-colors hover:text-[var(--text-secondary)] "
           style={{ color: 'var(--text-muted)' }}
         >
           <Trash2 size={11} />
@@ -493,7 +493,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
           <div
             onClick={() => setForm((f) => ({ ...f, followUpNeeded: !f.followUpNeeded }))}
             className="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
-            style={{ backgroundColor: form.followUpNeeded ? '#ef4444' : 'var(--bg-elevated)' }}
+            style={{ backgroundColor: form.followUpNeeded ? 'var(--text-muted)' : 'var(--bg-elevated)' }}
           >
             <div
               className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
@@ -576,7 +576,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
             {contact.email && (
               <div className="flex items-center gap-2">
                 <Mail size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                <a href={`mailto:${contact.email}`} className="text-sm text-arc-blue hover:underline">
+                <a href={`mailto:${contact.email}`} className="text-sm  hover:underline">
                   {contact.email}
                 </a>
               </div>
@@ -603,7 +603,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
           <div className="flex flex-col gap-2">
             {contact.birthday && (
               <div className="flex items-center gap-2">
-                <Star size={14} style={{ color: '#FFD700' }} className="flex-shrink-0" />
+                <Star size={14} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                   Birthday: {formatDate(contact.birthday)}
                 </span>
@@ -611,7 +611,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
             )}
             {contact.anniversary && (
               <div className="flex items-center gap-2">
-                <Heart size={14} style={{ color: '#ec4899' }} className="flex-shrink-0" />
+                <Heart size={14} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                   Anniversary: {formatDate(contact.anniversary)}
                 </span>
@@ -621,7 +621,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
               <div className="flex items-center gap-2">
                 <Calendar
                   size={14}
-                  style={{ color: contact.followUpNeeded ? '#ef4444' : 'var(--text-muted)' }}
+                  style={{ color: contact.followUpNeeded ? 'var(--text-secondary)' : 'var(--text-muted)' }}
                   className="flex-shrink-0"
                 />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -691,7 +691,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
               className="text-sm font-semibold flex items-center gap-2"
               style={{ color: 'var(--text-primary)' }}
             >
-              <MessageSquare size={14} style={{ color: '#00CFFF' }} />
+              <MessageSquare size={14} style={{ color: 'var(--text-muted)' }} />
               Interaction History
             </h3>
             <button
@@ -705,7 +705,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
 
           {/* Add Interaction Form */}
           {showAddInteraction && (
-            <div className="rounded-xl p-3 mb-3 border border-arc-blue/30" style={{ backgroundColor: 'rgba(0,207,255,0.06)' }}>
+            <div className="rounded-xl p-3 mb-3 border border-[var(--border)]" style={{ backgroundColor: 'var(--bg-elevated)' }}>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <div>
                   <label className="caesar-label text-xs">Date</label>
@@ -761,12 +761,12 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
                   style={{ backgroundColor: 'var(--bg-elevated)' }}
                 >
                   <div className="flex flex-col items-center">
-                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: '#00CFFF' }} />
-                    <div className="w-px flex-1 mt-1" style={{ backgroundColor: 'rgba(0,207,255,0.2)' }} />
+                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: 'var(--text-muted)' }} />
+                    <div className="w-px flex-1 mt-1" style={{ backgroundColor: 'var(--bg-elevated)' }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-semibold" style={{ color: '#00CFFF' }}>{interaction.type}</span>
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>{interaction.type}</span>
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         {formatDate(interaction.date)}
                       </span>
@@ -1041,7 +1041,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
           onClick={() => setFilterFollowUp((v) => !v)}
           className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
             filterFollowUp
-              ? 'text-red-400 border border-red-400/40 bg-red-400/10'
+              ? 'text-[var(--text-secondary)] border border-red-400/40 bg-red-400/10'
               : 'caesar-btn-ghost'
           }`}
         >

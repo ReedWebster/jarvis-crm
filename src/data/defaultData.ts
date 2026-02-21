@@ -98,15 +98,15 @@ export const DEFAULT_STATE: AppState = {
   ],
 
   timeCategories: [
-    { id: 'cat_1', name: 'Deep Work — Ventures', color: '#FFD700' },
-    { id: 'cat_2', name: 'Classes & Academics', color: '#00CFFF' },
-    { id: 'cat_3', name: 'Property Management', color: '#C0392B' },
-    { id: 'cat_4', name: 'AI in Business Society', color: '#8E44AD' },
-    { id: 'cat_5', name: 'Vanta Marketing Co.', color: '#27AE60' },
-    { id: 'cat_6', name: 'Rock Canyon AI', color: '#E67E22' },
-    { id: 'cat_7', name: 'Personal & Faith', color: '#2980B9' },
-    { id: 'cat_8', name: 'Fitness & Health', color: '#1ABC9C' },
-    { id: 'cat_9', name: 'Admin & Misc', color: '#7F8C8D' },
+    { id: 'cat_1', name: 'Deep Work — Ventures', color: '#111111' },
+    { id: 'cat_2', name: 'Classes & Academics', color: '#333333' },
+    { id: 'cat_3', name: 'Property Management', color: '#444444' },
+    { id: 'cat_4', name: 'AI in Business Society', color: '#555555' },
+    { id: 'cat_5', name: 'Vanta Marketing Co.', color: '#666666' },
+    { id: 'cat_6', name: 'Rock Canyon AI', color: '#777777' },
+    { id: 'cat_7', name: 'Personal & Faith', color: '#888888' },
+    { id: 'cat_8', name: 'Fitness & Health', color: '#999999' },
+    { id: 'cat_9', name: 'Admin & Misc', color: '#aaaaaa' },
   ],
 
   timeBlocks: [],
@@ -136,7 +136,7 @@ export const DEFAULT_STATE: AppState = {
       credits: 3,
       currentGrade: 95,
       targetGrade: 97,
-      color: '#FFD700',
+      color: 'var(--text-muted)',
       assignments: [
         {
           id: 'asgn_1_1',
@@ -158,7 +158,7 @@ export const DEFAULT_STATE: AppState = {
       credits: 3,
       currentGrade: 92,
       targetGrade: 95,
-      color: '#00CFFF',
+      color: 'var(--text-muted)',
       assignments: [
         {
           id: 'asgn_2_1',
@@ -180,7 +180,7 @@ export const DEFAULT_STATE: AppState = {
       credits: 2,
       currentGrade: 95,
       targetGrade: 97,
-      color: '#C0392B',
+      color: 'var(--text-secondary)',
       assignments: [
         {
           id: 'asgn_3_1',
@@ -206,7 +206,7 @@ export const DEFAULT_STATE: AppState = {
       target: 5000,
       current: 0,
       deadline: '2026-12-31',
-      color: '#22c55e',
+      color: 'var(--text-secondary)',
     },
     {
       id: 'sg_2',
@@ -214,7 +214,7 @@ export const DEFAULT_STATE: AppState = {
       target: 2000,
       current: 0,
       deadline: '2026-12-31',
-      color: '#00CFFF',
+      color: 'var(--text-muted)',
     },
     {
       id: 'sg_3',
@@ -222,7 +222,7 @@ export const DEFAULT_STATE: AppState = {
       target: 3000,
       current: 0,
       deadline: '2026-12-31',
-      color: '#FFD700',
+      color: 'var(--text-muted)',
     },
   ],
 

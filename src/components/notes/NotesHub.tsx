@@ -41,14 +41,14 @@ function emptyNote(): Omit<Note, 'id' | 'createdAt' | 'updatedAt'> {
 }
 
 const TAG_COLORS = [
-  '#00CFFF',
-  '#FFD700',
-  '#8b5cf6',
-  '#22c55e',
-  '#f59e0b',
-  '#ef4444',
-  '#ec4899',
-  '#14b8a6',
+  'var(--text-muted)',
+  'var(--text-muted)',
+  'var(--text-muted)',
+  'var(--text-secondary)',
+  'var(--text-muted)',
+  'var(--text-secondary)',
+  'var(--text-muted)',
+  'var(--text-muted)',
 ];
 
 function tagColor(tag: string): string {
@@ -111,7 +111,7 @@ function TagInput({
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-navy-600 bg-navy-900 min-h-[40px] items-center">
+    <div className="flex flex-wrap gap-1.5 p-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] min-h-[40px] items-center">
       {tags.map((tag) => (
         <span
           key={tag}
@@ -302,42 +302,42 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
     return (
       <div
         key={note.id}
-        className="caesar-card p-4 rounded-xl border border-navy-600 hover:border-navy-500 transition-all duration-200 flex flex-col"
-        style={{ background: 'rgba(13,20,40,0.9)', breakInside: 'avoid' }}
+        className="caesar-card p-4 rounded-xl border border-[var(--border)] hover:border-[var(--border)] transition-all duration-200 flex flex-col"
+        style={{ background: 'var(--bg-elevated)', breakInside: 'avoid' }}
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               {note.pinned && (
-                <Star size={12} fill="#FFD700" stroke="#FFD700" className="shrink-0" />
+                <Star size={12} fill="var(--text-secondary)" stroke="var(--text-secondary)" className="shrink-0" />
               )}
               {note.isMeetingNote && (
-                <Badge label="Meeting" color="#8b5cf6" size="xs" />
+                <Badge label="Meeting" size="xs" />
               )}
               <h3 className="text-white font-semibold text-sm leading-tight">
-                {note.title || <span className="text-gray-500 italic">Untitled</span>}
+                {note.title || <span className=" italic">Untitled</span>}
               </h3>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => openEdit(note)}
-              className="p-1 text-gray-500 hover:text-arc-blue transition-colors rounded"
+              className="p-1   transition-colors rounded"
               title="Edit"
             >
               <Edit3 size={12} />
             </button>
             <button
               onClick={() => togglePin(note.id)}
-              className="p-1 text-gray-500 hover:text-gold transition-colors rounded"
+              className="p-1  hover: transition-colors rounded"
               title={note.pinned ? 'Unpin' : 'Pin'}
             >
               {note.pinned ? <PinOff size={12} /> : <Pin size={12} />}
             </button>
             <button
               onClick={() => deleteNote(note.id)}
-              className="p-1 text-gray-500 hover:text-red-400 transition-colors rounded"
+              className="p-1  hover:text-[var(--text-secondary)] transition-colors rounded"
               title="Delete"
             >
               <Trash2 size={12} />
@@ -347,7 +347,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
 
         {/* Content preview */}
         <p
-          className={`text-gray-400 text-xs leading-relaxed mb-2 ${
+          className={` text-xs leading-relaxed mb-2 ${
             compact ? 'line-clamp-2' : 'line-clamp-4'
           }`}
         >
@@ -393,7 +393,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between mt-auto pt-2 border-t border-navy-700/50">
+        <div className="flex items-center justify-between mt-auto pt-2 border-t border-[var(--border)]/50">
           <span className="text-gray-600 text-xs">
             {formatRelative(note.updatedAt)}
           </span>
@@ -419,10 +419,10 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="section-title flex items-center gap-2">
-            <FileText size={22} style={{ color: '#FFD700' }} />
+            <FileText size={22} style={{ color: 'var(--text-muted)' }} />
             Notes & Intelligence
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className=" text-sm mt-0.5">
             {notes.length} note{notes.length !== 1 ? 's' : ''} · {pinnedNotes.length} pinned
           </p>
         </div>
@@ -436,12 +436,12 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       <div className="caesar-card p-5 rounded-2xl">
         <div className="flex items-center justify-between mb-3">
           <label className="flex items-center gap-2 text-sm font-semibold text-white">
-            <BookOpen size={16} style={{ color: '#00CFFF' }} />
+            <BookOpen size={16} style={{ color: 'var(--text-muted)' }} />
             Quick Capture
           </label>
           <span
             className={`flex items-center gap-1 text-xs transition-all duration-300 ${
-              scratchpadSaved ? 'text-green-400 opacity-100' : 'opacity-0'
+              scratchpadSaved ? 'text-[var(--text-secondary)] opacity-100' : 'opacity-0'
             }`}
           >
             <Check size={11} />
@@ -461,7 +461,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       <div className="relative">
         <Search
           size={15}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+          className="absolute left-3 top-1/2 -translate-y-1/2 "
         />
         <input
           type="text"
@@ -473,7 +473,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2  hover:text-white transition-colors"
           >
             <X size={14} />
           </button>
@@ -484,14 +484,14 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       {allTags.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <Tag size={13} className="text-gray-500" />
-            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+            <Tag size={13} className="" />
+            <span className="text-xs  font-medium uppercase tracking-wide">
               Tags
             </span>
             {activeTagFilter && (
               <button
                 onClick={() => setActiveTagFilter(null)}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors ml-2"
+                className="flex items-center gap-1 text-xs  hover:text-white transition-colors ml-2"
               >
                 <X size={10} />
                 Clear filter
@@ -532,7 +532,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       {pinnedNotes.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Star size={14} fill="#FFD700" stroke="#FFD700" />
+            <Star size={14} fill="var(--text-secondary)" stroke="var(--text-secondary)" />
             <h2 className="text-sm font-semibold text-white">
               Pinned ({pinnedNotes.length})
             </h2>
@@ -551,7 +551,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
       {archivedNotes.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <FileText size={14} className="text-gray-500" />
+            <FileText size={14} className="" />
             <h2 className="text-sm font-semibold text-white">
               All Notes ({archivedNotes.length})
             </h2>
@@ -634,7 +634,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, pinned: !f.pinned }))}
                 className={`w-10 h-5 rounded-full transition-all relative ${
-                  form.pinned ? 'bg-gold/60' : 'bg-navy-600'
+                  form.pinned ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-elevated)]'
                 }`}
               >
                 <span
@@ -656,7 +656,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
                   setForm((f) => ({ ...f, isMeetingNote: !f.isMeetingNote }))
                 }
                 className={`w-10 h-5 rounded-full transition-all relative ${
-                  form.isMeetingNote ? 'bg-arc-blue/60' : 'bg-navy-600'
+                  form.isMeetingNote ? 'bg-[var(--bg-elevated)]' : 'bg-[var(--bg-elevated)]'
                 }`}
               >
                 <span
@@ -674,8 +674,8 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
 
           {/* Meeting fields */}
           {form.isMeetingNote && (
-            <div className="space-y-3 p-4 rounded-xl border border-navy-600" style={{ background: 'rgba(8,13,26,0.6)' }}>
-              <p className="text-xs text-arc-blue font-medium uppercase tracking-wide">
+            <div className="space-y-3 p-4 rounded-xl border border-[var(--border)]" style={{ background: 'var(--bg-elevated)' }}>
+              <p className="text-xs  font-medium uppercase tracking-wide">
                 Meeting Details
               </p>
               <div>
@@ -718,8 +718,8 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
           )}
 
           {/* Links */}
-          <div className="space-y-3 p-4 rounded-xl border border-navy-600" style={{ background: 'rgba(8,13,26,0.4)' }}>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide flex items-center gap-1.5">
+          <div className="space-y-3 p-4 rounded-xl border border-[var(--border)]" style={{ background: 'var(--bg-elevated)' }}>
+            <p className="text-xs  font-medium uppercase tracking-wide flex items-center gap-1.5">
               <Link size={11} />
               Linked To (optional)
             </p>

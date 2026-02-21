@@ -117,9 +117,9 @@ interface CommandCard {
 const STATUS_COLORS: Record<NonNullable<CardStatus>, string> = {
   listening: '#737373',
   processing: '#737373',
-  success: '#4f8f54',
-  'low-confidence': '#8a7a50',
-  error: '#c0392b',
+  success: 'var(--text-secondary)',
+  'low-confidence': '#888888',
+  error: 'var(--text-secondary)',
 };
 
 // ─── Life area mapper (spoken → GoalArea) ────────────────────────────────────
@@ -1071,7 +1071,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                         <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                           "{entry.transcript}"
                         </p>
-                        <p className="text-xs font-mono mt-0.5" style={{ color: entry.success ? '#22c55e' : '#ef4444' }}>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: entry.success ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
                           {entry.intent}
                         </p>
                         {entry.response && (
@@ -1106,7 +1106,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-[95] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(5,8,15,0.75)', backdropFilter: 'blur(4px)' }}
+          style={{ backgroundColor: 'var(--bg-elevated)', backdropFilter: 'blur(4px)' }}
           onClick={e => e.target === e.currentTarget && setSettingsOpen(false)}
         >
           <div
@@ -1166,7 +1166,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                   type="range" min="0.5" max="1.5" step="0.05"
                   value={voiceSettings.speechRate}
                   onChange={e => setVoiceSettings(prev => ({ ...prev, speechRate: parseFloat(e.target.value) }))}
-                  className="w-full accent-arc-blue"
+                  className="w-full accent-[var(--text-muted)]"
                 />
               </div>
 
@@ -1182,7 +1182,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                   type="range" min="0.5" max="1.5" step="0.05"
                   value={voiceSettings.speechPitch}
                   onChange={e => setVoiceSettings(prev => ({ ...prev, speechPitch: parseFloat(e.target.value) }))}
-                  className="w-full accent-arc-blue"
+                  className="w-full accent-[var(--text-muted)]"
                 />
               </div>
 
@@ -1212,7 +1212,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
                   color: 'var(--text-secondary)',
                   border: '1px solid var(--border)',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = '#00CFFF')}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-strong)')}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
               >
                 Test Voice
@@ -1231,7 +1231,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
       {permissionOpen && (
         <div
           className="fixed inset-0 z-[95] flex items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(5,8,15,0.75)', backdropFilter: 'blur(4px)' }}
+          style={{ backgroundColor: 'var(--bg-elevated)', backdropFilter: 'blur(4px)' }}
         >
           <div
             className="w-full max-w-sm rounded-2xl shadow-2xl animate-fade-in p-6 text-center"

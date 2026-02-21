@@ -78,10 +78,7 @@ const ENERGY_LABELS: Record<number, string> = {
   5: 'Peak',
 };
 
-const DEFAULT_COLORS = [
-  '#00CFFF', '#FFD700', '#22c55e', '#ef4444',
-  '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6',
-];
+const DEFAULT_COLORS = ['#111111','#222222','#333333','#444444','#555555','#666666','#777777','#888888'];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -172,7 +169,7 @@ function EnergyPicker({
           onClick={() => onChange(n)}
           className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg border transition-all text-xs ${
             value === n
-              ? 'border-arc-blue bg-arc-blue/20 text-white'
+              ? 'border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
               : 'text-gray-500 hover:border-gray-500'
           }`}
           style={value !== n ? { borderColor: 'var(--border)' } : undefined}
@@ -224,9 +221,9 @@ function DayColumn({ day, blocks, categories, isSelected, isToday, onClick }: Da
       onClick={onClick}
       className={`flex flex-col items-center gap-1.5 flex-1 rounded-xl p-2 transition-all border ${
         isSelected
-          ? 'border-arc-blue/50 bg-arc-blue/10'
+          ? 'border-[var(--border)] bg-[var(--bg-elevated)]'
           : isToday
-          ? 'border-gold/30 bg-gold/5'
+          ? 'border-[var(--border)] bg-[var(--bg-elevated)]'
           : 'border-transparent'
       }`}
       style={!isSelected && !isToday ? { borderColor: 'transparent' } : undefined}
@@ -243,14 +240,14 @@ function DayColumn({ day, blocks, categories, isSelected, isToday, onClick }: Da
     >
       <span
         className="text-xs font-medium"
-        style={{ color: isToday ? '#FFD700' : 'var(--text-muted)' }}
+        style={{ color: isToday ? 'var(--text-secondary)' : 'var(--text-muted)' }}
       >
         {dayLabel}
       </span>
       <span
         className="text-sm font-bold"
         style={{
-          color: isSelected ? '#00CFFF' : isToday ? '#FFD700' : 'var(--text-secondary)',
+          color: isSelected ? 'var(--text-primary)' : isToday ? 'var(--text-secondary)' : 'var(--text-secondary)',
         }}
       >
         {dateLabel}
@@ -305,7 +302,7 @@ function BlockCard({ block, categories, onDelete }: BlockCardProps) {
       {/* Color dot */}
       <div
         className="w-2.5 h-2.5 rounded-full shrink-0"
-        style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}80` }}
+        style={{ backgroundColor: color }}
       />
 
       {/* Info */}
@@ -336,7 +333,7 @@ function BlockCard({ block, categories, onDelete }: BlockCardProps) {
       {/* Delete */}
       <button
         onClick={() => onDelete(block.id)}
-        className="hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1"
+        className="hover:text-[var(--text-secondary)] transition-colors opacity-0 group-hover:opacity-100 p-1"
         style={{ color: 'var(--text-muted)' }}
       >
         <Trash2 size={13} />
@@ -358,7 +355,7 @@ function MoodTooltip({ active, payload, label }: any) {
       }}
     >
       <p style={{ color: 'var(--text-secondary)' }}>{label}</p>
-      <p className="text-arc-blue font-semibold">
+      <p className=" font-semibold">
         {ENERGY_EMOJIS[Math.round(val)]} {val.toFixed(1)}
       </p>
     </div>
@@ -389,7 +386,7 @@ export function TimeTracker({
     notes: '',
     energy: 3,
   });
-  const [catForm, setCatForm] = useState<CategoryFormState>({ name: '', color: '#00CFFF' });
+  const [catForm, setCatForm] = useState<CategoryFormState>({ name: '', color: '#555555' });
 
   // ── Week Days ──
   const weekDays = useMemo(() => {
@@ -508,7 +505,7 @@ export function TimeTracker({
       {/* ── Header Row ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Clock size={20} className="text-arc-blue" />
+          <Clock size={20} className="" />
           <div>
             <h1 className="section-title">Time Tracker</h1>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -521,7 +518,7 @@ export function TimeTracker({
           {/* Focus Score */}
           <div className="caesar-card px-4 py-2 flex flex-col items-center min-w-[90px]">
             <div className="flex items-center gap-1">
-              <Zap size={13} className="text-gold" />
+              <Zap size={13} className="" />
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus Score</span>
             </div>
             <span
@@ -529,10 +526,10 @@ export function TimeTracker({
               style={{
                 color:
                   focusScore >= 60
-                    ? '#22c55e'
+                    ? 'var(--text-secondary)'
                     : focusScore >= 30
-                    ? '#eab308'
-                    : '#ef4444',
+                    ? 'var(--text-muted)'
+                    : 'var(--text-secondary)',
               }}
             >
               {focusScore}%
@@ -542,7 +539,7 @@ export function TimeTracker({
           {/* Total Hours */}
           <div className="caesar-card px-4 py-2 flex flex-col items-center min-w-[80px]">
             <div className="flex items-center gap-1">
-              <Clock size={13} className="text-arc-blue" />
+              <Clock size={13} className="" />
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Today</span>
             </div>
             <span className="text-xl font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>
@@ -579,8 +576,8 @@ export function TimeTracker({
               style={{ color: 'var(--text-primary)' }}
             >
               <span
-                className="w-2 h-2 rounded-full bg-arc-blue"
-                style={{ boxShadow: '0 0 6px #00CFFF' }}
+                className="w-2 h-2 rounded-full bg-[var(--text-muted)]"
+                style={{}}
               />
               Today's Breakdown
             </h2>
@@ -664,7 +661,7 @@ export function TimeTracker({
               className="text-sm font-semibold mb-3 flex items-center gap-2"
               style={{ color: 'var(--text-primary)' }}
             >
-              <TrendingUp size={14} className="text-arc-blue" />
+              <TrendingUp size={14} className="" />
               7-Day Energy Trend
             </h2>
             <ResponsiveContainer width="100%" height={100}>
@@ -686,9 +683,9 @@ export function TimeTracker({
                 <Line
                   type="monotone"
                   dataKey="avg"
-                  stroke="#00CFFF"
+                  stroke="var(--text-muted)"
                   strokeWidth={2}
-                  dot={{ fill: '#00CFFF', r: 3, strokeWidth: 0 }}
+                  dot={{ fill: 'var(--text-muted)', r: 3, strokeWidth: 0 }}
                   connectNulls={false}
                   isAnimationActive
                 />
@@ -708,7 +705,7 @@ export function TimeTracker({
               >
                 <span
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: '#FFD700', boxShadow: '0 0 6px #FFD700' }}
+                  style={{ backgroundColor: 'var(--text-muted)', boxShadow: '0 0 6px var(--text-muted)' }}
                 />
                 Week of {format(weekDays[0], 'MMM d')}
               </h2>
@@ -835,17 +832,17 @@ export function TimeTracker({
                 className="text-sm font-semibold flex items-center gap-2"
                 style={{ color: 'var(--text-primary)' }}
               >
-                <Clock size={14} className="text-arc-blue" />
+                <Clock size={14} className="" />
                 {selectedDayLabel}
                 {selectedBlocks.length > 0 && (
-                  <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-arc-blue/20 text-arc-blue border border-arc-blue/30">
+                  <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-[var(--text-muted)]/20  border border-[var(--border)]">
                     {roundHours(Math.round(getTotalHours(selectedBlocks) * 10) / 10)}
                   </span>
                 )}
               </h2>
               <button
                 onClick={openLogModal}
-                className="flex items-center gap-1.5 text-xs text-arc-blue hover:text-white transition-colors"
+                className="flex items-center gap-1.5 text-xs  hover:text-white transition-colors"
               >
                 <Plus size={13} />
                 Add block
@@ -861,7 +858,7 @@ export function TimeTracker({
                 <p className="text-xs">No blocks for {selectedDayLabel.toLowerCase()}.</p>
                 <button
                   onClick={openLogModal}
-                  className="mt-1 text-xs text-arc-blue hover:text-white transition-colors"
+                  className="mt-1 text-xs  hover:text-white transition-colors"
                 >
                   + Log a time block
                 </button>
@@ -908,7 +905,7 @@ export function TimeTracker({
           <div>
             <label className="caesar-label">Category</label>
             {timeCategories.length === 0 ? (
-              <p className="text-xs text-red-400 mt-1">
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
                 No categories yet. Add one in Settings first.
               </p>
             ) : (
@@ -958,9 +955,9 @@ export function TimeTracker({
               {(() => {
                 const d = calcDurationHours(logForm.startTime, logForm.endTime);
                 return d > 0 ? (
-                  <span className="text-arc-blue">{roundHours(d)} duration</span>
+                  <span className="">{roundHours(d)} duration</span>
                 ) : (
-                  <span className="text-red-400">End time must be after start time</span>
+                  <span className="text-[var(--text-secondary)]">End time must be after start time</span>
                 );
               })()}
             </div>
@@ -1049,7 +1046,7 @@ export function TimeTracker({
                     </span>
                     <button
                       onClick={() => handleDeleteCategory(cat.id)}
-                      className="hover:text-red-400 transition-colors p-1"
+                      className="hover:text-[var(--text-secondary)] transition-colors p-1"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       <Trash2 size={13} />

@@ -10,42 +10,42 @@
 
 /* ─── CSS Variables — Light (default) ──────────────────────────────────────── */
 :root {
-  --bg:               #f7f7f7;
-  --bg-card:          #ffffff;
-  --bg-sidebar:       #f2f2f2;
-  --bg-elevated:      #ebebeb;
+  --bg:               #ffffff;
+  --bg-card:          #f9f9f9;
+  --bg-sidebar:       #f4f4f4;
+  --bg-elevated:      #eeeeee;
   --bg-input:         #ffffff;
   --bg-hover:         #e8e8e8;
-  --border:           #e2e2e2;
-  --border-strong:    #cccccc;
-  --text-primary:     #111111;
-  --text-secondary:   #555555;
-  --text-muted:       #8a8a8a;
+  --border:           #d8d8d8;
+  --border-strong:    #999999;
+  --text-primary:     #000000;
+  --text-secondary:   #333333;
+  --text-muted:       #777777;
   --text-placeholder: #aaaaaa;
-  --shadow-card:      0 1px 6px rgba(0,0,0,0.07);
-  --sb-track:         #ebebeb;
+  --shadow-card:      0 1px 4px rgba(0,0,0,0.08);
+  --sb-track:         #eeeeee;
   --sb-thumb:         #cccccc;
-  --sb-thumb-hover:   #aaaaaa;
+  --sb-thumb-hover:   #999999;
 }
 
 /* ─── CSS Variables — Dark ──────────────────────────────────────────────────── */
 .dark {
-  --bg:               #0c0c0c;
-  --bg-card:          #161616;
-  --bg-sidebar:       #111111;
-  --bg-elevated:      #1e1e1e;
-  --bg-input:         #1e1e1e;
-  --bg-hover:         #262626;
-  --border:           #2c2c2c;
-  --border-strong:    #3a3a3a;
-  --text-primary:     #ededed;
-  --text-secondary:   #a3a3a3;
-  --text-muted:       #525252;
-  --text-placeholder: #525252;
-  --shadow-card:      0 2px 12px rgba(0,0,0,0.5);
-  --sb-track:         #111111;
-  --sb-thumb:         #2c2c2c;
-  --sb-thumb-hover:   #3a3a3a;
+  --bg:               #080808;
+  --bg-card:          #111111;
+  --bg-sidebar:       #0c0c0c;
+  --bg-elevated:      #1a1a1a;
+  --bg-input:         #1a1a1a;
+  --bg-hover:         #222222;
+  --border:           #2a2a2a;
+  --border-strong:    #444444;
+  --text-primary:     #f0f0f0;
+  --text-secondary:   #aaaaaa;
+  --text-muted:       #555555;
+  --text-placeholder: #444444;
+  --shadow-card:      0 2px 12px rgba(0,0,0,0.6);
+  --sb-track:         #0c0c0c;
+  --sb-thumb:         #2a2a2a;
+  --sb-thumb-hover:   #444444;
 }
 
 /* ─── Base ──────────────────────────────────────────────────────────────────── */
@@ -58,7 +58,7 @@
   body {
     background-color: var(--bg);
     color: var(--text-primary);
-    font-family: 'Inter', sans-serif;
+    font-family: 'Times New Roman', Times, Georgia, serif;
     -webkit-font-smoothing: antialiased;
   }
 }
@@ -85,18 +85,20 @@
     background-color: var(--bg-input);
     border: 1px solid var(--border);
     color: var(--text-primary);
+    font-family: 'Times New Roman', Times, Georgia, serif;
     @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200
-      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+      focus:outline-none focus:border-[var(--border-strong)] focus:ring-1 focus:ring-[var(--border-strong)];
   }
   .caesar-input::placeholder { color: var(--text-placeholder); }
 
-  /* Textareas (same as input) */
+  /* Textareas */
   .caesar-textarea {
     background-color: var(--bg-input);
     border: 1px solid var(--border);
     color: var(--text-primary);
+    font-family: 'Times New Roman', Times, Georgia, serif;
     @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200 resize-none
-      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+      focus:outline-none focus:border-[var(--border-strong)] focus:ring-1 focus:ring-[var(--border-strong)];
   }
   .caesar-textarea::placeholder { color: var(--text-placeholder); }
 
@@ -105,8 +107,9 @@
     background-color: var(--bg-input);
     border: 1px solid var(--border);
     color: var(--text-primary);
+    font-family: 'Times New Roman', Times, Georgia, serif;
     @apply rounded-lg px-3 py-2 text-sm w-full transition-colors duration-200
-      focus:outline-none focus:border-arc-blue focus:ring-1 focus:ring-arc-blue;
+      focus:outline-none focus:border-[var(--border-strong)] focus:ring-1 focus:ring-[var(--border-strong)];
   }
 
   /* Labels */
@@ -136,14 +139,16 @@
     @apply caesar-btn bg-transparent hover:border-[var(--border-strong)] hover:text-[var(--text-primary)];
   }
   .caesar-btn-danger {
-    @apply caesar-btn bg-red-600 text-white hover:bg-red-700;
+    background-color: var(--text-primary);
+    color: var(--bg);
+    @apply caesar-btn hover:opacity-70;
   }
 
   /* Section typography */
-  .section-title   { color: var(--text-primary); @apply text-lg font-semibold tracking-tight; }
-  .section-subtitle { color: var(--text-muted);  @apply text-xs uppercase tracking-wider; }
-  .metric-value    { color: var(--text-primary); @apply text-2xl font-bold; }
-  .metric-label    { color: var(--text-muted);   @apply text-xs; }
+  .section-title    { color: var(--text-primary); @apply text-lg font-semibold tracking-tight; }
+  .section-subtitle { color: var(--text-muted);   @apply text-xs uppercase tracking-wider; }
+  .metric-value     { color: var(--text-primary); @apply text-2xl font-bold; }
+  .metric-label     { color: var(--text-muted);   @apply text-xs; }
 
   /* Kanban */
   .kanban-col {
@@ -154,10 +159,10 @@
   /* Tag / badge shell */
   .tag { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium; }
 
-  /* Subtle ring for accessibility focus indication */
-  .glow-gold { box-shadow: 0 0 0 2px rgba(163,163,163,0.3); }
-  .glow-blue { box-shadow: 0 0 0 2px rgba(115,115,115,0.3); }
-  .glow-red  { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3); }
+  /* Focus rings */
+  .glow-gold { box-shadow: 0 0 0 2px var(--border-strong); }
+  .glow-blue { box-shadow: 0 0 0 2px var(--border-strong); }
+  .glow-red  { box-shadow: 0 0 0 2px var(--border-strong); }
 
   /* Animations */
   .animate-fade-in  { animation: fadeIn 0.3s ease-in-out; }

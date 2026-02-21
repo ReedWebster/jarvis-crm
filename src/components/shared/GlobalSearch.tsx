@@ -22,10 +22,10 @@ interface GlobalSearchProps {
 }
 
 const TYPE_CONFIG = {
-  contact: { icon: <Users size={14} />, color: '#22c55e', label: 'Contact' },
-  project: { icon: <Briefcase size={14} />, color: '#00CFFF', label: 'Project' },
-  goal: { icon: <Target size={14} />, color: '#FFD700', label: 'Goal' },
-  note: { icon: <FileText size={14} />, color: '#8b5cf6', label: 'Note' },
+  contact: { icon: <Users size={14} />, color: 'var(--text-secondary)', label: 'Contact' },
+  project: { icon: <Briefcase size={14} />, color: 'var(--text-muted)', label: 'Project' },
+  goal: { icon: <Target size={14} />, color: 'var(--text-muted)', label: 'Goal' },
+  note: { icon: <FileText size={14} />, color: 'var(--text-muted)', label: 'Note' },
 };
 
 export function GlobalSearch({ isOpen, onClose, onNavigate, contacts, projects, goals, notes }: GlobalSearchProps) {
@@ -108,7 +108,7 @@ export function GlobalSearch({ isOpen, onClose, onNavigate, contacts, projects, 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4"
-      style={{ backgroundColor: 'rgba(5, 8, 15, 0.75)', backdropFilter: 'blur(6px)' }}
+      style={{ backgroundColor: 'var(--bg-elevated)', backdropFilter: 'blur(6px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

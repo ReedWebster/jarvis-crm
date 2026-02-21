@@ -275,9 +275,9 @@ function BankBadge({ bank }: { bank: BankSource }) {
         fontWeight: 600,
         padding: '2px 6px',
         borderRadius: 4,
-        backgroundColor: isAFCU ? 'rgba(59,130,246,0.15)' : 'rgba(20,184,166,0.15)',
-        color: isAFCU ? '#60a5fa' : '#2dd4bf',
-        border: `1px solid ${isAFCU ? 'rgba(59,130,246,0.3)' : 'rgba(20,184,166,0.3)'}`,
+        backgroundColor: isAFCU ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+        color: isAFCU ? 'var(--text-muted)' : 'var(--text-muted)',
+        border: `1px solid ${isAFCU ? 'var(--bg-elevated)' : 'var(--bg-elevated)'}`,
         whiteSpace: 'nowrap' as const,
       }}
     >
@@ -309,9 +309,9 @@ function StepIndicator({ step }: { step: number }) {
                   justifyContent: 'center',
                   fontSize: 12,
                   fontWeight: 700,
-                  backgroundColor: done ? '#22c55e' : active ? '#00CFFF' : 'var(--bg-elevated)',
+                  backgroundColor: done ? 'var(--text-secondary)' : active ? 'var(--text-muted)' : 'var(--bg-elevated)',
                   color: done || active ? '#05080f' : 'var(--text-muted)',
-                  border: `2px solid ${done ? '#22c55e' : active ? '#00CFFF' : 'var(--border)'}`,
+                  border: `2px solid ${done ? 'var(--text-secondary)' : active ? 'var(--border-strong)' : 'var(--border)'}`,
                   transition: 'all 0.2s',
                 }}
               >
@@ -333,7 +333,7 @@ function StepIndicator({ step }: { step: number }) {
                   flex: 1,
                   height: 2,
                   marginBottom: 16,
-                  backgroundColor: done ? '#22c55e' : 'var(--border)',
+                  backgroundColor: done ? 'var(--text-muted)' : 'var(--border)',
                   maxWidth: 48,
                   borderRadius: 1,
                 }}
@@ -526,8 +526,8 @@ export function CSVImportModal({
 
   // ── Row style helpers ─────────────────────────────────────────────────────
   function rowBg(tx: ParsedTransaction): string {
-    if (tx.isDuplicate) return 'rgba(239,68,68,0.06)';
-    if (tx.category === 'Uncategorized') return 'rgba(234,179,8,0.06)';
+    if (tx.isDuplicate) return 'var(--bg-elevated)';
+    if (tx.category === 'Uncategorized') return 'var(--bg-elevated)';
     return 'transparent';
   }
 
@@ -565,10 +565,10 @@ export function CSVImportModal({
                 style={{
                   padding: '16px',
                   borderRadius: 12,
-                  border: `2px solid ${selectedBank === 'afcu' ? '#3b82f6' : 'var(--border)'}`,
+                  border: `2px solid ${selectedBank === 'afcu' ? 'var(--border-strong)' : 'var(--border)'}`,
                   backgroundColor:
                     selectedBank === 'afcu'
-                      ? 'rgba(59,130,246,0.1)'
+                      ? 'var(--bg-elevated)'
                       : 'var(--bg-elevated)',
                   textAlign: 'left',
                   cursor: 'pointer',
@@ -591,9 +591,9 @@ export function CSVImportModal({
                       fontWeight: 600,
                       padding: '2px 8px',
                       borderRadius: 4,
-                      backgroundColor: 'rgba(59,130,246,0.15)',
-                      color: '#60a5fa',
-                      border: '1px solid rgba(59,130,246,0.3)',
+                      backgroundColor: 'var(--bg-elevated)',
+                      color: 'var(--text-muted)',
+                      border: '1px solid var(--bg-elevated)',
                     }}
                   >
                     AFCU
@@ -610,10 +610,10 @@ export function CSVImportModal({
                 style={{
                   padding: '16px',
                   borderRadius: 12,
-                  border: `2px solid ${selectedBank === 'mercury' ? '#14b8a6' : 'var(--border)'}`,
+                  border: `2px solid ${selectedBank === 'mercury' ? 'var(--border-strong)' : 'var(--border)'}`,
                   backgroundColor:
                     selectedBank === 'mercury'
-                      ? 'rgba(20,184,166,0.1)'
+                      ? 'var(--bg-elevated)'
                       : 'var(--bg-elevated)',
                   textAlign: 'left',
                   cursor: 'pointer',
@@ -636,9 +636,9 @@ export function CSVImportModal({
                       fontWeight: 600,
                       padding: '2px 8px',
                       borderRadius: 4,
-                      backgroundColor: 'rgba(20,184,166,0.15)',
-                      color: '#2dd4bf',
-                      border: '1px solid rgba(20,184,166,0.3)',
+                      backgroundColor: 'var(--bg-elevated)',
+                      color: 'var(--text-muted)',
+                      border: '1px solid var(--bg-elevated)',
                     }}
                   >
                     Mercury
@@ -703,15 +703,15 @@ export function CSVImportModal({
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
               style={{
-                border: `2px dashed ${isDragging ? '#00CFFF' : selectedFile ? '#22c55e' : 'var(--border)'}`,
+                border: `2px dashed ${isDragging ? 'var(--border-strong)' : selectedFile ? 'var(--border-strong)' : 'var(--border)'}`,
                 borderRadius: 12,
                 padding: '32px 16px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 backgroundColor: isDragging
-                  ? 'rgba(0,207,255,0.05)'
+                  ? 'var(--bg-elevated)'
                   : selectedFile
-                  ? 'rgba(34,197,94,0.05)'
+                  ? 'var(--bg-elevated)'
                   : 'var(--bg-elevated)',
                 transition: 'all 0.15s',
               }}
@@ -728,8 +728,8 @@ export function CSVImportModal({
               />
               {selectedFile ? (
                 <div className="flex flex-col items-center gap-2">
-                  <FileText size={28} style={{ color: '#22c55e' }} />
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#22c55e' }}>
+                  <FileText size={28} style={{ color: 'var(--text-secondary)' }} />
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
                     {selectedFile.name}
                   </p>
                   <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -755,9 +755,9 @@ export function CSVImportModal({
               style={{
                 padding: '10px 14px',
                 borderRadius: 8,
-                backgroundColor: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                color: '#f87171',
+                backgroundColor: 'var(--bg-elevated)',
+                border: '1px solid var(--bg-elevated)',
+                color: 'var(--text-secondary)',
                 fontSize: 12,
               }}
             >
@@ -807,9 +807,9 @@ export function CSVImportModal({
                   fontSize: 12,
                   padding: '6px 12px',
                   borderRadius: 8,
-                  border: '1px solid rgba(234,179,8,0.4)',
-                  backgroundColor: 'rgba(234,179,8,0.1)',
-                  color: '#fbbf24',
+                  border: '1px solid var(--bg-elevated)',
+                  backgroundColor: 'var(--bg-elevated)',
+                  color: 'var(--text-muted)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -874,19 +874,19 @@ export function CSVImportModal({
               fontSize: 12,
             }}
           >
-            <span style={{ color: '#22c55e', fontWeight: 600 }}>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
               {stats.income} income
             </span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
-            <span style={{ color: '#ef4444', fontWeight: 600 }}>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
               {stats.expenses} expenses
             </span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
-            <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
               {stats.pending} pending
             </span>
             <span style={{ color: 'var(--text-muted)' }}>·</span>
-            <span style={{ color: '#f87171', fontWeight: 600 }}>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
               {stats.duplicates} duplicates skipped
             </span>
           </div>
@@ -951,7 +951,7 @@ export function CSVImportModal({
                             padding: '4px 8px',
                             textAlign: 'right',
                             fontWeight: 600,
-                            color: tx.type === 'income' ? '#22c55e' : '#ef4444',
+                            color: tx.type === 'income' ? 'var(--text-secondary)' : 'var(--text-secondary)',
                             whiteSpace: 'nowrap',
                           }}
                         >
@@ -1020,7 +1020,7 @@ export function CSVImportModal({
                           type="checkbox"
                           checked={tx.include}
                           onChange={() => toggleInclude(tx.id)}
-                          style={{ cursor: 'pointer', accentColor: '#00CFFF' }}
+                          style={{ cursor: 'pointer', accentColor: 'var(--text-muted)' }}
                         />
                       </td>
 
@@ -1044,7 +1044,7 @@ export function CSVImportModal({
                         {tx.isDuplicate && (
                           <AlertTriangle
                             size={11}
-                            style={{ color: '#ef4444', display: 'inline', marginRight: 4, verticalAlign: 'middle' }}
+                            style={{ color: 'var(--text-secondary)', display: 'inline', marginRight: 4, verticalAlign: 'middle' }}
                           />
                         )}
                         {tx.description}
@@ -1056,7 +1056,7 @@ export function CSVImportModal({
                           padding: '6px',
                           textAlign: 'right',
                           fontWeight: 700,
-                          color: tx.type === 'income' ? '#22c55e' : '#ef4444',
+                          color: tx.type === 'income' ? 'var(--text-secondary)' : 'var(--text-secondary)',
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -1077,11 +1077,11 @@ export function CSVImportModal({
                             fontSize: 11,
                             padding: '3px 6px',
                             borderRadius: 6,
-                            border: `1px solid ${tx.category === 'Uncategorized' ? 'rgba(234,179,8,0.4)' : 'var(--border)'}`,
+                            border: `1px solid ${tx.category === 'Uncategorized' ? 'var(--bg-elevated)' : 'var(--border)'}`,
                             backgroundColor: tx.category === 'Uncategorized'
-                              ? 'rgba(234,179,8,0.08)'
+                              ? 'var(--bg-elevated)'
                               : 'var(--bg-elevated)',
-                            color: tx.category === 'Uncategorized' ? '#fbbf24' : 'var(--text-primary)',
+                            color: tx.category === 'Uncategorized' ? 'var(--text-muted)' : 'var(--text-primary)',
                             cursor: 'pointer',
                             maxWidth: 140,
                           }}
@@ -1125,16 +1125,16 @@ export function CSVImportModal({
                             borderRadius: 4,
                             backgroundColor:
                               tx.status === 'cleared'
-                                ? 'rgba(34,197,94,0.12)'
+                                ? 'var(--bg-elevated)'
                                 : tx.status === 'pending'
                                 ? 'rgba(251,191,36,0.12)'
-                                : 'rgba(239,68,68,0.12)',
+                                : 'var(--bg-elevated)',
                             color:
                               tx.status === 'cleared'
-                                ? '#22c55e'
+                                ? 'var(--text-secondary)'
                                 : tx.status === 'pending'
-                                ? '#fbbf24'
-                                : '#ef4444',
+                                ? 'var(--text-muted)'
+                                : 'var(--text-secondary)',
                           }}
                         >
                           {tx.status}
@@ -1167,7 +1167,7 @@ export function CSVImportModal({
                   backgroundColor: 'rgba(251,191,36,0.06)',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#fbbf24',
+                  color: 'var(--text-muted)',
                   fontSize: 12,
                   fontWeight: 600,
                 }}
@@ -1200,7 +1200,7 @@ export function CSVImportModal({
                               type="checkbox"
                               checked={tx.include}
                               onChange={() => toggleInclude(tx.id)}
-                              style={{ cursor: 'pointer', accentColor: '#fbbf24' }}
+                              style={{ cursor: 'pointer', accentColor: 'var(--text-muted)' }}
                             />
                           </td>
                           <td style={{ padding: '6px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -1214,7 +1214,7 @@ export function CSVImportModal({
                               padding: '6px',
                               textAlign: 'right',
                               fontWeight: 700,
-                              color: tx.type === 'income' ? '#22c55e' : '#ef4444',
+                              color: tx.type === 'income' ? 'var(--text-secondary)' : 'var(--text-secondary)',
                             }}
                           >
                             {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
@@ -1258,14 +1258,14 @@ export function CSVImportModal({
               width: 64,
               height: 64,
               borderRadius: '50%',
-              backgroundColor: 'rgba(34,197,94,0.15)',
-              border: '2px solid #22c55e',
+              backgroundColor: 'var(--bg-elevated)',
+              border: '2px solid var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Check size={28} style={{ color: '#22c55e' }} />
+            <Check size={28} style={{ color: 'var(--text-secondary)' }} />
           </div>
 
           <div>
@@ -1297,7 +1297,7 @@ export function CSVImportModal({
             }}
           >
             <div className="text-center">
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>
+              <p style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-secondary)' }}>
                 {importResult.imported}
               </p>
               <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Imported</p>
@@ -1306,7 +1306,7 @@ export function CSVImportModal({
               <>
                 <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
                 <div className="text-center">
-                  <p style={{ fontSize: 24, fontWeight: 700, color: '#ef4444' }}>
+                  <p style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-secondary)' }}>
                     {importResult.duplicates}
                   </p>
                   <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Skipped</p>
@@ -1317,7 +1317,7 @@ export function CSVImportModal({
               <>
                 <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
                 <div className="text-center">
-                  <p style={{ fontSize: 24, fontWeight: 700, color: '#fbbf24' }}>
+                  <p style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-muted)' }}>
                     {importResult.pending}
                   </p>
                   <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pending</p>

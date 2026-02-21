@@ -85,7 +85,7 @@ function MoodSlider({ label, icon, value, onChange, color }: SliderProps) {
         onChange={(e) => onChange(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
         className="w-full h-2 rounded-full appearance-none cursor-pointer"
         style={{
-          background: `linear-gradient(to right, ${color} ${((value - 1) / 4) * 100}%, rgba(128,128,128,0.2) ${((value - 1) / 4) * 100}%)`,
+          background: `linear-gradient(to right, var(--text-muted) ${((value - 1) / 4) * 100}%, var(--bg-elevated) ${((value - 1) / 4) * 100}%)`,
         }}
       />
       <div className="flex justify-between text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
@@ -124,7 +124,7 @@ function EnergyTooltip({
       }}
     >
       <p style={{ color: 'var(--text-secondary)' }}>{label}</p>
-      <p className="font-bold" style={{ color: '#00CFFF' }}>Energy: {payload[0].value}</p>
+      <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Energy: {payload[0].value}</p>
     </div>
   );
 }
@@ -271,13 +271,13 @@ export default function DailyCommandBrief({
   // ── Area color mapping ──────────────────────────────────────────────────────
 
   const areaColors: Record<string, string> = {
-    ventures: '#00CFFF',
-    academic: '#FFD700',
-    health: '#22c55e',
-    spiritual: '#a78bfa',
-    financial: '#34d399',
-    relationships: '#f97316',
-    personal: '#e879f9',
+    ventures: 'var(--text-muted)',
+    academic: 'var(--text-muted)',
+    health: 'var(--text-secondary)',
+    spiritual: 'var(--text-muted)',
+    financial: 'var(--text-secondary)',
+    relationships: 'var(--text-muted)',
+    personal: 'var(--text-muted)',
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -286,8 +286,8 @@ export default function DailyCommandBrief({
     <div className="space-y-6 animate-fade-in">
       {/* Page title */}
       <div className="flex items-center gap-3">
-        <Sun className="w-6 h-6 text-[#FFD700]" />
-        <h1 className="section-title glow-gold">Daily Command Brief</h1>
+        <Sun className="w-6 h-6 text-[var(--text-muted)]" />
+        <h1 className="section-title ">Daily Command Brief</h1>
       </div>
 
       {/* Main 2-column grid */}
@@ -300,14 +300,14 @@ export default function DailyCommandBrief({
           <div className="caesar-card space-y-2">
             <h2 className="text-2xl font-bold transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
               {greeting},{' '}
-              <span className="text-[#FFD700] glow-gold">
+              <span className="text-[var(--text-muted)] ">
                 {identity.name.split(' ')[0]}
               </span>
               .
             </h2>
             <div className="flex items-center gap-4 text-sm transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
               <span className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-[#00CFFF]" />
+                <Calendar className="w-4 h-4 text-[var(--text-muted)]" />
                 {todayFormatted}
               </span>
             </div>
@@ -316,8 +316,8 @@ export default function DailyCommandBrief({
           {/* Top 3 Goals */}
           <div className="caesar-card space-y-3">
             <div className="flex items-center gap-2">
-              <Target className="w-5 h-5 text-[#00CFFF]" />
-              <h3 className="text-sm font-semibold text-[#00CFFF] uppercase tracking-wider">
+              <Target className="w-5 h-5 text-[var(--text-muted)]" />
+              <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                 Top Priorities in Progress
               </h3>
             </div>
@@ -332,7 +332,7 @@ export default function DailyCommandBrief({
                     <span
                       className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                       style={{
-                        background: areaColors[goal.area] ?? '#00CFFF',
+                        background: areaColors[goal.area] ?? 'var(--text-muted)',
                         color: 'var(--bg)',
                       }}
                     >
@@ -348,7 +348,7 @@ export default function DailyCommandBrief({
                             className="h-1.5 rounded-full transition-all"
                             style={{
                               width: `${goal.progress}%`,
-                              background: areaColors[goal.area] ?? '#00CFFF',
+                              background: areaColors[goal.area] ?? 'var(--text-muted)',
                             }}
                           />
                         </div>
@@ -367,8 +367,8 @@ export default function DailyCommandBrief({
           <div className="caesar-card space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-[#FFD700]" />
-                <h3 className="text-sm font-semibold text-[#FFD700] uppercase tracking-wider">
+                <Calendar className="w-5 h-5 text-[var(--text-muted)]" />
+                <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                   Today's Events
                 </h3>
               </div>
@@ -384,10 +384,10 @@ export default function DailyCommandBrief({
             {/* Inline add event form */}
             {showAddEvent && (
               <div
-                className="rounded-xl p-4 space-y-3 border border-[#FFD700]/20 transition-colors duration-300"
+                className="rounded-xl p-4 space-y-3 border border-[var(--text-muted)]/20 transition-colors duration-300"
                 style={{ backgroundColor: 'var(--bg-elevated)' }}
               >
-                <p className="text-xs text-[#FFD700] font-semibold uppercase tracking-wider">
+                <p className="text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider">
                   New Event
                 </p>
                 <div className="grid grid-cols-2 gap-3">
@@ -460,7 +460,7 @@ export default function DailyCommandBrief({
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-elevated)')}
                   >
                     <div className="flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 rounded-full bg-[#FFD700] mt-1" />
+                      <div className="w-2 h-2 rounded-full bg-[var(--text-muted)] mt-1" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
@@ -468,7 +468,7 @@ export default function DailyCommandBrief({
                       </p>
                       <div className="flex items-center gap-2 text-xs mt-0.5 transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
                         {event.time && (
-                          <span className="text-[#FFD700]/70">
+                          <span className="text-[var(--text-muted)]/70">
                             {event.time}
                           </span>
                         )}
@@ -477,7 +477,7 @@ export default function DailyCommandBrief({
                     </div>
                     <button
                       onClick={() => handleDeleteEvent(event.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-300 p-0.5"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-secondary)] hover:text-[var(--text-secondary)] p-0.5"
                       aria-label="Delete event"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -492,8 +492,8 @@ export default function DailyCommandBrief({
           <div className="caesar-card space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-[#00CFFF]" />
-                <h3 className="text-sm font-semibold text-[#00CFFF] uppercase tracking-wider">
+                <CheckCircle2 className="w-5 h-5 text-[var(--text-muted)]" />
+                <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                   Daily Habits
                 </h3>
               </div>
@@ -501,7 +501,7 @@ export default function DailyCommandBrief({
                 <span
                   className={
                     completedHabits === habits.length && habits.length > 0
-                      ? 'text-[#00CFFF] font-bold'
+                      ? 'text-[var(--text-muted)] font-bold'
                       : 'font-semibold'
                   }
                   style={
@@ -526,8 +526,8 @@ export default function DailyCommandBrief({
                     width: `${habits.length > 0 ? (completedHabits / habits.length) * 100 : 0}%`,
                     background:
                       completedHabits === habits.length
-                        ? '#FFD700'
-                        : '#00CFFF',
+                        ? 'var(--text-secondary)'
+                        : 'var(--text-muted)',
                   }}
                 />
               </div>
@@ -550,7 +550,7 @@ export default function DailyCommandBrief({
                         onClick={() => toggleHabit(habit.id)}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left ${
                           done
-                            ? 'bg-[#00CFFF]/10 border-[#00CFFF]/40'
+                            ? 'border-[var(--border)]'
                             : 'border-white/10 hover:border-white/20'
                         }`}
                         style={
@@ -564,7 +564,7 @@ export default function DailyCommandBrief({
                           {habit.name}
                         </span>
                         {done ? (
-                          <CheckCircle2 className="w-4 h-4 text-[#00CFFF] flex-shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" />
                         ) : (
                           <Circle className="w-4 h-4 flex-shrink-0 opacity-30" />
                         )}
@@ -582,12 +582,12 @@ export default function DailyCommandBrief({
           {/* Daily Quote */}
           <div className="caesar-card space-y-3">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-[#FFD700]" />
-              <h3 className="text-xs font-semibold text-[#FFD700] uppercase tracking-wider">
+              <BookOpen className="w-4 h-4 text-[var(--text-muted)]" />
+              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                 Today's Quote
               </h3>
             </div>
-            <blockquote className="border-l-2 border-[#FFD700]/50 pl-3">
+            <blockquote className="border-l-2 border-[var(--text-muted)]/50 pl-3">
               <p className="text-sm leading-relaxed italic transition-colors duration-300" style={{ color: 'var(--text-primary)', opacity: 0.9 }}>
                 "{dailyQuote.quote}"
               </p>
@@ -600,34 +600,34 @@ export default function DailyCommandBrief({
           {/* Energy & Mood Check-in */}
           <div className="caesar-card space-y-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#00CFFF]" />
-              <h3 className="text-xs font-semibold text-[#00CFFF] uppercase tracking-wider">
+              <TrendingUp className="w-4 h-4 text-[var(--text-muted)]" />
+              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                 Energy & Mood
               </h3>
             </div>
 
             <MoodSlider
               label="Energy"
-              icon={<Zap className="w-3.5 h-3.5 text-[#FFD700]" />}
+              icon={<Zap className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
               value={energyValue}
               onChange={(v) => updateMoodLog('energy', v)}
-              color="#FFD700"
+              color="var(--text-muted)"
             />
 
             <MoodSlider
               label="Mood"
-              icon={<Heart className="w-3.5 h-3.5 text-[#00CFFF]" />}
+              icon={<Heart className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
               value={moodValue}
               onChange={(v) => updateMoodLog('mood', v)}
-              color="#00CFFF"
+              color="var(--text-muted)"
             />
           </div>
 
           {/* Weekly Energy Chart */}
           <div className="caesar-card space-y-3">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#00CFFF]" />
-              <h3 className="text-xs font-semibold text-[#00CFFF] uppercase tracking-wider">
+              <TrendingUp className="w-4 h-4 text-[var(--text-muted)]" />
+              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
                 Weekly Energy
               </h3>
             </div>
@@ -664,10 +664,10 @@ export default function DailyCommandBrief({
                 <Line
                   type="monotone"
                   dataKey="energy"
-                  stroke="#00CFFF"
+                  stroke="var(--text-muted)"
                   strokeWidth={2}
-                  dot={{ fill: '#00CFFF', r: 3, strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: '#FFD700', strokeWidth: 0 }}
+                  dot={{ fill: 'var(--text-muted)', r: 3, strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: 'var(--text-muted)', strokeWidth: 0 }}
                   connectNulls={false}
                 />
               </LineChart>
@@ -690,10 +690,10 @@ export default function DailyCommandBrief({
 // ─── Status Pill ──────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  'deep-work': { label: 'Deep Work', color: '#00CFFF', bg: 'rgba(0,207,255,0.12)', dot: '#00CFFF' },
-  available:   { label: 'Available', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  dot: '#22c55e' },
-  break:       { label: 'On Break',  color: '#FFD700', bg: 'rgba(255,215,0,0.12)',  dot: '#FFD700' },
-  out:         { label: 'Out',       color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  dot: '#ef4444' },
+  'deep-work': { label: 'Deep Work', color: 'var(--text-muted)', bg: 'var(--bg-elevated)', dot: 'var(--text-muted)' },
+  available:   { label: 'Available', color: 'var(--text-secondary)', bg: 'var(--bg-elevated)',  dot: 'var(--text-secondary)' },
+  break:       { label: 'On Break',  color: 'var(--text-muted)', bg: 'var(--bg-elevated)',  dot: 'var(--text-muted)' },
+  out:         { label: 'Out',       color: 'var(--text-secondary)', bg: 'var(--bg-elevated)',  dot: 'var(--text-secondary)' },
 };
 
 function StatusPill({ status }: { status: string }) {

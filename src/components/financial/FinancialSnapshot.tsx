@@ -132,9 +132,9 @@ function BankBadge({ bank }: { bank?: string }) {
         fontWeight: 600,
         padding: '1px 6px',
         borderRadius: 4,
-        backgroundColor: isAFCU ? 'rgba(59,130,246,0.15)' : 'rgba(20,184,166,0.15)',
-        color: isAFCU ? '#60a5fa' : '#2dd4bf',
-        border: `1px solid ${isAFCU ? 'rgba(59,130,246,0.3)' : 'rgba(20,184,166,0.3)'}`,
+        backgroundColor: isAFCU ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+        color: isAFCU ? 'var(--text-muted)' : 'var(--text-muted)',
+        border: `1px solid ${isAFCU ? 'var(--bg-elevated)' : 'var(--bg-elevated)'}`,
         whiteSpace: 'nowrap' as const,
       }}
     >
@@ -182,7 +182,7 @@ export function FinancialSnapshot({
 
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
-  const [goalForm, setGoalForm] = useState({ name: '', target: '', current: '', deadline: '', color: '#00CFFF' });
+  const [goalForm, setGoalForm] = useState({ name: '', target: '', current: '', deadline: '', color: '#555555' });
 
   const [txSearch, setTxSearch] = useState('');
   const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
@@ -455,7 +455,7 @@ export function FinancialSnapshot({
   // ── Savings Goal CRUD ─────────────────────────────────────────────────────
   function openAddGoal() {
     setEditingGoal(null);
-    setGoalForm({ name: '', target: '', current: '', deadline: '', color: '#00CFFF' });
+    setGoalForm({ name: '', target: '', current: '', deadline: '', color: 'var(--text-muted)' });
     setShowGoalModal(true);
   }
 
@@ -466,7 +466,7 @@ export function FinancialSnapshot({
       target: String(goal.target),
       current: String(goal.current),
       deadline: goal.deadline,
-      color: goal.color,
+      color: goal.color ?? '#555555',
     });
     setShowGoalModal(true);
   }
@@ -550,9 +550,9 @@ export function FinancialSnapshot({
             >
               Expenses
             </span>
-            <ArrowDownRight size={16} className="text-red-400" />
+            <ArrowDownRight size={16} className="text-[var(--text-secondary)]" />
           </div>
-          <p className="text-2xl font-bold text-red-400">{fmt$(currentMonthStats.expenses)}</p>
+          <p className="text-2xl font-bold text-[var(--text-secondary)]">{fmt$(currentMonthStats.expenses)}</p>
           <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Monthly spend</p>
         </div>
 
@@ -570,13 +570,13 @@ export function FinancialSnapshot({
               Net
             </span>
             {currentMonthStats.net >= 0 ? (
-              <TrendingUp size={16} className="text-arc-blue" />
+              <TrendingUp size={16} className="" />
             ) : (
-              <TrendingDown size={16} className="text-red-400" />
+              <TrendingDown size={16} className="text-[var(--text-secondary)]" />
             )}
           </div>
           <p
-            className={`text-2xl font-bold ${currentMonthStats.net >= 0 ? 'text-arc-blue' : 'text-red-400'}`}
+            className={`text-2xl font-bold ${currentMonthStats.net >= 0 ? '' : 'text-[var(--text-secondary)]'}`}
           >
             {fmt$(currentMonthStats.net)}
           </p>
@@ -588,7 +588,7 @@ export function FinancialSnapshot({
           className="caesar-card flex flex-col gap-2 relative overflow-hidden"
           style={
             !tithingLogged
-              ? { boxShadow: '0 0 18px 2px rgba(255, 215, 0, 0.35)', borderColor: 'rgba(255,215,0,0.5)' }
+              ? { boxShadow: '0 0 0 1px var(--border)' }
               : {}
           }
         >
@@ -606,19 +606,19 @@ export function FinancialSnapshot({
             {tithingLogged ? (
               <Check size={16} className="text-emerald-400" />
             ) : (
-              <AlertCircle size={16} style={{ color: '#FFD700' }} />
+              <AlertCircle size={16} style={{ color: 'var(--text-muted)' }} />
             )}
           </div>
-          <p className="text-2xl font-bold" style={{ color: '#FFD700' }}>
+          <p className="text-2xl font-bold" style={{ color: 'var(--text-muted)' }}>
             {fmt$(currentMonthStats.tithing)}
           </p>
-          <p style={{ fontSize: 12, color: tithingLogged ? '#22c55e' : '#FFD700' }}>
+          <p style={{ fontSize: 12, color: tithingLogged ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
             {tithingLogged ? 'Logged this month' : '10% — not yet logged'}
           </p>
           {!tithingLogged && (
             <div
               className="absolute inset-0 pointer-events-none rounded-xl"
-              style={{ background: 'radial-gradient(ellipse at top right, rgba(255,215,0,0.08), transparent 70%)' }}
+              style={{ background: 'radial-gradient(ellipse at top right, var(--bg-elevated), transparent 70%)' }}
             />
           )}
         </div>
@@ -627,7 +627,7 @@ export function FinancialSnapshot({
       {/* ── 3. INCOME vs EXPENSES CHART ──────────────────────────────────── */}
       <div className="caesar-card">
         <div className="flex items-center gap-2 mb-5">
-          <BarChart2 size={18} style={{ color: '#00CFFF' }} />
+          <BarChart2 size={18} style={{ color: 'var(--text-muted)' }} />
           <h3
             style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}
           >
@@ -651,8 +651,8 @@ export function FinancialSnapshot({
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 11, color: chartColors.text }} />
-            <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={32} />
-            <Bar dataKey="expenses" name="Expenses" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
+            <Bar dataKey="income" name="Income" fill="var(--text-secondary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+            <Bar dataKey="expenses" name="Expenses" fill="var(--text-muted)" radius={[4, 4, 0, 0]} maxBarSize={32} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -661,7 +661,7 @@ export function FinancialSnapshot({
       <div className="caesar-card">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
-            <Target size={18} style={{ color: '#FFD700' }} />
+            <Target size={18} style={{ color: 'var(--text-muted)' }} />
             <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
               Savings Goals
             </h3>
@@ -706,7 +706,7 @@ export function FinancialSnapshot({
                             <span
                               style={{
                                 marginLeft: 8,
-                                color: daysLeft < 0 ? '#ef4444' : daysLeft < 30 ? '#eab308' : 'var(--text-muted)',
+                                color: daysLeft < 0 ? 'var(--text-secondary)' : 'var(--text-muted)',
                               }}
                             >
                               ({daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`})
@@ -736,7 +736,7 @@ export function FinancialSnapshot({
                         className="p-1 rounded transition-colors"
                         style={{ color: 'var(--text-muted)' }}
                         onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
                           (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--bg-hover)';
                         }}
                         onMouseLeave={(e) => {
@@ -750,7 +750,7 @@ export function FinancialSnapshot({
                   </div>
 
                   <div className="flex items-center justify-between text-xs mb-2">
-                    <span style={{ color: goal.color, fontWeight: 600 }}>{fmt$(goal.current)}</span>
+                    <span style={{ color: goal.color ?? '#555555', fontWeight: 600 }}>{fmt$(goal.current)}</span>
                     <span style={{ color: 'var(--text-muted)' }}>{pct.toFixed(1)}%</span>
                     <span style={{ color: 'var(--text-muted)' }}>{fmt$(goal.target)}</span>
                   </div>
@@ -772,7 +772,7 @@ export function FinancialSnapshot({
                         left: 0,
                         borderRadius: 4,
                         backgroundColor: goal.color,
-                        boxShadow: `0 0 8px 2px ${goal.color}70`,
+                        boxShadow: 'none',
                         transition: 'right 0.7s',
                       }}
                     />
@@ -787,7 +787,7 @@ export function FinancialSnapshot({
       {/* ── 5. VENTURE P&L DASHBOARD ─────────────────────────────────────── */}
       <div className="caesar-card">
         <div className="flex items-center gap-2 mb-5">
-          <PieIcon size={18} style={{ color: '#00CFFF' }} />
+          <PieIcon size={18} style={{ color: 'var(--text-muted)' }} />
           <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
             Venture P&amp;L
           </h3>
@@ -802,7 +802,7 @@ export function FinancialSnapshot({
                 className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                 style={
                   activeVentureTab === v.id
-                    ? { backgroundColor: '#00CFFF', color: '#05080f', fontWeight: 700 }
+                    ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)', fontWeight: 700, border: '1px solid var(--border-strong)' }
                     : {
                         backgroundColor: 'var(--bg-elevated)',
                         color: 'var(--text-muted)',
@@ -840,7 +840,7 @@ export function FinancialSnapshot({
                 }}
               >
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Expenses</p>
-                <p className="text-lg font-bold text-red-400">{fmt$(venturePnL.expenses)}</p>
+                <p className="text-lg font-bold text-[var(--text-secondary)]">{fmt$(venturePnL.expenses)}</p>
               </div>
               <div
                 style={{
@@ -852,7 +852,7 @@ export function FinancialSnapshot({
               >
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Net Profit</p>
                 <p
-                  className={`text-lg font-bold ${venturePnL.net >= 0 ? 'text-arc-blue' : 'text-red-400'}`}
+                  className={`text-lg font-bold ${venturePnL.net >= 0 ? '' : 'text-[var(--text-secondary)]'}`}
                 >
                   {fmt$(venturePnL.net)}
                 </p>
@@ -870,10 +870,10 @@ export function FinancialSnapshot({
                   {venturePnL.momChange >= 0 ? (
                     <TrendingUp size={14} className="text-emerald-400" />
                   ) : (
-                    <TrendingDown size={14} className="text-red-400" />
+                    <TrendingDown size={14} className="text-[var(--text-secondary)]" />
                   )}
                   <p
-                    className={`text-lg font-bold ${venturePnL.momChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                    className={`text-lg font-bold ${venturePnL.momChange >= 0 ? 'text-emerald-400' : 'text-[var(--text-secondary)]'}`}
                   >
                     {venturePnL.momChange > 0 ? '+' : ''}{venturePnL.momChange.toFixed(1)}%
                   </p>
@@ -907,7 +907,7 @@ export function FinancialSnapshot({
                     name="Net"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
-                    fill="#00CFFF"
+                    fill="var(--text-muted)"
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -959,7 +959,7 @@ export function FinancialSnapshot({
                       </div>
                       <div className="flex items-center gap-2 ml-2">
                         <span
-                          className={`text-sm font-semibold ${tx.type === 'income' ? 'text-emerald-400' : 'text-red-400'}`}
+                          className={`text-sm font-semibold ${tx.type === 'income' ? 'text-emerald-400' : 'text-[var(--text-secondary)]'}`}
                         >
                           {tx.type === 'income' ? '+' : '-'}{fmt$(tx.amount)}
                         </span>
@@ -975,7 +975,7 @@ export function FinancialSnapshot({
                           className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all"
                           style={{ color: 'var(--text-muted)' }}
                           onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
                           }}
                           onMouseLeave={(e) => {
                             (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
@@ -1001,7 +1001,7 @@ export function FinancialSnapshot({
       <div className="caesar-card">
         <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div className="flex items-center gap-2">
-            <DollarSign size={18} style={{ color: '#00CFFF' }} />
+            <DollarSign size={18} style={{ color: 'var(--text-muted)' }} />
             <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
               Transaction Ledger
             </h3>
@@ -1080,22 +1080,22 @@ export function FinancialSnapshot({
                   fontSize: 11,
                   padding: '4px 10px',
                   borderRadius: 20,
-                  border: `1px solid ${ledgerTypeFilter === f ? (f === 'income' ? '#22c55e' : f === 'expense' ? '#ef4444' : '#00CFFF') : 'var(--border)'}`,
+                  border: `1px solid ${ledgerTypeFilter === f ? (f === 'income' ? 'var(--text-secondary)' : f === 'expense' ? 'var(--text-secondary)' : 'var(--text-muted)') : 'var(--border)'}`,
                   backgroundColor:
                     ledgerTypeFilter === f
                       ? f === 'income'
-                        ? 'rgba(34,197,94,0.12)'
+                        ? 'var(--bg-elevated)'
                         : f === 'expense'
-                        ? 'rgba(239,68,68,0.12)'
-                        : 'rgba(0,207,255,0.12)'
+                        ? 'var(--bg-elevated)'
+                        : 'var(--bg-elevated)'
                       : 'var(--bg-elevated)',
                   color:
                     ledgerTypeFilter === f
                       ? f === 'income'
-                        ? '#22c55e'
+                        ? 'var(--text-secondary)'
                         : f === 'expense'
-                        ? '#ef4444'
-                        : '#00CFFF'
+                        ? 'var(--text-secondary)'
+                        : 'var(--text-muted)'
                       : 'var(--text-muted)',
                   cursor: 'pointer',
                   fontWeight: ledgerTypeFilter === f ? 700 : 400,
@@ -1124,26 +1124,26 @@ export function FinancialSnapshot({
                   border: `1px solid ${
                     ledgerBankFilter === key
                       ? key === 'afcu'
-                        ? 'rgba(59,130,246,0.5)'
+                        ? 'var(--bg-elevated)'
                         : key === 'mercury'
-                        ? 'rgba(20,184,166,0.5)'
+                        ? 'var(--bg-elevated)'
                         : 'var(--border)'
                       : 'var(--border)'
                   }`,
                   backgroundColor:
                     ledgerBankFilter === key
                       ? key === 'afcu'
-                        ? 'rgba(59,130,246,0.1)'
+                        ? 'var(--bg-elevated)'
                         : key === 'mercury'
-                        ? 'rgba(20,184,166,0.1)'
+                        ? 'var(--bg-elevated)'
                         : 'var(--bg-elevated)'
                       : 'var(--bg-elevated)',
                   color:
                     ledgerBankFilter === key
                       ? key === 'afcu'
-                        ? '#60a5fa'
+                        ? 'var(--text-muted)'
                         : key === 'mercury'
-                        ? '#2dd4bf'
+                        ? 'var(--text-muted)'
                         : 'var(--text-secondary)'
                       : 'var(--text-muted)',
                   cursor: 'pointer',
@@ -1242,7 +1242,7 @@ export function FinancialSnapshot({
                           textAlign: 'right',
                           fontWeight: 700,
                           whiteSpace: 'nowrap',
-                          color: tx.type === 'income' ? '#22c55e' : '#ef4444',
+                          color: tx.type === 'income' ? 'var(--text-secondary)' : 'var(--text-secondary)',
                         }}
                       >
                         {tx.type === 'income' ? '+' : '-'}{fmt$(tx.amount)}
@@ -1280,7 +1280,7 @@ export function FinancialSnapshot({
                             className="p-1 rounded transition-colors"
                             style={{ color: 'var(--text-muted)' }}
                             onMouseEnter={(e) => {
-                              (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                              (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
                               (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--bg-hover)';
                             }}
                             onMouseLeave={(e) => {

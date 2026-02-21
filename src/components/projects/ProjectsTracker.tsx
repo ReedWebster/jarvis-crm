@@ -82,7 +82,7 @@ function DueDateLabel({ dueDate }: { dueDate: string }) {
   return (
     <div
       className="flex items-center gap-1 text-xs transition-colors duration-300"
-      style={{ color: overdue ? '#f87171' : 'var(--text-secondary)' }}
+      style={{ color: overdue ? 'var(--text-secondary)' : 'var(--text-muted)' }}
     >
       <Calendar size={11} />
       <span>{formatted}</span>
@@ -90,10 +90,10 @@ function DueDateLabel({ dueDate }: { dueDate: string }) {
         className="ml-1 px-1.5 py-0.5 rounded text-xs font-medium"
         style={
           overdue
-            ? { backgroundColor: 'rgba(239,68,68,0.2)', color: '#f87171' }
+            ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }
             : days <= 3
-            ? { backgroundColor: 'rgba(234,179,8,0.2)', color: '#facc15' }
-            : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }
+            ? { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }
+            : { backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }
         }
       >
         {label}
@@ -114,7 +114,7 @@ function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
   const contacts = project.keyContacts.filter(Boolean);
 
   return (
-    <div className="caesar-card flex flex-col gap-3 group hover:border-arc-blue/40 transition-colors duration-300">
+    <div className="caesar-card flex flex-col gap-3 group transition-colors duration-300">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -131,7 +131,7 @@ function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
       {/* Next Action */}
       {project.nextAction && (
         <div className="flex items-start gap-2">
-          <ChevronRight size={13} className="text-arc-blue mt-0.5 shrink-0" />
+          <ChevronRight size={13} className=" mt-0.5 shrink-0" />
           <p className="text-xs leading-snug line-clamp-2 transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
             {project.nextAction}
           </p>
@@ -170,7 +170,7 @@ function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
 
       {/* Links */}
       {project.links && (
-        <div className="flex items-center gap-1 text-xs text-arc-blue/70 truncate">
+        <div className="flex items-center gap-1 text-xs /70 truncate">
           <Link size={11} className="shrink-0" />
           <span className="truncate">{project.links}</span>
         </div>
@@ -183,7 +183,7 @@ function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
       >
         <button
           onClick={() => onEdit(project)}
-          className="flex items-center gap-1.5 text-xs hover:text-arc-blue transition-colors px-2 py-1 rounded hover:bg-arc-blue/10 duration-300"
+          className="flex items-center gap-1.5 text-xs  transition-colors px-2 py-1 rounded  duration-300"
           style={{ color: 'var(--text-secondary)' }}
         >
           <Edit3 size={12} />
@@ -191,7 +191,7 @@ function ProjectCard({ project, onEdit, onDelete }: ProjectCardProps) {
         </button>
         <button
           onClick={() => onDelete(project.id)}
-          className="flex items-center gap-1.5 text-xs hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-red-500/10 ml-auto duration-300"
+          className="flex items-center gap-1.5 text-xs hover:text-[var(--text-secondary)] transition-colors px-2 py-1 rounded  ml-auto duration-300"
           style={{ color: 'var(--text-muted)' }}
         >
           <Trash2 size={12} />
@@ -421,17 +421,17 @@ export function ProjectsTracker({ projects, setProjects }: Props) {
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Briefcase size={20} className="text-gold" />
+          <Briefcase size={20} className="" />
           <div>
             <h1 className="section-title">Projects</h1>
             <p className="text-xs mt-0.5 transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
               {projects.length} total · {activeCount} active
               {overdueCount > 0 && (
-                <span className="ml-2 text-red-400 font-medium">{overdueCount} overdue</span>
+                <span className="ml-2 text-[var(--text-secondary)] font-medium">{overdueCount} overdue</span>
               )}
             </p>
           </div>
-          <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-arc-blue/20 text-arc-blue border border-arc-blue/30">
+          <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--bg-elevated)]  border border-[var(--border)]">
             {projects.length} Projects
           </span>
         </div>
@@ -451,9 +451,9 @@ export function ProjectsTracker({ projects, setProjects }: Props) {
             style={
               filterStatus === s
                 ? {
-                    backgroundColor: 'rgba(0,207,255,0.2)',
-                    color: '#00CFFF',
-                    borderColor: 'rgba(0,207,255,0.4)',
+                    backgroundColor: 'var(--bg-elevated)',
+                    color: 'var(--text-muted)',
+                    borderColor: 'var(--bg-elevated)',
                   }
                 : {
                     color: 'var(--text-muted)',
