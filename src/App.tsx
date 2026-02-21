@@ -1,4 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import { LoginPage } from './components/auth/LoginPage';
 import { Sidebar, type NavSection } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
 import { GlobalSearch } from './components/shared/GlobalSearch';
@@ -46,6 +49,21 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<NavSection>('command');
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // ─── Auth ──────────────────────────────────────────────────────────────────
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // ─── Theme ─────────────────────────────────────────────────────────────────
   const { theme, toggle } = useThemeState();
@@ -174,6 +192,25 @@ export default function App() {
         return null;
     }
   };
+
+  // Auth gate — show loading spinner, then login, then app
+  if (authLoading) {
+    return (
+      <ThemeContext.Provider value={themeCtx}>
+        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
+          <div className="w-8 h-8 border-2 border-[var(--border)] border-t-[var(--text-muted)] rounded-full animate-spin" />
+        </div>
+      </ThemeContext.Provider>
+    );
+  }
+
+  if (!session) {
+    return (
+      <ThemeContext.Provider value={themeCtx}>
+        <LoginPage />
+      </ThemeContext.Provider>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={themeCtx}>

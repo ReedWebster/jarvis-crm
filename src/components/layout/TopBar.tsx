@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Zap, Sun, Moon, Menu } from 'lucide-react';
+import { Zap, Sun, Moon, Menu, LogOut } from 'lucide-react';
 import type { StatusMode, Identity } from '../../types';
+import { supabase } from '../../lib/supabase';
 
 const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
   'deep-work': { label: 'Deep Work', color: '#737373', glow: 'rgba(115,115,115,0.2)' },
@@ -106,6 +107,16 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         <Zap size={14} className="fill-current" style={{ color: 'var(--text-muted)' }} />
         <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-muted)' }}>ONLINE</span>
       </div>
+
+      {/* Logout */}
+      <button
+        onClick={() => supabase.auth.signOut()}
+        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+        title="Sign out"
+      >
+        <LogOut size={14} />
+      </button>
     </header>
   );
 }
