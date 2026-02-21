@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { X, Mic, MicOff, Play, Pause, Trash2, Camera, Calendar, MessageSquare, Edit3, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, Mic, MicOff, Play, Pause, Trash2, Camera, MessageSquare, Edit3, CheckCircle, AlertTriangle } from 'lucide-react';
 import type { Contact, ContactMapData, RelationshipStrength } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import {
@@ -152,13 +152,11 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
     : null;
   const lastContactedColor = contact.lastContacted ? getLastContactedColor(contact.lastContacted) : '#6b7280';
 
-  const saveMapNotes = useCallback(() => {
-    onUpdateMapData({ mapNotes, strength });
-  }, [mapNotes, strength, onUpdateMapData]);
-
-  useEffect(() => {
-    return () => { saveMapNotes(); };
-  }, [saveMapNotes]);
+  // Save map notes immediately on every change — no blur required
+  const handleMapNotesChange = (value: string) => {
+    setMapNotes(value);
+    onUpdateMapData({ mapNotes: value });
+  };
 
   const logInteraction = () => {
     if (!logNotes.trim()) return;
@@ -173,8 +171,10 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
     setTab('info');
   };
 
-  const setReminder = () => {
-    const updated: Contact = { ...contact, followUpDate: reminderDate, followUpNeeded: !!reminderDate };
+  // Save reminder immediately on date change
+  const handleReminderChange = (value: string) => {
+    setReminderDate(value);
+    const updated: Contact = { ...contact, followUpDate: value, followUpNeeded: !!value };
     onUpdateContact(updated);
   };
 
@@ -296,8 +296,7 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
                   type="date"
                   className="caesar-input text-xs"
                   value={reminderDate}
-                  onChange={e => setReminderDate(e.target.value)}
-                  onBlur={setReminder}
+                  onChange={e => handleReminderChange(e.target.value)}
                   style={{ flex: 1 }}
                 />
                 {contact.followUpNeeded && (
@@ -320,8 +319,7 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
                 rows={3}
                 placeholder="Notes specific to map context..."
                 value={mapNotes}
-                onChange={e => setMapNotes(e.target.value)}
-                onBlur={() => onUpdateMapData({ mapNotes })}
+                onChange={e => handleMapNotesChange(e.target.value)}
               />
             </div>
 
