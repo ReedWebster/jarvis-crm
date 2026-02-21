@@ -52,7 +52,7 @@ import {
 } from '../../utils';
 import { Modal } from '../shared/Modal';
 import { useTheme } from '../../hooks/useTheme';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -719,7 +719,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
   const [monthOffset, setMonthOffset] = useState(0);
 
   // ── Daily Focus ──
-  const [dailyFocus, setDailyFocus] = useLocalStorage<Record<string, string[]>>('jarvis:dailyFocus', {});
+  const [dailyFocus, setDailyFocus] = useSupabaseStorage<Record<string, string[]>>('jarvis:dailyFocus', {});
 
   const getFocusItems = (date: string) => dailyFocus[date] ?? [];
   const updateFocusItems = (date: string, items: string[]) => {

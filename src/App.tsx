@@ -19,7 +19,7 @@ import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
 import { NetworkingMap } from './components/networking/NetworkingMap';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
-import { useLocalStorage } from './hooks/useLocalStorage';
+import { useSupabaseStorage } from './hooks/useSupabaseStorage';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
 import { DEFAULT_STATE } from './data/defaultData';
 import type {
@@ -69,28 +69,28 @@ export default function App() {
   const { theme, toggle } = useThemeState();
   const themeCtx = useMemo(() => buildThemeValue(theme, toggle), [theme, toggle]);
 
-  // ─── Persistent State ──────────────────────────────────────────────────────
-  const [identity, setIdentity] = useLocalStorage<Identity>('jarvis:identity', DEFAULT_STATE.identity);
-  const [projects, setProjects] = useLocalStorage<Project[]>('jarvis:projects', DEFAULT_STATE.projects);
-  const [timeBlocks, setTimeBlocks] = useLocalStorage<TimeBlock[]>('jarvis:timeBlocks', DEFAULT_STATE.timeBlocks);
-  const [timeCategories, setTimeCategories] = useLocalStorage<TimeCategory[]>('jarvis:timeCategories', DEFAULT_STATE.timeCategories);
-  const [contacts, setContacts] = useLocalStorage<Contact[]>('jarvis:contacts', DEFAULT_STATE.contacts);
-  const [courses, setCourses] = useLocalStorage<Course[]>('jarvis:courses', DEFAULT_STATE.courses);
-  const [financialEntries, setFinancialEntries] = useLocalStorage<FinancialEntry[]>('jarvis:financialEntries', DEFAULT_STATE.financialEntries);
-  const [savingsGoals, setSavingsGoals] = useLocalStorage<SavingsGoal[]>('jarvis:savingsGoals', DEFAULT_STATE.savingsGoals);
-  const [ventureFinancials, setVentureFinancials] = useLocalStorage<VentureFinancial[]>('jarvis:ventureFinancials', DEFAULT_STATE.ventureFinancials);
-  const [goals, setGoals] = useLocalStorage<Goal[]>('jarvis:goals', DEFAULT_STATE.goals);
-  const [weeklyReviews, setWeeklyReviews] = useLocalStorage<WeeklyReview[]>('jarvis:weeklyReviews', DEFAULT_STATE.weeklyReviews);
-  const [decisionLogs, setDecisionLogs] = useLocalStorage<DecisionLog[]>('jarvis:decisionLogs', DEFAULT_STATE.decisionLogs);
-  const [readingItems, setReadingItems] = useLocalStorage<ReadingItem[]>('jarvis:readingItems', DEFAULT_STATE.readingItems);
-  const [candidates, setCandidates] = useLocalStorage<Candidate[]>('jarvis:candidates', DEFAULT_STATE.candidates);
-  const [notes, setNotes] = useLocalStorage<Note[]>('jarvis:notes', DEFAULT_STATE.notes);
-  const [dailyEvents, setDailyEvents] = useLocalStorage<DailyEvent[]>('jarvis:dailyEvents', DEFAULT_STATE.dailyEvents);
-  const [habits] = useLocalStorage<Habit[]>('jarvis:habits', DEFAULT_STATE.habits);
-  const [habitTracker, setHabitTracker] = useLocalStorage<HabitTracker[]>('jarvis:habitTracker', DEFAULT_STATE.habitTracker);
-  const [dailyMoodLogs, setDailyMoodLogs] = useLocalStorage<DailyMoodLog[]>('jarvis:dailyMoodLogs', DEFAULT_STATE.dailyMoodLogs);
-  const [scratchpad, setScratchpad] = useLocalStorage<string>('jarvis:scratchpad', DEFAULT_STATE.scratchpad);
-  const [todos, setTodos] = useLocalStorage<TodoItem[]>('jarvis:todos', []);
+  // ─── Persistent State (synced to Supabase) ────────────────────────────────
+  const [identity, setIdentity] = useSupabaseStorage<Identity>('jarvis:identity', DEFAULT_STATE.identity);
+  const [projects, setProjects] = useSupabaseStorage<Project[]>('jarvis:projects', DEFAULT_STATE.projects);
+  const [timeBlocks, setTimeBlocks] = useSupabaseStorage<TimeBlock[]>('jarvis:timeBlocks', DEFAULT_STATE.timeBlocks);
+  const [timeCategories, setTimeCategories] = useSupabaseStorage<TimeCategory[]>('jarvis:timeCategories', DEFAULT_STATE.timeCategories);
+  const [contacts, setContacts] = useSupabaseStorage<Contact[]>('jarvis:contacts', DEFAULT_STATE.contacts);
+  const [courses, setCourses] = useSupabaseStorage<Course[]>('jarvis:courses', DEFAULT_STATE.courses);
+  const [financialEntries, setFinancialEntries] = useSupabaseStorage<FinancialEntry[]>('jarvis:financialEntries', DEFAULT_STATE.financialEntries);
+  const [savingsGoals, setSavingsGoals] = useSupabaseStorage<SavingsGoal[]>('jarvis:savingsGoals', DEFAULT_STATE.savingsGoals);
+  const [ventureFinancials, setVentureFinancials] = useSupabaseStorage<VentureFinancial[]>('jarvis:ventureFinancials', DEFAULT_STATE.ventureFinancials);
+  const [goals, setGoals] = useSupabaseStorage<Goal[]>('jarvis:goals', DEFAULT_STATE.goals);
+  const [weeklyReviews, setWeeklyReviews] = useSupabaseStorage<WeeklyReview[]>('jarvis:weeklyReviews', DEFAULT_STATE.weeklyReviews);
+  const [decisionLogs, setDecisionLogs] = useSupabaseStorage<DecisionLog[]>('jarvis:decisionLogs', DEFAULT_STATE.decisionLogs);
+  const [readingItems, setReadingItems] = useSupabaseStorage<ReadingItem[]>('jarvis:readingItems', DEFAULT_STATE.readingItems);
+  const [candidates, setCandidates] = useSupabaseStorage<Candidate[]>('jarvis:candidates', DEFAULT_STATE.candidates);
+  const [notes, setNotes] = useSupabaseStorage<Note[]>('jarvis:notes', DEFAULT_STATE.notes);
+  const [dailyEvents, setDailyEvents] = useSupabaseStorage<DailyEvent[]>('jarvis:dailyEvents', DEFAULT_STATE.dailyEvents);
+  const [habits] = useSupabaseStorage<Habit[]>('jarvis:habits', DEFAULT_STATE.habits);
+  const [habitTracker, setHabitTracker] = useSupabaseStorage<HabitTracker[]>('jarvis:habitTracker', DEFAULT_STATE.habitTracker);
+  const [dailyMoodLogs, setDailyMoodLogs] = useSupabaseStorage<DailyMoodLog[]>('jarvis:dailyMoodLogs', DEFAULT_STATE.dailyMoodLogs);
+  const [scratchpad, setScratchpad] = useSupabaseStorage<string>('jarvis:scratchpad', DEFAULT_STATE.scratchpad);
+  const [todos, setTodos] = useSupabaseStorage<TodoItem[]>('jarvis:todos', []);
 
   const handleStatusChange = (status: StatusMode) => {
     setIdentity(prev => ({ ...prev, status }));

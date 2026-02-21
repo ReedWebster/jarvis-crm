@@ -8,7 +8,7 @@ import type {
   NetworkManualConnection,
   MapFilters,
 } from '../../types';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import {
   defaultMapState,
   applyFilters,
@@ -40,7 +40,7 @@ interface Props {
 }
 
 export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM }: Props) {
-  const [mapState, setMapState] = useLocalStorage<NetworkingMapState>(
+  const [mapState, setMapState] = useSupabaseStorage<NetworkingMapState>(
     'jarvis:networkingMap',
     defaultMapState(),
   );
