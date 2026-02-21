@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
-  DollarSign, Target, BookOpen, UserPlus, FileText, Search, ChevronRight, CheckSquare
+  DollarSign, Target, BookOpen, UserPlus, FileText, Search, ChevronRight, CheckSquare, Network
 } from 'lucide-react';
 
 export type NavSection =
@@ -16,7 +16,8 @@ export type NavSection =
   | 'reading'
   | 'recruitment'
   | 'notes'
-  | 'todos';
+  | 'todos'
+  | 'networking';
 
 interface NavItem {
   id: NavSection;
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'recruitment',label: 'Recruitment',      icon: <UserPlus size={18} /> },
   { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
   { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
+  { id: 'networking', label: 'Networking Map',   icon: <Network size={18} /> },
 ];
 
 interface SidebarProps {

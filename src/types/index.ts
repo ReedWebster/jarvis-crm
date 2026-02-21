@@ -304,6 +304,46 @@ export interface TodoItem {
   checklist: TodoChecklistItem[];
 }
 
+// ─── NETWORKING MAP ──────────────────────────────────────────────────────────
+
+export type RelationshipStrength = 'hot' | 'warm' | 'cold' | 'personal';
+
+export interface ContactMapData {
+  contactId: string;
+  lat?: number;
+  lng?: number;
+  locationLabel?: string;
+  nodeX?: number;
+  nodeY?: number;
+  mapNotes: string;
+  strength: RelationshipStrength;
+  voiceNote?: string;
+  photo?: string;
+}
+
+export interface NetworkManualConnection {
+  id: string;
+  sourceContactId: string;
+  targetContactId: string;
+  label: string;
+}
+
+export interface NetworkingMapState {
+  contactData: Record<string, ContactMapData>;
+  manualConnections: NetworkManualConnection[];
+  showAutoConnections: boolean;
+  activeView: 'geographic' | 'network';
+}
+
+export interface MapFilters {
+  ventureId: string;
+  relationshipType: string;
+  location: string;
+  strength: RelationshipStrength | 'all';
+  followUpOnly: boolean;
+  search: string;
+}
+
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
 
 export interface AppState {

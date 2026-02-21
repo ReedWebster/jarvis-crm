@@ -14,6 +14,7 @@ import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
+import { NetworkingMap } from './components/networking/NetworkingMap';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
@@ -38,6 +39,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   recruitment: 'Recruitment',
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
+  networking: 'Networking Map',
 };
 
 export default function App() {
@@ -157,6 +159,15 @@ export default function App() {
             notes={notes}
             readingItems={readingItems}
             candidates={candidates}
+          />
+        );
+      case 'networking':
+        return (
+          <NetworkingMap
+            contacts={contacts}
+            setContacts={setContacts}
+            projects={projects}
+            onNavigateToCRM={() => setActiveSection('contacts')}
           />
         );
       default:
