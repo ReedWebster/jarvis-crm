@@ -284,6 +284,12 @@ export type TodoStatus = 'todo' | 'in-progress' | 'done';
 export type TodoPriority = 'low' | 'medium' | 'high';
 export type TodoLinkType = 'contact' | 'project' | 'goal' | 'course' | 'note' | 'reading' | 'candidate';
 
+export interface TodoChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
 export interface TodoItem {
   id: string;
   title: string;
@@ -295,6 +301,7 @@ export interface TodoItem {
   linkedType?: TodoLinkType;
   linkedId?: string;
   linkedLabel?: string;
+  checklist: TodoChecklistItem[];
 }
 
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
