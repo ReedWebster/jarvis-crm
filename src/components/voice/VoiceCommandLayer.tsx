@@ -903,7 +903,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
           style={{ color: 'var(--text-muted)', opacity: 0.7 }}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-pulse" />
-          J.A.R.V.I.S. ready
+          LITEHOUSE ready
         </div>
       )}
 
@@ -1247,7 +1247,7 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
               Microphone Access
             </h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              J.A.R.V.I.S. needs microphone access for voice commands. Your audio is never sent
+              LITEHOUSE needs microphone access for voice commands. Your audio is never sent
               anywhere — it's processed entirely on your device.
             </p>
             <div className="flex gap-3">

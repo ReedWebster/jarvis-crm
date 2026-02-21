@@ -76,12 +76,15 @@ export function Sidebar({ active, onNavigate, onSearch, mobileOpen, onMobileClos
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-5 transition-colors duration-300" style={{ borderBottom: '1px solid var(--border)' }}>
-            <div className="text-sm font-bold tracking-wide transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
-              J.A.R.V.I.S.
-            </div>
-            <div className="text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-              Command Center
+          <div className="p-4 transition-colors duration-300 flex items-center gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
+            <img src="/favicon.svg" alt="LITEHOUSE" className="w-9 h-9 rounded-full flex-shrink-0" style={{ border: '1px solid var(--border)' }} />
+            <div>
+              <div className="text-sm font-bold tracking-widest transition-colors duration-300" style={{ color: 'var(--text-primary)', fontFamily: "'Times New Roman', Times, serif", letterSpacing: '0.15em' }}>
+                LITEHOUSE
+              </div>
+              <div className="text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
+                Command Center
+              </div>
             </div>
           </div>
 
@@ -139,7 +142,7 @@ export function Sidebar({ active, onNavigate, onSearch, mobileOpen, onMobileClos
           {/* Footer */}
           <div className="p-3 text-center transition-colors duration-300" style={{ borderTop: '1px solid var(--border)' }}>
             <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>v1.0.0</div>
-            <div className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>Powered by Reed Webster</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>Built by Reed Webster</div>
           </div>
         </div>
       </aside>

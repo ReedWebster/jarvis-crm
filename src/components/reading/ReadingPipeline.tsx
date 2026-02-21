@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   BookOpen,
   Plus,
@@ -158,6 +158,12 @@ interface Props {
   setReadingItems: (v: ReadingItem[] | ((p: ReadingItem[]) => ReadingItem[])) => void;
 }
 
+interface BookSuggestion {
+  title: string;
+  author: string;
+  category: string;
+}
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
@@ -169,6 +175,59 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
   const [insightSearch, setInsightSearch] = useState('');
   const [expandedInsights, setExpandedInsights] = useState<Set<string>>(new Set());
   const [filterType, setFilterType] = useState<ReadingType | 'all'>('all');
+
+  // ── Book autocomplete ───────────────────────────────────────────────────────
+  const [bookSuggestions, setBookSuggestions] = useState<BookSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionBoxRef = useRef<HTMLDivElement>(null);
+
+  const searchBooks = (query: string) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!query.trim() || query.length < 3) {
+      setBookSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    setLoadingSuggestions(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&fields=title,author_name,subject&limit=8`
+        );
+        const data = await res.json();
+        const suggestions: BookSuggestion[] = (data.docs ?? []).map((doc: { title?: string; author_name?: string[]; subject?: string[] }) => ({
+          title: doc.title ?? '',
+          author: (doc.author_name ?? [])[0] ?? '',
+          category: (doc.subject ?? []).find((s: string) => s.length < 30) ?? (doc.subject ?? [])[0] ?? '',
+        }));
+        setBookSuggestions(suggestions);
+        setShowSuggestions(suggestions.length > 0);
+      } catch {
+        // Network error — silently fail
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 350);
+  };
+
+  const applySuggestion = (s: BookSuggestion) => {
+    setForm(f => ({ ...f, title: s.title, author: s.author || f.author, category: s.category || f.category }));
+    setShowSuggestions(false);
+    setBookSuggestions([]);
+  };
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (suggestionBoxRef.current && !suggestionBoxRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // ── Modal helpers ──────────────────────────────────────────────────────────
 
@@ -187,6 +246,8 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
   function closeModal() {
     setModalOpen(false);
     setEditingItem(null);
+    setBookSuggestions([]);
+    setShowSuggestions(false);
   }
 
   function saveItem() {
@@ -696,15 +757,56 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
       >
         <div className="space-y-4">
           {/* Title */}
-          <div>
-            <label className="caesar-label">Title *</label>
+          <div className="relative" ref={suggestionBoxRef}>
+            <label className="caesar-label">
+              Title *
+              {form.type === 'book' && (
+                <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>
+                  — start typing to search Open Library
+                </span>
+              )}
+            </label>
             <input
               type="text"
               className="caesar-input w-full mt-1"
               placeholder="Book / article / course title"
               value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, title: e.target.value }));
+                if (form.type === 'book') searchBooks(e.target.value);
+              }}
+              onFocus={() => { if (bookSuggestions.length > 0) setShowSuggestions(true); }}
+              autoComplete="off"
             />
+            {/* Autocomplete dropdown */}
+            {showSuggestions && form.type === 'book' && (
+              <div
+                className="absolute left-0 right-0 z-50 rounded-lg border shadow-xl mt-1 overflow-hidden"
+                style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', top: '100%' }}
+              >
+                {loadingSuggestions ? (
+                  <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>Searching...</div>
+                ) : (
+                  bookSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm border-b last:border-b-0 transition-colors"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-primary)', backgroundColor: 'transparent' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-elevated)')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      onMouseDown={e => { e.preventDefault(); applySuggestion(s); }}
+                    >
+                      <div className="font-medium truncate">{s.title}</div>
+                      <div className="text-xs mt-0.5 flex gap-3" style={{ color: 'var(--text-muted)' }}>
+                        {s.author && <span>{s.author}</span>}
+                        {s.category && <span style={{ opacity: 0.7 }}>{s.category}</span>}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {/* Author */}

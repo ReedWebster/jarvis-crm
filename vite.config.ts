@@ -9,9 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
-        name: 'J.A.R.V.I.S. — Command Center',
-        short_name: 'J.A.R.V.I.S.',
-        description: 'Personal AI chief-of-staff. Projects, time, contacts, goals, finances — one command center.',
+        name: 'LITEHOUSE — Command Center',
+        short_name: 'LITEHOUSE',
+        description: 'Personal command center. Projects, time, contacts, goals, finances — all in one place.',
         theme_color: '#0c0c0c',
         background_color: '#0c0c0c',
         display: 'standalone',
