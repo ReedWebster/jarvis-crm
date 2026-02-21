@@ -43,6 +43,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
 export default function App() {
   const [activeSection, setActiveSection] = useState<NavSection>('command');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // ─── Theme ─────────────────────────────────────────────────────────────────
   const { theme, toggle } = useThemeState();
@@ -170,6 +171,8 @@ export default function App() {
           active={activeSection}
           onNavigate={setActiveSection}
           onSearch={() => setSearchOpen(true)}
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
         />
 
         <TopBar
@@ -178,11 +181,12 @@ export default function App() {
           onStatusChange={handleStatusChange}
           onThemeToggle={toggle}
           isDark={theme === 'dark'}
+          onMenuOpen={() => setMobileSidebarOpen(true)}
         />
 
         {/* Main Content */}
-        <main className="ml-56 pt-14 min-h-screen">
-          <div className="p-6 max-w-[1600px] animate-fade-in" key={activeSection}>
+        <main className="ml-0 md:ml-56 pt-14 min-h-screen">
+          <div className="p-4 md:p-6 max-w-[1600px] animate-fade-in" key={activeSection}>
             {renderSection()}
           </div>
         </main>
