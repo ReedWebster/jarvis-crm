@@ -278,6 +278,25 @@ export interface VoiceCommandEntry {
   success: boolean;
 }
 
+// ─── TODOS ───────────────────────────────────────────────────────────────────
+
+export type TodoStatus = 'todo' | 'in-progress' | 'done';
+export type TodoPriority = 'low' | 'medium' | 'high';
+export type TodoLinkType = 'contact' | 'project' | 'goal' | 'course' | 'note' | 'reading' | 'candidate';
+
+export interface TodoItem {
+  id: string;
+  title: string;
+  notes: string;
+  status: TodoStatus;
+  priority: TodoPriority;
+  dueDate?: string;
+  createdAt: string;
+  linkedType?: TodoLinkType;
+  linkedId?: string;
+  linkedLabel?: string;
+}
+
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
 
 export interface AppState {

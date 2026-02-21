@@ -13,6 +13,7 @@ import { GoalHierarchy } from './components/goals/GoalHierarchy';
 import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
+import { TodoList } from './components/todos/TodoList';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
@@ -21,7 +22,7 @@ import type {
   Identity, Project, TimeBlock, TimeCategory, Contact, Course,
   FinancialEntry, SavingsGoal, VentureFinancial, Goal, WeeklyReview,
   DecisionLog, ReadingItem, Candidate, Note, DailyEvent, Habit,
-  HabitTracker, DailyMoodLog, StatusMode
+  HabitTracker, DailyMoodLog, StatusMode, TodoItem,
 } from './types';
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -36,6 +37,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   reading: 'Reading Pipeline',
   recruitment: 'Recruitment',
   notes: 'Notes & Intelligence',
+  todos: 'Todo List',
 };
 
 export default function App() {
@@ -67,6 +69,7 @@ export default function App() {
   const [habitTracker, setHabitTracker] = useLocalStorage<HabitTracker[]>('jarvis:habitTracker', DEFAULT_STATE.habitTracker);
   const [dailyMoodLogs, setDailyMoodLogs] = useLocalStorage<DailyMoodLog[]>('jarvis:dailyMoodLogs', DEFAULT_STATE.dailyMoodLogs);
   const [scratchpad, setScratchpad] = useLocalStorage<string>('jarvis:scratchpad', DEFAULT_STATE.scratchpad);
+  const [todos, setTodos] = useLocalStorage<TodoItem[]>('jarvis:todos', []);
 
   const handleStatusChange = (status: StatusMode) => {
     setIdentity(prev => ({ ...prev, status }));
@@ -139,6 +142,20 @@ export default function App() {
             setNotes={setNotes}
             scratchpad={scratchpad}
             setScratchpad={setScratchpad}
+          />
+        );
+      case 'todos':
+        return (
+          <TodoList
+            todos={todos}
+            setTodos={setTodos}
+            contacts={contacts}
+            projects={projects}
+            goals={goals}
+            courses={courses}
+            notes={notes}
+            readingItems={readingItems}
+            candidates={candidates}
           />
         );
       default:

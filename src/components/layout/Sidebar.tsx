@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
-  DollarSign, Target, BookOpen, UserPlus, FileText, Search, ChevronRight
+  DollarSign, Target, BookOpen, UserPlus, FileText, Search, ChevronRight, CheckSquare
 } from 'lucide-react';
 
 export type NavSection =
@@ -15,7 +15,8 @@ export type NavSection =
   | 'goals'
   | 'reading'
   | 'recruitment'
-  | 'notes';
+  | 'notes'
+  | 'todos';
 
 interface NavItem {
   id: NavSection;
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'reading',    label: 'Reading Pipeline', icon: <BookOpen size={18} /> },
   { id: 'recruitment',label: 'Recruitment',      icon: <UserPlus size={18} /> },
   { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
+  { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
 ];
 
 interface SidebarProps {
@@ -53,12 +55,6 @@ export function Sidebar({ active, onNavigate, onSearch }: SidebarProps) {
       {/* Logo */}
       <div className="p-5 transition-colors duration-300" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
-            style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg)' }}
-          >
-            J
-          </div>
           <div>
             <div className="text-sm font-bold tracking-wide transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
               J.A.R.V.I.S.
