@@ -223,6 +223,25 @@ export interface ClientPayment {
   status: PaymentStatus;
 }
 
+export type ContractPricingModel = 'retainer' | 'commission';
+
+export interface ClientContractInfo {
+  type: 'uploaded' | 'generated';
+  fileName: string;
+  createdAt: string;
+  // Uploaded contract
+  fileData?: string;  // base64 encoded
+  fileType?: string;  // MIME type, e.g. 'application/pdf'
+  // Generated contract metadata (HTML is regenerated on demand)
+  pricingModel?: ContractPricingModel;
+  retainerAmount?: number;
+  commissionRate?: number;
+  commissionBasis?: string;
+  paymentTerms?: string;
+  contractDuration?: string;
+  additionalNotes?: string;
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -238,6 +257,7 @@ export interface Client {
   notes: string;
   payments: ClientPayment[];
   linkedProjectId?: string;
+  contract?: ClientContractInfo;
 }
 
 // ─── NOTES ───────────────────────────────────────────────────────────────────

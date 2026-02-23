@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Building2, Plus, Edit3, Trash2, Mail, Phone, Search,
   CheckCircle2, Clock, AlertCircle, Users, Bell,
   CreditCard, FileText, Briefcase, RefreshCw,
+  Upload, Download, Eye, FileCheck, FilePlus, Printer,
 } from 'lucide-react';
 import { differenceInDays } from 'date-fns';
-import type { Client, ClientPayment, ClientStatus, PaymentStatus } from '../../types';
+import type { Client, ClientPayment, ClientStatus, PaymentStatus, ClientContractInfo } from '../../types';
 import { generateId, todayStr, formatDate } from '../../utils';
 import { Modal } from '../shared/Modal';
 
@@ -78,7 +79,166 @@ function emptyClient(): Omit<Client, 'id'> {
     name: '', company: '', email: '', phone: '',
     status: 'prospect', services: [], contractValue: 0,
     billingDay: undefined, startDate: todayStr(), endDate: '', notes: '', payments: [],
+    contract: undefined,
   };
+}
+
+// ─── CONTRACT HTML GENERATOR ──────────────────────────────────────────────────
+
+interface ContractOpts {
+  pricingModel: 'retainer' | 'commission';
+  retainerAmount: number;
+  commissionRate: number;
+  commissionBasis: string;
+  paymentTerms: string;
+  contractDuration: string;
+  additionalNotes: string;
+}
+
+function generateContractHTML(client: Client, opts: ContractOpts): string {
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const services = client.services.length > 0 ? client.services : ['Marketing Services'];
+  const billingLine = client.billingDay
+    ? `Invoices will be issued on the ${ordinal(client.billingDay)} of each calendar month.`
+    : 'Invoices will be issued monthly.';
+
+  const compensation = opts.pricingModel === 'retainer'
+    ? `<p>Client agrees to pay Agency a monthly retainer fee of <strong>$${opts.retainerAmount.toLocaleString('en-US')}</strong> for the Services described herein. ${billingLine} Payment is due within <strong>${opts.paymentTerms}</strong> of invoice date.</p>`
+    : `<p>Client agrees to pay Agency a commission of <strong>${opts.commissionRate}%</strong> of ${opts.commissionBasis || "gross revenue generated through Agency's efforts"}. Commissions will be calculated and invoiced monthly. Payment is due within <strong>${opts.paymentTerms}</strong> of invoice date.</p>`;
+
+  const termination = opts.contractDuration === 'Month-to-month'
+    ? 'Either party may terminate this Agreement with thirty (30) days prior written notice. Client shall remain responsible for all fees accrued prior to the effective termination date.'
+    : 'Either party may terminate this Agreement for material breach upon fourteen (14) days written notice if the breaching party fails to cure such breach within the notice period. Early termination by Client for convenience shall require thirty (30) days notice and payment of all fees through the end of the current term.';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Marketing Services Agreement — ${client.company || client.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, 'Times New Roman', serif; max-width: 780px; margin: 48px auto; padding: 0 32px; color: #1a1a1a; line-height: 1.75; font-size: 14px; }
+    .cover { text-align: center; padding: 40px 0 32px; border-bottom: 2px solid #1a1a1a; margin-bottom: 32px; }
+    .cover h1 { font-size: 20px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+    .cover .subtitle { font-size: 12px; color: #555; letter-spacing: 0.04em; text-transform: uppercase; }
+    .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; border: 1px solid #ccc; border-radius: 4px; padding: 20px 24px; margin: 28px 0; }
+    .party-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 4px; }
+    .party-name { font-weight: bold; font-size: 15px; }
+    .party-sub { font-size: 12px; color: #555; margin-top: 2px; }
+    section { margin-top: 28px; }
+    h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #ddd; color: #333; }
+    p { margin: 8px 0; }
+    ul { margin: 8px 0 8px 22px; }
+    li { margin: 3px 0; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 64px; padding-top: 24px; border-top: 1px solid #ccc; }
+    .sig-block strong { display: block; margin-bottom: 52px; }
+    .sig-line { border-top: 1px solid #333; padding-top: 7px; font-size: 11px; color: #666; }
+    .sig-date { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 7px; font-size: 11px; color: #666; }
+    .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
+    @media print {
+      body { margin: 24px; padding: 0; }
+      @page { margin: 1in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <h1>Marketing Services Agreement</h1>
+    <div class="subtitle">Effective Date: ${dateStr}</div>
+  </div>
+
+  <div class="parties">
+    <div>
+      <div class="party-label">Agency</div>
+      <div class="party-name">Vanta Marketing Co.</div>
+    </div>
+    <div>
+      <div class="party-label">Client</div>
+      <div class="party-name">${client.company || client.name}</div>
+      ${client.company && client.name ? `<div class="party-sub">Attn: ${client.name}</div>` : ''}
+      ${client.email ? `<div class="party-sub">${client.email}</div>` : ''}
+    </div>
+  </div>
+
+  <p>This Marketing Services Agreement ("Agreement") is entered into as of ${dateStr} between <strong>Vanta Marketing Co.</strong> ("Agency") and <strong>${client.company || client.name}</strong> ("Client").</p>
+
+  <section>
+    <h2>1. Services</h2>
+    <p>Agency agrees to provide the following marketing services to Client:</p>
+    <ul>
+      ${services.map(s => `<li>${s}</li>`).join('\n      ')}
+    </ul>
+    ${opts.additionalNotes ? `<p><em>Additional scope of work: ${opts.additionalNotes}</em></p>` : ''}
+  </section>
+
+  <section>
+    <h2>2. Term</h2>
+    <p>This Agreement shall commence on ${dateStr} and continue on a <strong>${opts.contractDuration}</strong> basis unless earlier terminated in accordance with Section 7 of this Agreement.</p>
+  </section>
+
+  <section>
+    <h2>3. Compensation</h2>
+    ${compensation}
+  </section>
+
+  <section>
+    <h2>4. Ownership of Work Product</h2>
+    <p>Upon receipt of full payment for each deliverable, all creative work product produced exclusively for Client under this Agreement shall become the sole property of Client. Agency retains the right to display such work in its portfolio and promotional materials, with Client's prior written approval.</p>
+  </section>
+
+  <section>
+    <h2>5. Confidentiality</h2>
+    <p>Each party agrees to hold the other party's Confidential Information in strict confidence and shall not disclose it to any third party without prior written consent. "Confidential Information" includes business strategies, client lists, financial data, and proprietary methods. This obligation survives termination of this Agreement for a period of two (2) years.</p>
+  </section>
+
+  <section>
+    <h2>6. Representations and Warranties</h2>
+    <p>Each party represents that it has full authority to enter into this Agreement and that performance hereunder will not conflict with any other agreement. Client represents that it has obtained all necessary rights and permissions for any materials provided to Agency.</p>
+  </section>
+
+  <section>
+    <h2>7. Termination</h2>
+    <p>${termination}</p>
+  </section>
+
+  <section>
+    <h2>8. Limitation of Liability</h2>
+    <p>In no event shall either party be liable for any indirect, incidental, special, or consequential damages arising out of or related to this Agreement, even if advised of the possibility of such damages. Agency's aggregate liability shall not exceed the total fees paid by Client in the three (3) months immediately preceding the claim.</p>
+  </section>
+
+  <section>
+    <h2>9. Indemnification</h2>
+    <p>Each party agrees to indemnify, defend, and hold harmless the other party from and against any claims, damages, or expenses (including reasonable attorneys' fees) arising from that party's breach of this Agreement or negligent or wrongful acts.</p>
+  </section>
+
+  <section>
+    <h2>10. Governing Law &amp; Dispute Resolution</h2>
+    <p>This Agreement shall be governed by the laws of the State of Utah. Any dispute arising under this Agreement shall first be subject to good-faith negotiation. If unresolved within thirty (30) days, disputes shall be submitted to binding arbitration in Salt Lake County, Utah, under the rules of the American Arbitration Association.</p>
+  </section>
+
+  <section>
+    <h2>11. Entire Agreement &amp; Amendments</h2>
+    <p>This Agreement constitutes the entire agreement between the parties regarding its subject matter and supersedes all prior agreements and representations. Any modification must be in writing and signed by authorized representatives of both parties.</p>
+  </section>
+
+  <div class="signatures">
+    <div class="sig-block">
+      <strong>Vanta Marketing Co. ("Agency")</strong>
+      <div class="sig-line">Authorized Signature</div>
+      <div class="sig-line" style="margin-top:12px;">Printed Name &amp; Title</div>
+      <div class="sig-date">Date</div>
+    </div>
+    <div class="sig-block">
+      <strong>${client.company || client.name} ("Client")</strong>
+      <div class="sig-line">Authorized Signature</div>
+      <div class="sig-line" style="margin-top:12px;">Printed Name &amp; Title</div>
+      <div class="sig-date">Date</div>
+    </div>
+  </div>
+
+  <div class="footer">Generated by Vanta Marketing Co. via LITEHOUSE CRM · ${dateStr}</div>
+</body>
+</html>`;
 }
 
 function emptyPayment(): Omit<ClientPayment, 'id'> {
@@ -254,14 +414,26 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
   // Normalize to handle any stale/malformed data from older versions
   const clients = (Array.isArray(rawClients) ? rawClients : []).map(normalizeClient);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [form, setForm] = useState<Omit<Client, 'id'>>(emptyClient());
-  const [tab, setTab] = useState<'details' | 'payments' | 'notes'>('details');
+  const [tab, setTab] = useState<'details' | 'payments' | 'notes' | 'contract'>('details');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<ClientStatus | 'all'>('all');
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState<Omit<ClientPayment, 'id'>>(emptyPayment());
+  const [showContractGenerator, setShowContractGenerator] = useState(false);
+  const [contractForm, setContractForm] = useState<ContractOpts>({
+    pricingModel: 'retainer',
+    retainerAmount: 0,
+    commissionRate: 10,
+    commissionBasis: 'gross sales revenue',
+    paymentTerms: 'Net 15',
+    contractDuration: 'Month-to-month',
+    additionalNotes: '',
+  });
 
   // ── Derived stats ──────────────────────────────────────────────────────────
 
@@ -316,6 +488,8 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
     setForm(emptyClient());
     setTab('details');
     setShowPaymentForm(false);
+    setShowContractGenerator(false);
+    setContractForm(f => ({ ...f, retainerAmount: 0 }));
     setModalOpen(true);
   }
 
@@ -324,6 +498,17 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
     setForm({ ...client });
     setTab('details');
     setShowPaymentForm(false);
+    setShowContractGenerator(false);
+    setContractForm(f => ({
+      ...f,
+      retainerAmount: client.contractValue,
+      pricingModel: client.contract?.pricingModel ?? 'retainer',
+      commissionRate: client.contract?.commissionRate ?? 10,
+      commissionBasis: client.contract?.commissionBasis ?? 'gross sales revenue',
+      paymentTerms: client.contract?.paymentTerms ?? 'Net 15',
+      contractDuration: client.contract?.contractDuration ?? 'Month-to-month',
+      additionalNotes: client.contract?.additionalNotes ?? '',
+    }));
     setModalOpen(true);
   }
 
@@ -332,6 +517,7 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
     setEditingClient(null);
     setShowPaymentForm(false);
     setPaymentForm(emptyPayment());
+    setShowContractGenerator(false);
   }
 
   function saveClient() {
@@ -387,6 +573,123 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
       ...f,
       services: f.services.includes(s) ? f.services.filter(x => x !== s) : [...f.services, s],
     }));
+  }
+
+  // ── Contract helpers ───────────────────────────────────────────────────────
+
+  function handleGenerateContract() {
+    const clientSnapshot = { ...form, id: editingClient?.id ?? '' } as Client;
+    const html = generateContractHTML(clientSnapshot, contractForm);
+    const contractInfo: ClientContractInfo = {
+      type: 'generated',
+      fileName: `${form.company || form.name || 'contract'}_agreement.html`,
+      createdAt: todayStr(),
+      pricingModel: contractForm.pricingModel,
+      retainerAmount: contractForm.retainerAmount,
+      commissionRate: contractForm.commissionRate,
+      commissionBasis: contractForm.commissionBasis,
+      paymentTerms: contractForm.paymentTerms,
+      contractDuration: contractForm.contractDuration,
+      additionalNotes: contractForm.additionalNotes,
+    };
+    setForm(f => ({ ...f, contract: contractInfo }));
+    setShowContractGenerator(false);
+    // Open preview in new tab
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
+  }
+
+  function handleUploadContract(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File is larger than 5 MB. Please compress it or upload a smaller file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1];
+      const contractInfo: ClientContractInfo = {
+        type: 'uploaded',
+        fileName: file.name,
+        fileData: base64,
+        fileType: file.type,
+        createdAt: todayStr(),
+      };
+      setForm(f => ({ ...f, contract: contractInfo }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  function handlePreviewContract() {
+    if (!form.contract) return;
+    if (form.contract.type === 'uploaded' && form.contract.fileData && form.contract.fileType) {
+      const binary = atob(form.contract.fileData);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: form.contract.fileType });
+      window.open(URL.createObjectURL(blob), '_blank');
+    } else if (form.contract.type === 'generated') {
+      const clientSnapshot = { ...form, id: editingClient?.id ?? '' } as Client;
+      const html = generateContractHTML(clientSnapshot, {
+        pricingModel: form.contract.pricingModel ?? 'retainer',
+        retainerAmount: form.contract.retainerAmount ?? form.contractValue,
+        commissionRate: form.contract.commissionRate ?? 10,
+        commissionBasis: form.contract.commissionBasis ?? '',
+        paymentTerms: form.contract.paymentTerms ?? 'Net 15',
+        contractDuration: form.contract.contractDuration ?? 'Month-to-month',
+        additionalNotes: form.contract.additionalNotes ?? '',
+      });
+      const win = window.open('', '_blank');
+      if (win) { win.document.write(html); win.document.close(); }
+    }
+  }
+
+  function handleDownloadContract() {
+    if (!form.contract) return;
+    if (form.contract.type === 'uploaded' && form.contract.fileData && form.contract.fileType) {
+      const binary = atob(form.contract.fileData);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: form.contract.fileType });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = form.contract.fileName;
+      a.click();
+    } else if (form.contract.type === 'generated') {
+      const clientSnapshot = { ...form, id: editingClient?.id ?? '' } as Client;
+      const html = generateContractHTML(clientSnapshot, {
+        pricingModel: form.contract.pricingModel ?? 'retainer',
+        retainerAmount: form.contract.retainerAmount ?? form.contractValue,
+        commissionRate: form.contract.commissionRate ?? 10,
+        commissionBasis: form.contract.commissionBasis ?? '',
+        paymentTerms: form.contract.paymentTerms ?? 'Net 15',
+        contractDuration: form.contract.contractDuration ?? 'Month-to-month',
+        additionalNotes: form.contract.additionalNotes ?? '',
+      });
+      const blob = new Blob([html], { type: 'text/html' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = form.contract.fileName;
+      a.click();
+    }
+  }
+
+  function handlePrintContract() {
+    if (!form.contract || form.contract.type !== 'generated') return;
+    const clientSnapshot = { ...form, id: editingClient?.id ?? '' } as Client;
+    const html = generateContractHTML(clientSnapshot, {
+      pricingModel: form.contract.pricingModel ?? 'retainer',
+      retainerAmount: form.contract.retainerAmount ?? form.contractValue,
+      commissionRate: form.contract.commissionRate ?? 10,
+      commissionBasis: form.contract.commissionBasis ?? '',
+      paymentTerms: form.contract.paymentTerms ?? 'Net 15',
+      contractDuration: form.contract.contractDuration ?? 'Month-to-month',
+      additionalNotes: form.contract.additionalNotes ?? '',
+    });
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 400); }
   }
 
   const paymentsTotal = form.payments.reduce((s, p) => s + p.amount, 0);
@@ -533,6 +836,7 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
             { key: 'details',  label: 'Details',  icon: <Users size={13} /> },
             { key: 'payments', label: 'Payments', icon: <CreditCard size={13} /> },
             { key: 'notes',    label: 'Notes',    icon: <FileText size={13} /> },
+            { key: 'contract', label: 'Contract', icon: <FileCheck size={13} /> },
           ] as const).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors"
@@ -713,6 +1017,199 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
             <textarea className="caesar-textarea w-full mt-1" rows={10}
               placeholder="Contract details, communication history, preferences, next steps…"
               value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+          </div>
+        )}
+
+        {/* ── Contract Tab ── */}
+        {tab === 'contract' && (
+          <div className="space-y-4">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/*,.doc,.docx,.pages"
+              className="hidden"
+              onChange={handleUploadContract}
+            />
+
+            {/* Existing contract */}
+            {form.contract ? (
+              <div className="rounded-xl border p-4 space-y-3"
+                style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg flex-shrink-0" style={{ backgroundColor: 'var(--bg-card)' }}>
+                    {form.contract.type === 'generated'
+                      ? <FileCheck size={18} style={{ color: '#10b981' }} />
+                      : <FileText size={18} style={{ color: '#3b82f6' }} />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                      {form.contract.fileName}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {form.contract.type === 'generated' ? 'Auto-generated' : 'Uploaded'} · {formatDate(form.contract.createdAt)}
+                    </p>
+                    {form.contract.type === 'generated' && (
+                      <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--text-muted)' }}>
+                        {form.contract.pricingModel === 'retainer'
+                          ? `Retainer · $${(form.contract.retainerAmount ?? 0).toLocaleString()}/mo`
+                          : `Commission · ${form.contract.commissionRate ?? 0}%`
+                        }
+                        {form.contract.paymentTerms && ` · ${form.contract.paymentTerms}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <button onClick={handlePreviewContract}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:border-[var(--border-strong)]"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                    <Eye size={12} /> Preview
+                  </button>
+                  <button onClick={handleDownloadContract}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:border-[var(--border-strong)]"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                    <Download size={12} /> Download
+                  </button>
+                  {form.contract.type === 'generated' && (
+                    <button onClick={handlePrintContract}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:border-[var(--border-strong)]"
+                      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                      <Printer size={12} /> Print / Save PDF
+                    </button>
+                  )}
+                  <button onClick={() => setForm(f => ({ ...f, contract: undefined }))}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ml-auto transition-all"
+                    style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#ef4444' }}>
+                    <Trash2 size={12} /> Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              !showContractGenerator && (
+                <div className="rounded-xl border-2 border-dashed py-10 text-center space-y-4"
+                  style={{ borderColor: 'var(--border)' }}>
+                  <FileCheck size={36} className="mx-auto opacity-20" style={{ color: 'var(--text-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No contract on file</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => {
+                        setContractForm(f => ({ ...f, retainerAmount: form.contractValue }));
+                        setShowContractGenerator(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-all hover:border-[var(--border-strong)]"
+                      style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                      <FilePlus size={13} /> Generate from Template
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-medium transition-all hover:border-[var(--border-strong)]"
+                      style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                      <Upload size={13} /> Upload Contract
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Contract Generator */}
+            {showContractGenerator && !form.contract && (
+              <div className="rounded-xl border p-4 space-y-4"
+                style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Generate Contract</p>
+                  <button onClick={() => setShowContractGenerator(false)} style={{ color: 'var(--text-muted)' }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                {/* Pricing model toggle */}
+                <div>
+                  <label className="caesar-label">Pricing Model</label>
+                  <div className="flex gap-2 mt-1">
+                    {(['retainer', 'commission'] as const).map(m => (
+                      <button key={m} type="button"
+                        onClick={() => setContractForm(f => ({ ...f, pricingModel: m }))}
+                        className="flex-1 py-2 rounded-lg border text-xs font-medium capitalize transition-all"
+                        style={{
+                          backgroundColor: contractForm.pricingModel === m ? 'var(--bg-card)' : 'transparent',
+                          borderColor: contractForm.pricingModel === m ? 'var(--border-strong)' : 'var(--border)',
+                          color: contractForm.pricingModel === m ? 'var(--text-primary)' : 'var(--text-muted)',
+                        }}>
+                        {m === 'retainer' ? 'Monthly Retainer' : 'Commission-Based'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {contractForm.pricingModel === 'retainer' ? (
+                  <div>
+                    <label className="caesar-label">Monthly Retainer Amount ($)</label>
+                    <input type="number" min={0} className="caesar-input w-full mt-1"
+                      value={contractForm.retainerAmount || ''}
+                      onChange={e => setContractForm(f => ({ ...f, retainerAmount: parseFloat(e.target.value) || 0 }))}
+                      placeholder="0" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="caesar-label">Commission Rate (%)</label>
+                      <input type="number" min={0} max={100} step={0.5} className="caesar-input w-full mt-1"
+                        value={contractForm.commissionRate || ''}
+                        onChange={e => setContractForm(f => ({ ...f, commissionRate: parseFloat(e.target.value) || 0 }))}
+                        placeholder="10" />
+                    </div>
+                    <div>
+                      <label className="caesar-label">Commission Based On</label>
+                      <input className="caesar-input w-full mt-1"
+                        value={contractForm.commissionBasis}
+                        onChange={e => setContractForm(f => ({ ...f, commissionBasis: e.target.value }))}
+                        placeholder="gross sales revenue" />
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="caesar-label">Contract Duration</label>
+                    <select className="caesar-select w-full mt-1" value={contractForm.contractDuration}
+                      onChange={e => setContractForm(f => ({ ...f, contractDuration: e.target.value }))}>
+                      {['Month-to-month', '3 months', '6 months', '1 year', '2 years'].map(d =>
+                        <option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="caesar-label">Payment Terms</label>
+                    <select className="caesar-select w-full mt-1" value={contractForm.paymentTerms}
+                      onChange={e => setContractForm(f => ({ ...f, paymentTerms: e.target.value }))}>
+                      {['Due on Receipt', 'Net 7', 'Net 15', 'Net 30'].map(t =>
+                        <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="caesar-label">Additional Scope Notes (optional)</label>
+                  <textarea className="caesar-textarea w-full mt-1" rows={2}
+                    placeholder="e.g. Includes up to 3 revisions per deliverable…"
+                    value={contractForm.additionalNotes}
+                    onChange={e => setContractForm(f => ({ ...f, additionalNotes: e.target.value }))} />
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={handleGenerateContract}
+                    className="caesar-btn-primary flex-1 flex items-center justify-center gap-2">
+                    <Eye size={13} /> Generate &amp; Preview
+                  </button>
+                  <button onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                    <Upload size={12} /> Upload Instead
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
