@@ -1,4 +1,33 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
+
+// Error boundary — prevents a single section crash from blanking the whole app
+class SectionErrorBoundary extends Component<{ children: ReactNode; section: string }, { error: Error | null }> {
+  constructor(props: { children: ReactNode; section: string }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[LITEHOUSE] Section "${this.props.section}" crashed:`, error, info);
+  }
+  componentDidUpdate(prev: { section: string }) {
+    if (prev.section !== this.props.section && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-8 text-center" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Something went wrong in this section.</p>
+          <p className="text-xs font-mono mb-4" style={{ color: '#ef4444' }}>{this.state.error.message}</p>
+          <button className="caesar-btn-ghost text-xs" onClick={() => this.setState({ error: null })}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { LoginPage } from './components/auth/LoginPage';
@@ -254,7 +283,9 @@ export default function App() {
               : undefined}
             key={activeSection}
           >
-            {renderSection()}
+            <SectionErrorBoundary section={activeSection}>
+              {renderSection()}
+            </SectionErrorBoundary>
           </div>
         </main>
 

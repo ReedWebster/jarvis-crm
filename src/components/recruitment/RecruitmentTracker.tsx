@@ -34,6 +34,22 @@ const BILLING_DAYS = Array.from({ length: 28 }, (_, i) => i + 1);
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+/** Handles old localStorage/Supabase data that may have `service: string` instead of `services: string[]` */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeClient(c: any): Client {
+  return {
+    ...c,
+    services: Array.isArray(c.services) ? c.services : c.service ? [c.service] : [],
+    payments: Array.isArray(c.payments) ? c.payments : [],
+    name: c.name ?? '',
+    company: c.company ?? '',
+    status: c.status ?? 'prospect',
+    contractValue: Number(c.contractValue) || 0,
+    startDate: c.startDate ?? '',
+    notes: c.notes ?? '',
+  };
+}
+
 function fmtUSD(n: number): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
@@ -234,7 +250,10 @@ interface Props {
 
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
-export function RecruitmentTracker({ clients, setClients }: Props) {
+export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
+  // Normalize to handle any stale/malformed data from older versions
+  const clients = (Array.isArray(rawClients) ? rawClients : []).map(normalizeClient);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [form, setForm] = useState<Omit<Client, 'id'>>(emptyClient());
