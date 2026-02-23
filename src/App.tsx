@@ -21,12 +21,13 @@ import { NetworkingMap } from './components/networking/NetworkingMap';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { useSupabaseStorage } from './hooks/useSupabaseStorage';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
+import { ToastProvider } from './components/shared/Toast';
 import { DEFAULT_STATE } from './data/defaultData';
 import type {
   Identity, Project, TimeBlock, TimeCategory, Contact, Course,
   FinancialEntry, SavingsGoal, VentureFinancial, Goal, WeeklyReview,
   DecisionLog, ReadingItem, Candidate, Note, DailyEvent, Habit,
-  HabitTracker, DailyMoodLog, StatusMode, TodoItem,
+  HabitTracker, DailyMoodLog, StatusMode, TodoItem, Client,
 } from './types';
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -39,7 +40,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   financial: 'Financial Snapshot',
   goals: 'Goal Hierarchy',
   reading: 'Reading Pipeline',
-  recruitment: 'Recruitment',
+  recruitment: 'Clients',
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
   networking: 'Networking Map',
@@ -84,6 +85,7 @@ export default function App() {
   const [decisionLogs, setDecisionLogs] = useSupabaseStorage<DecisionLog[]>('jarvis:decisionLogs', DEFAULT_STATE.decisionLogs);
   const [readingItems, setReadingItems] = useSupabaseStorage<ReadingItem[]>('jarvis:readingItems', DEFAULT_STATE.readingItems);
   const [candidates, setCandidates] = useSupabaseStorage<Candidate[]>('jarvis:candidates', DEFAULT_STATE.candidates);
+  const [clients, setClients] = useSupabaseStorage<Client[]>('jarvis:clients', []);
   const [notes, setNotes] = useSupabaseStorage<Note[]>('jarvis:notes', DEFAULT_STATE.notes);
   const [dailyEvents, setDailyEvents] = useSupabaseStorage<DailyEvent[]>('jarvis:dailyEvents', DEFAULT_STATE.dailyEvents);
   const [habits] = useSupabaseStorage<Habit[]>('jarvis:habits', DEFAULT_STATE.habits);
@@ -108,8 +110,10 @@ export default function App() {
             habits={habits}
             habitTracker={habitTracker}
             setHabitTracker={setHabitTracker}
-            dailyMoodLogs={dailyMoodLogs}
-            setDailyMoodLogs={setDailyMoodLogs}
+            notes={notes}
+            setNotes={setNotes}
+            todos={todos}
+            setTodos={setTodos}
           />
         );
       case 'identity':
@@ -123,6 +127,9 @@ export default function App() {
             setTimeBlocks={setTimeBlocks}
             timeCategories={timeCategories}
             setTimeCategories={setTimeCategories}
+            notes={notes}
+            setNotes={setNotes}
+            todos={todos}
           />
         );
       case 'contacts':
@@ -155,7 +162,7 @@ export default function App() {
       case 'reading':
         return <ReadingPipeline readingItems={readingItems} setReadingItems={setReadingItems} />;
       case 'recruitment':
-        return <RecruitmentTracker candidates={candidates} setCandidates={setCandidates} />;
+        return <RecruitmentTracker clients={clients} setClients={setClients} />;
       case 'notes':
         return (
           <NotesHub
@@ -214,6 +221,7 @@ export default function App() {
 
   return (
     <ThemeContext.Provider value={themeCtx}>
+      <ToastProvider>
       <div className="min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg)' }}>
         <Sidebar
           active={activeSection}
@@ -233,8 +241,19 @@ export default function App() {
         />
 
         {/* Main Content */}
-        <main className="ml-0 md:ml-56 pt-14 min-h-screen">
-          <div className="p-4 md:p-6 max-w-[1600px] animate-fade-in" key={activeSection}>
+        <main
+          className="ml-0 md:ml-56 min-h-screen overflow-x-hidden"
+          style={{ paddingTop: 'calc(56px + env(safe-area-inset-top))' }}
+        >
+          <div
+            className={activeSection === 'networking'
+              ? 'animate-fade-in'
+              : 'p-4 md:p-6 max-w-[1600px] animate-fade-in'}
+            style={activeSection === 'networking'
+              ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top))' }
+              : undefined}
+            key={activeSection}
+          >
             {renderSection()}
           </div>
         </main>
@@ -279,6 +298,7 @@ export default function App() {
           setDailyEvents={setDailyEvents}
         />
       </div>
+      </ToastProvider>
     </ThemeContext.Provider>
   );
 }

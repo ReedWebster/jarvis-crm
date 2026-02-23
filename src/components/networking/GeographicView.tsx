@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMapEvents, useM
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, RotateCcw, X, Plus, MapPin } from 'lucide-react';
+import { Search, RotateCcw, X, Plus, MapPin, Locate } from 'lucide-react';
 import type { Contact, Project, ContactMapData, NetworkingMapState, RelationshipStrength } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import {
@@ -104,11 +104,69 @@ function ResetViewButton() {
   return (
     <button
       onClick={() => map.flyTo([39, -98], 4, { duration: 1 })}
-      className="absolute bottom-12 left-3 z-[500] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs shadow-lg"
+      className="absolute bottom-28 left-3 z-[1000] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs shadow-lg"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
       title="Reset view"
     >
       <RotateCcw size={12} />
+    </button>
+  );
+}
+
+function createMyLocationIcon(): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    html: `
+      <div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+        <div style="
+          width:14px;height:14px;border-radius:50%;
+          background:#3b82f6;
+          border:2.5px solid white;
+          box-shadow:0 0 0 6px rgba(59,130,246,0.2);
+        "></div>
+      </div>
+    `,
+  });
+}
+
+function LocateMeButton({ onLocated }: { onLocated: (lat: number, lng: number) => void }) {
+  const map = useMap();
+  const [loading, setLoading] = useState(false);
+  const [denied, setDenied] = useState(false);
+
+  const locate = () => {
+    if (!navigator.geolocation) { setDenied(true); return; }
+    setLoading(true);
+    setDenied(false);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setLoading(false);
+        map.flyTo([lat, lng], 12, { duration: 1.5 });
+        onLocated(lat, lng);
+      },
+      () => { setLoading(false); setDenied(true); },
+      { timeout: 10000 },
+    );
+  };
+
+  return (
+    <button
+      onClick={locate}
+      className="absolute bottom-20 left-3 z-[1000] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs shadow-lg"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        borderColor: denied ? 'var(--priority-high)' : 'var(--border)',
+        color: denied ? 'var(--priority-high)' : 'var(--text-secondary)',
+      }}
+      title={denied ? 'Location access denied' : 'Go to my location'}
+    >
+      {loading
+        ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+        : <Locate size={12} />
+      }
     </button>
   );
 }
@@ -260,6 +318,7 @@ export function GeographicView({
   const [newContactPos, setNewContactPos] = useState<{ lat: number; lng: number; label: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchDrop, setShowSearchDrop] = useState(false);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const tileUrl = isDark
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -409,8 +468,18 @@ export function GeographicView({
         <MapClickHandler placingContactId={placingContactId} onPlace={handlePlace} />
         <ContextMenuHandler onRightClick={handleRightClick} />
 
-        {/* Reset view button inside the map */}
+        {/* Reset view + Locate Me buttons */}
         <ResetViewButton />
+        <LocateMeButton onLocated={(lat, lng) => setMyLocation({ lat, lng })} />
+
+        {/* My location marker */}
+        {myLocation && (
+          <Marker
+            position={[myLocation.lat, myLocation.lng]}
+            icon={createMyLocationIcon()}
+            zIndexOffset={1000}
+          />
+        )}
 
         {/* Contact pins */}
         <MarkerClusterGroup chunkedLoading>
@@ -498,7 +567,7 @@ export function GeographicView({
         .leaflet-popup-content-wrapper { background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; }
         .leaflet-popup-content { margin: 0 !important; }
         .leaflet-popup-tip-container { display: none !important; }
-        .leaflet-container { font-family: 'Times New Roman', Times, Georgia, serif !important; }
+        .leaflet-container { font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; }
         .marker-cluster { background-clip: padding-box; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--border-strong); }
         .marker-cluster div { width: 30px; height: 30px; margin: 5px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text-primary); background: var(--bg-elevated); }
         .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background-color: var(--bg-elevated); }

@@ -226,7 +226,7 @@ export default function CoreIdentityPanel({ identity, setIdentity }: Props) {
     <div className="space-y-6 animate-fade-in">
       <h1 className="section-title ">Core Identity</h1>
 
-      <div className="grid grid-cols-3 gap-6 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
 
         {/* ── LEFT: Photo + Status ─────────────────────────────────────────── */}
         <div className="col-span-1 space-y-4">

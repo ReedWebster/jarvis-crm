@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   Plus,
   Trash2,
   Clock,
   Zap,
-  TrendingUp,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -14,6 +13,8 @@ import {
   CalendarDays,
   LayoutGrid,
   Calendar,
+  FileText,
+  ListTodo,
 } from 'lucide-react';
 import {
   PieChart,
@@ -21,10 +22,6 @@ import {
   Cell,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
 } from 'recharts';
 import {
   format,
@@ -35,12 +32,10 @@ import {
   endOfMonth,
   eachDayOfInterval,
   isSameMonth,
-  isToday as isTodayFn,
   getDay,
-  subMonths,
   addMonths,
 } from 'date-fns';
-import type { TimeBlock, TimeCategory } from '../../types';
+import type { TimeBlock, TimeCategory, Note, TodoItem } from '../../types';
 import {
   generateId,
   todayStr,
@@ -51,7 +46,6 @@ import {
   formatTime,
 } from '../../utils';
 import { Modal } from '../shared/Modal';
-import { useTheme } from '../../hooks/useTheme';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -63,11 +57,15 @@ interface Props {
   setTimeBlocks: (v: TimeBlock[] | ((p: TimeBlock[]) => TimeBlock[])) => void;
   timeCategories: TimeCategory[];
   setTimeCategories: (v: TimeCategory[] | ((p: TimeCategory[]) => TimeCategory[])) => void;
+  notes: Note[];
+  setNotes: (v: Note[] | ((p: Note[]) => Note[])) => void;
+  todos: TodoItem[];
 }
 
 interface LogFormState {
   date: string;
   categoryId: string;
+  title: string;
   startTime: string;
   endTime: string;
   notes: string;
@@ -172,16 +170,110 @@ function DonutTooltip({ active, payload }: any) {
   );
 }
 
-function MoodTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const val = payload[0].value;
+// Quick Add Note — saves directly to Notes & Intel
+function QuickAddNotePanel({ onAddNote }: { onAddNote: (note: Note) => void }) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    if (!content.trim() && !title.trim()) return;
+    const now = new Date().toISOString();
+    onAddNote({
+      id: generateId(),
+      title: title.trim() || format(new Date(), 'MMM d, h:mm a'),
+      content: content.trim(),
+      tags: [],
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+      isMeetingNote: false,
+    });
+    setTitle('');
+    setContent('');
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
-    <div
-      className="px-2 py-1.5 rounded-lg border text-xs shadow-lg"
-      style={{ borderColor: 'var(--border-strong)', backgroundColor: 'var(--bg-card)' }}
-    >
-      <p style={{ color: 'var(--text-secondary)' }}>{label}</p>
-      <p className="font-semibold">{ENERGY_EMOJIS[Math.round(val)]} {val.toFixed(1)}</p>
+    <div className="caesar-card flex flex-col gap-2">
+      <h2 className="text-xs font-semibold flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+        <FileText size={12} /> QUICK NOTE
+      </h2>
+      <input
+        className="caesar-input text-xs w-full"
+        placeholder="Title (optional)"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+      />
+      <textarea
+        className="caesar-input text-xs w-full resize-none"
+        rows={4}
+        placeholder="Capture a thought, insight, or intel…"
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); }}
+      />
+      <button
+        onClick={handleSave}
+        disabled={!content.trim() && !title.trim()}
+        className="caesar-btn-primary text-xs py-1.5 flex items-center justify-center gap-1.5"
+      >
+        {saved ? <><Check size={12} /> Saved to Notes</> : <><Plus size={12} /> Add to Notes & Intel</>}
+      </button>
+    </div>
+  );
+}
+
+// Todo Summary — shows incomplete todos for the sidebar
+function TodoSummaryPanel({ todos }: { todos: TodoItem[] }) {
+  const incomplete = todos.filter(t => t.status !== 'done');
+  const high = incomplete.filter(t => t.priority === 'high');
+  const medium = incomplete.filter(t => t.priority === 'medium');
+  const low = incomplete.filter(t => t.priority === 'low');
+
+  const renderGroup = (label: string, items: TodoItem[], dot: string) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dot }} />
+          <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)', fontSize: 10 }}>{label}</span>
+        </div>
+        {items.slice(0, 3).map(t => (
+          <div key={t.id} className="flex items-start gap-2 pl-3">
+            <div className="w-3 h-3 rounded border flex-shrink-0 mt-0.5" style={{ borderColor: 'var(--border)' }} />
+            <span className="text-xs leading-tight truncate" style={{ color: 'var(--text-secondary)' }}>{t.title}</span>
+          </div>
+        ))}
+        {items.length > 3 && (
+          <p className="text-xs pl-3" style={{ color: 'var(--text-muted)' }}>+{items.length - 3} more</p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="caesar-card flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-semibold flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+          <ListTodo size={12} /> TODO LIST
+        </h2>
+        {incomplete.length > 0 && (
+          <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+            {incomplete.length} open
+          </span>
+        )}
+      </div>
+      {incomplete.length === 0 ? (
+        <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>All caught up ✓</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {renderGroup('High Priority', high, '#dc2626')}
+          {renderGroup('Medium', medium, '#d97706')}
+          {renderGroup('Low', low, '#6b7280')}
+        </div>
+      )}
     </div>
   );
 }
@@ -210,16 +302,62 @@ function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 
 }
 
 // Block chip for daily timeline
-function BlockChip({ block, categories, onDelete }: { block: TimeBlock; categories: TimeCategory[]; onDelete: (id: string) => void }) {
+function BlockChip({
+  block, categories, onDelete, onRename,
+}: {
+  block: TimeBlock;
+  categories: TimeCategory[];
+  onDelete: (id: string) => void;
+  onRename?: (id: string, title: string) => void;
+}) {
   const color = getCategoryColor(block.categoryId, categories);
-  const name = getCategoryName(block.categoryId, categories);
+  const catName = getCategoryName(block.categoryId, categories);
+  const displayName = block.title?.trim() || catName;
   const duration = calcDurationHours(block.startTime, block.endTime);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(block.title ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commitRename = () => {
+    setEditing(false);
+    onRename?.(block.id, draft.trim());
+  };
+
+  const startEdit = () => {
+    setDraft(block.title ?? '');
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
   return (
     <div
       className="flex items-center gap-2 px-2 py-1 rounded text-xs group"
       style={{ backgroundColor: `${color}22`, border: `1px solid ${color}55` }}
     >
-      <span style={{ color }} className="font-semibold truncate flex-1">{name}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="flex-1 bg-transparent outline-none font-semibold min-w-0"
+          style={{ color }}
+          value={draft}
+          placeholder={catName}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={e => {
+            if (e.key === 'Enter') commitRename();
+            if (e.key === 'Escape') { setEditing(false); setDraft(block.title ?? ''); }
+          }}
+        />
+      ) : (
+        <button
+          onClick={startEdit}
+          className="font-semibold truncate flex-1 text-left hover:underline"
+          style={{ color }}
+          title="Click to rename"
+        >
+          {displayName}
+        </button>
+      )}
       <span style={{ color: 'var(--text-muted)' }}>{formatTime(block.startTime)}–{formatTime(block.endTime)}</span>
       <span style={{ color: 'var(--text-muted)' }}>({roundHours(duration)})</span>
       <span title={ENERGY_LABELS[block.energy]}>{ENERGY_EMOJIS[block.energy]}</span>
@@ -335,6 +473,7 @@ function DailyView({
   categories,
   onAddBlock,
   onDeleteBlock,
+  onRenameBlock,
   focusItems,
   onUpdateFocus,
 }: {
@@ -343,6 +482,7 @@ function DailyView({
   categories: TimeCategory[];
   onAddBlock: (startHour: number) => void;
   onDeleteBlock: (id: string) => void;
+  onRenameBlock: (id: string, title: string) => void;
   focusItems: string[];
   onUpdateFocus: (items: string[]) => void;
 }) {
@@ -403,7 +543,7 @@ function DailyView({
                 {/* Block area */}
                 <div className="flex-1 py-1.5 flex flex-col gap-1">
                   {hourBlocks.map(b => (
-                    <BlockChip key={b.id} block={b} categories={categories} onDelete={onDeleteBlock} />
+                    <BlockChip key={b.id} block={b} categories={categories} onDelete={onDeleteBlock} onRename={onRenameBlock} />
                   ))}
                   {hourBlocks.length === 0 && (
                     <button
@@ -580,7 +720,7 @@ function WeeklyView({
             ) : (
               <div className="flex flex-col gap-1.5">
                 {selBlocks.slice().sort((a, b) => a.startTime.localeCompare(b.startTime)).map(block => (
-                  <BlockChip key={block.id} block={block} categories={timeCategories} onDelete={() => {}} />
+                  <BlockChip key={block.id} block={block} categories={timeCategories} onDelete={() => {}} onRename={() => {}} />
                 ))}
               </div>
             )}
@@ -614,7 +754,8 @@ function MonthlyView({
   // Pad end to complete last row
   while (paddedDays.length % 7 !== 0) paddedDays.push(null);
 
-  const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const WEEK_LABELS_LONG = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const WEEK_LABELS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
   return (
     <div className="caesar-card">
@@ -638,9 +779,10 @@ function MonthlyView({
 
       {/* Day of week headers */}
       <div className="grid grid-cols-7 mb-2">
-        {WEEK_LABELS.map(d => (
-          <div key={d} className="text-center text-xs font-medium py-1" style={{ color: 'var(--text-muted)' }}>
-            {d}
+        {WEEK_LABELS_LONG.map((d, i) => (
+          <div key={i} className="text-center text-xs font-medium py-1" style={{ color: 'var(--text-muted)' }}>
+            <span className="hidden sm:inline">{d}</span>
+            <span className="sm:hidden">{WEEK_LABELS_SHORT[i]}</span>
           </div>
         ))}
       </div>
@@ -648,7 +790,7 @@ function MonthlyView({
       {/* Calendar grid */}
       <div className="grid grid-cols-7 gap-px" style={{ backgroundColor: 'var(--border)' }}>
         {paddedDays.map((day, i) => {
-          if (!day) return <div key={i} style={{ backgroundColor: 'var(--bg-card)' }} className="h-20" />;
+          if (!day) return <div key={i} style={{ backgroundColor: 'var(--bg-card)' }} className="h-14 sm:h-20" />;
           const dayStr = format(day, 'yyyy-MM-dd');
           const dayBlocks = getDayBlocks(timeBlocks, dayStr);
           const total = getTotalHours(dayBlocks);
@@ -667,7 +809,7 @@ function MonthlyView({
             <button
               key={dayStr}
               onClick={() => onSelectDay(dayStr)}
-              className="h-20 p-1.5 flex flex-col text-left transition-colors"
+              className="h-14 sm:h-20 p-1 sm:p-1.5 flex flex-col text-left transition-colors"
               style={{
                 backgroundColor: isSelected ? 'var(--bg-elevated)' : 'var(--bg-card)',
                 opacity: isCurrentMonth ? 1 : 0.4,
@@ -676,7 +818,7 @@ function MonthlyView({
               onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-card)'; }}
             >
               <div
-                className="text-xs font-semibold mb-1 w-6 h-6 flex items-center justify-center rounded-full"
+                className="text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full flex-shrink-0"
                 style={{
                   color: isToday ? 'var(--bg-card)' : 'var(--text-primary)',
                   backgroundColor: isToday ? 'var(--text-primary)' : 'transparent',
@@ -685,15 +827,15 @@ function MonthlyView({
                 {format(day, 'd')}
               </div>
               {total > 0 && (
-                <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-xs font-mono hidden sm:block" style={{ color: 'var(--text-muted)' }}>
                   {roundHours(Math.round(total * 10) / 10)}
                 </div>
               )}
-              <div className="flex gap-0.5 mt-auto">
+              <div className="flex gap-0.5 mt-auto flex-wrap">
                 {topCats.map(([catId]) => (
                   <div
                     key={catId}
-                    className="w-2 h-2 rounded-full"
+                    className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
                     style={{ backgroundColor: getCategoryColor(catId, timeCategories) }}
                   />
                 ))}
@@ -708,9 +850,8 @@ function MonthlyView({
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTimeCategories }: Props) {
+export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTimeCategories, notes, setNotes, todos }: Props) {
   const today = todayStr();
-  const { chartColors } = useTheme();
 
   // ── Planner State ──
   const [plannerView, setPlannerView] = useState<PlannerView>('daily');
@@ -732,6 +873,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
   const [logForm, setLogForm] = useState<LogFormState>({
     date: today,
     categoryId: timeCategories[0]?.id ?? '',
+    title: '',
     startTime: '09:00',
     endTime: '10:00',
     notes: '',
@@ -760,15 +902,9 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
     return agg.map((a) => ({ ...a, total }));
   }, [todayBlocks, timeCategories]);
 
-  // Mood trend
-  const moodTrend = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = format(addDays(new Date(), i - 6), 'yyyy-MM-dd');
-      const dayB = getDayBlocks(timeBlocks, d);
-      const avg = calcEnergyAvg(dayB);
-      return { day: format(parseISO(d), 'EEE'), avg: avg > 0 ? avg : null };
-    });
-  }, [timeBlocks]);
+  const handleAddNote = useCallback((note: Note) => {
+    setNotes(prev => [note, ...prev]);
+  }, [setNotes]);
 
   // ── Handlers ──
   const openLogModal = useCallback((startHour?: number) => {
@@ -777,6 +913,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
     setLogForm({
       date: selectedDay,
       categoryId: timeCategories[0]?.id ?? '',
+      title: '',
       startTime: sh,
       endTime: eh,
       notes: '',
@@ -793,6 +930,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
       id: generateId(),
       date: logForm.date,
       categoryId: logForm.categoryId,
+      title: logForm.title.trim() || undefined,
       startTime: logForm.startTime,
       endTime: logForm.endTime,
       notes: logForm.notes.trim(),
@@ -801,6 +939,10 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
     setTimeBlocks((prev) => [...prev, block]);
     setLogModalOpen(false);
   };
+
+  const handleRenameBlock = useCallback((id: string, title: string) => {
+    setTimeBlocks(prev => prev.map(b => b.id === id ? { ...b, title: title || undefined } : b));
+  }, [setTimeBlocks]);
 
   const handleDeleteBlock = useCallback((id: string) => {
     setTimeBlocks((prev) => prev.filter((b) => b.id !== id));
@@ -971,21 +1113,11 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
             )}
           </div>
 
-          {/* 7-Day Energy */}
-          <div className="caesar-card">
-            <h2 className="text-xs font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-              <TrendingUp size={12} /> 7-DAY ENERGY
-            </h2>
-            <ResponsiveContainer width="100%" height={90}>
-              <LineChart data={moodTrend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <XAxis dataKey="day" tick={{ fontSize: 9, fill: chartColors.text }} axisLine={false} tickLine={false} />
-                <YAxis domain={[1, 5]} ticks={[1, 3, 5]} tick={{ fontSize: 9, fill: chartColors.text }} axisLine={false} tickLine={false} />
-                <Tooltip content={<MoodTooltip />} />
-                <Line type="monotone" dataKey="avg" stroke="var(--text-muted)" strokeWidth={2}
-                  dot={{ fill: 'var(--text-muted)', r: 3, strokeWidth: 0 }} connectNulls={false} isAnimationActive />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {/* Quick Add Note */}
+          <QuickAddNotePanel onAddNote={handleAddNote} />
+
+          {/* Todo Summary */}
+          <TodoSummaryPanel todos={todos} />
         </div>
 
         {/* Right main area */}
@@ -997,6 +1129,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
               categories={timeCategories}
               onAddBlock={openLogModal}
               onDeleteBlock={handleDeleteBlock}
+              onRenameBlock={handleRenameBlock}
               focusItems={getFocusItems(selectedDay)}
               onUpdateFocus={(items) => updateFocusItems(selectedDay, items)}
             />
@@ -1030,6 +1163,15 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
       {/* ── Log Time Modal ── */}
       <Modal isOpen={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Time Block" size="md">
         <div className="flex flex-col gap-4">
+          <div>
+            <label className="caesar-label">Event Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input
+              className="caesar-input w-full"
+              placeholder="e.g. Team standup, Deep work session…"
+              value={logForm.title}
+              onChange={(e) => setLogForm((f) => ({ ...f, title: e.target.value }))}
+            />
+          </div>
           <div>
             <label className="caesar-label">Date</label>
             <input type="date" className="caesar-input w-full" value={logForm.date}

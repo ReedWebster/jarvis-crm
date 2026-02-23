@@ -18,8 +18,8 @@ import {
   Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, LayoutGrid, Zap, ZapOff, Download } from 'lucide-react';
-import type { Contact, Project, ContactMapData, NetworkingMapState, NetworkManualConnection, MapFilters } from '../../types';
+import { X, LayoutGrid, Zap, ZapOff, UserPlus } from 'lucide-react';
+import type { Contact, Project, ContactMapData, NetworkingMapState, NetworkManualConnection, MapFilters, ContactTag } from '../../types';
 import { generateId } from '../../utils';
 import {
   getContactStrengthColor,
@@ -50,9 +50,14 @@ const ContactNode = memo(({ data, id }: NodeProps) => {
   return (
     <div
       style={{ opacity: d.dimmed ? 0.15 : 1, transition: 'opacity 0.2s' }}
-      className="flex flex-col items-center"
+      className="group flex flex-col items-center"
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0, width: 8, height: 8 }} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !rounded-full !border-2 !opacity-0 group-hover:!opacity-100 !transition-opacity"
+        style={{ backgroundColor: color, borderColor: 'var(--bg-card)' }}
+      />
       <div
         onClick={() => d.onSelect(id)}
         className="flex flex-col items-center gap-1 cursor-pointer"
@@ -95,7 +100,12 @@ const ContactNode = memo(({ data, id }: NodeProps) => {
           </div>
         )}
       </div>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0, width: 8, height: 8 }} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !rounded-full !border-2 !opacity-0 group-hover:!opacity-100 !transition-opacity"
+        style={{ backgroundColor: color, borderColor: 'var(--bg-card)' }}
+      />
     </div>
   );
 });
@@ -148,6 +158,101 @@ function ConnectionModal({
   );
 }
 
+// ─── ADD CONTACT MODAL ────────────────────────────────────────────────────────
+
+const ALL_TAGS: ContactTag[] = [
+  'Investor', 'Professor', 'Resident', 'Partner', 'Friend',
+  'Recruit', 'Mentor', 'Client', 'Colleague', 'Family', 'Other',
+];
+
+function AddContactModal({
+  onSave,
+  onClose,
+}: {
+  onSave: (contact: Contact) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [relationship, setRelationship] = useState('');
+  const [tag, setTag] = useState<ContactTag>('Other');
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    const now = new Date().toISOString().slice(0, 10);
+    onSave({
+      id: generateId(),
+      name: name.trim(),
+      email: email.trim() || undefined,
+      relationship: relationship.trim(),
+      tags: [tag],
+      lastContacted: now,
+      followUpNeeded: false,
+      notes: '',
+      interactions: [],
+      linkedProjects: [],
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      <div className="rounded-xl border shadow-2xl w-80 p-5 flex flex-col gap-4"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Add Contact to Graph</h2>
+          <button onClick={onClose} style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="caesar-label">Name *</label>
+            <input
+              className="caesar-input"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Full name"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+            />
+          </div>
+          <div>
+            <label className="caesar-label">Email</label>
+            <input
+              className="caesar-input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="email@example.com"
+            />
+          </div>
+          <div>
+            <label className="caesar-label">Relationship</label>
+            <input
+              className="caesar-input"
+              value={relationship}
+              onChange={e => setRelationship(e.target.value)}
+              placeholder="e.g. Business contact"
+            />
+          </div>
+          <div>
+            <label className="caesar-label">Type</label>
+            <select
+              className="caesar-select"
+              value={tag}
+              onChange={e => setTag(e.target.value as ContactTag)}
+            >
+              {ALL_TAGS.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={!name.trim()} className="caesar-btn-primary flex-1">Add to Graph</button>
+          <button onClick={onClose} className="caesar-btn-ghost">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── NETWORK VIEW ─────────────────────────────────────────────────────────────
 
 interface Props {
@@ -162,6 +267,7 @@ interface Props {
   onDeleteManualConnection: (id: string) => void;
   onUpdateNodePositions: (updates: Record<string, ContactMapData>) => void;
   onNavigateToCRM: () => void;
+  onAddContact: (contact: Contact) => void;
 }
 
 export function NetworkView({
@@ -176,7 +282,9 @@ export function NetworkView({
   onDeleteManualConnection,
   onUpdateNodePositions,
   onNavigateToCRM,
+  onAddContact,
 }: Props) {
+  const [showAddContact, setShowAddContact] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [pendingConnection, setPendingConnection] = useState<{ sourceId: string; targetId: string } | null>(null);
@@ -276,6 +384,14 @@ export function NetworkView({
     setPendingConnection(null);
   };
 
+  const handleEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    if (edge.data?.isManual && edge.data?.connId) {
+      if (confirm('Delete this connection?')) {
+        onDeleteManualConnection(edge.data.connId as string);
+      }
+    }
+  }, [onDeleteManualConnection]);
+
   const handleEdgeContextMenu = (e: React.MouseEvent, edge: Edge) => {
     e.preventDefault();
     if (edge.data?.isManual && edge.data?.connId) {
@@ -308,12 +424,14 @@ export function NetworkView({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={handleNodeDragStop}
+        onEdgeClick={handleEdgeClick}
         onEdgeContextMenu={handleEdgeContextMenu}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={2}
+        connectionRadius={60}
         proOptions={{ hideAttribution: true }}
         style={{ background: 'var(--bg)' }}
       >
@@ -347,6 +465,14 @@ export function NetworkView({
         <Panel position="top-right">
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowAddContact(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              title="Add a new contact to the graph"
+            >
+              <UserPlus size={12} /> Add Contact
+            </button>
+            <button
               onClick={handleAutoLayout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow"
               style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
@@ -370,7 +496,7 @@ export function NetworkView({
         <Panel position="bottom-left">
           <div className="text-xs px-2 py-1 rounded border"
             style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-            Drag from node edge to connect · Right-click edge to delete · Click node to highlight
+            Hover node to reveal handles · Drag handle to connect · Tap edge to delete
           </div>
         </Panel>
       </ReactFlow>
@@ -399,12 +525,27 @@ export function NetworkView({
         />
       )}
 
+      {/* Add contact modal */}
+      {showAddContact && (
+        <AddContactModal
+          onSave={(contact) => {
+            // Place the new contact at a random position in the visible area
+            const x = 100 + Math.random() * 600;
+            const y = 100 + Math.random() * 400;
+            onAddContact(contact);
+            onUpdateMapData(contact.id, { nodeX: x, nodeY: y });
+            setShowAddContact(false);
+          }}
+          onClose={() => setShowAddContact(false)}
+        />
+      )}
+
       {/* React Flow base styles override */}
       <style>{`
-        .react-flow__node { font-family: 'Times New Roman', Times, Georgia, serif; }
+        .react-flow__node { font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
         .react-flow__controls-button { background: var(--bg-card) !important; border-color: var(--border) !important; color: var(--text-primary) !important; fill: var(--text-primary) !important; }
         .react-flow__controls-button svg { fill: var(--text-primary) !important; }
-        .react-flow__edge-label { font-family: 'Times New Roman', Times, Georgia, serif; }
+        .react-flow__edge-label { font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       `}</style>
     </div>
   );

@@ -7,27 +7,20 @@ import {
   Circle,
   Plus,
   Trash2,
-  Zap,
-  Heart,
-  TrendingUp,
   BookOpen,
+  FileText,
+  ListTodo,
+  Check,
 } from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
-import { format, differenceInDays, parseISO, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import type {
   Identity,
   Goal,
   DailyEvent,
   Habit,
   HabitTracker,
-  DailyMoodLog,
+  Note,
+  TodoItem,
 } from '../../types';
 import {
   getGreeting,
@@ -35,7 +28,6 @@ import {
   todayStr,
   generateId,
 } from '../../utils';
-import { useTheme } from '../../hooks/useTheme';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -47,84 +39,208 @@ interface Props {
   habits: Habit[];
   habitTracker: HabitTracker[];
   setHabitTracker: (v: HabitTracker[] | ((p: HabitTracker[]) => HabitTracker[])) => void;
-  dailyMoodLogs: DailyMoodLog[];
-  setDailyMoodLogs: (v: DailyMoodLog[] | ((p: DailyMoodLog[]) => DailyMoodLog[])) => void;
+  notes: Note[];
+  setNotes: (v: Note[] | ((p: Note[]) => Note[])) => void;
+  todos: TodoItem[];
+  setTodos: (v: TodoItem[] | ((p: TodoItem[]) => TodoItem[])) => void;
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-interface SliderProps {
-  label: string;
-  icon: React.ReactNode;
-  value: number;
-  onChange: (v: number) => void;
-  color: string;
-}
+function QuickAddNotePanel({ onAddNote }: { onAddNote: (note: Note) => void }) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [saved, setSaved] = useState(false);
 
-function MoodSlider({ label, icon, value, onChange, color }: SliderProps) {
+  const handleSave = () => {
+    if (!content.trim() && !title.trim()) return;
+    const now = new Date().toISOString();
+    onAddNote({
+      id: generateId(),
+      title: title.trim() || format(new Date(), 'MMM d, h:mm a'),
+      content: content.trim(),
+      tags: [],
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+      isMeetingNote: false,
+    });
+    setTitle('');
+    setContent('');
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 caesar-label">
-          {icon}
-          <span>{label}</span>
-        </div>
-        <span className="text-sm font-bold" style={{ color }}>
-          {value}/5
-        </span>
+    <div className="caesar-card space-y-3">
+      <div className="flex items-center gap-2">
+        <FileText className="w-4 h-4 text-[var(--text-muted)]" />
+        <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          Quick Note
+        </h3>
       </div>
       <input
-        type="range"
-        min={1}
-        max={5}
-        step={1}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
-        className="w-full h-2 rounded-full appearance-none cursor-pointer"
-        style={{
-          background: `linear-gradient(to right, var(--text-muted) ${((value - 1) / 4) * 100}%, var(--bg-elevated) ${((value - 1) / 4) * 100}%)`,
+        type="text"
+        className="caesar-input w-full text-xs"
+        placeholder="Title (optional)"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <textarea
+        className="caesar-input w-full text-xs resize-none"
+        rows={3}
+        placeholder="Capture a thought... (⌘+Enter to save)"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSave();
         }}
       />
-      <div className="flex justify-between text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-        <span>Low</span>
-        <span>High</span>
-      </div>
+      <button
+        onClick={handleSave}
+        disabled={!content.trim() && !title.trim()}
+        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+        style={{
+          backgroundColor: saved ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+          color: saved ? 'var(--text-secondary)' : 'var(--text-muted)',
+          border: '1px solid var(--border)',
+        }}
+      >
+        {saved ? <><Check className="w-3 h-3" /> Saved to Notes</> : 'Save Note'}
+      </button>
     </div>
   );
 }
 
-// ─── Custom tooltip for energy chart ─────────────────────────────────────────
-
-function EnergyTooltip({
-  active,
-  payload,
-  label,
-  tooltipBg,
-  tooltipText,
-  tooltipBorder,
+function TodoSummaryPanel({
+  todos,
+  onComplete,
+  onAdd,
 }: {
-  active?: boolean;
-  payload?: { value: number }[];
-  label?: string;
-  tooltipBg: string;
-  tooltipText: string;
-  tooltipBorder: string;
+  todos: TodoItem[];
+  onComplete: (id: string) => void;
+  onAdd: (title: string, priority: 'high' | 'medium' | 'low') => void;
 }) {
-  if (!active || !payload?.length) return null;
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newPriority, setNewPriority] = useState<'high' | 'medium' | 'low'>('medium');
+
+  const handleAdd = () => {
+    if (!newTitle.trim()) return;
+    onAdd(newTitle.trim(), newPriority);
+    setNewTitle('');
+    setNewPriority('medium');
+    setShowAdd(false);
+  };
+
+  const incomplete = todos.filter((t) => t.status !== 'done');
+  const high = incomplete.filter((t) => t.priority === 'high');
+  const medium = incomplete.filter((t) => t.priority === 'medium');
+  const low = incomplete.filter((t) => t.priority === 'low');
+
+  const groups = [
+    { label: 'High', items: high, color: 'var(--priority-high)' },
+    { label: 'Medium', items: medium, color: 'var(--priority-medium)' },
+    { label: 'Low', items: low, color: 'var(--priority-low)' },
+  ].filter((g) => g.items.length > 0);
+
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-xs shadow-lg border"
-      style={{
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        color: tooltipText,
-      }}
-    >
-      <p style={{ color: 'var(--text-secondary)' }}>{label}</p>
-      <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Energy: {payload[0].value}</p>
+    <div className="caesar-card space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ListTodo className="w-4 h-4 text-[var(--text-muted)]" />
+          <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            Todo Summary
+          </h3>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {incomplete.length} remaining
+          </span>
+          <button
+            onClick={() => setShowAdd((v) => !v)}
+            className="flex items-center gap-1 text-xs py-0.5 px-1.5 rounded transition-colors"
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            title="Add todo"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Quick-add form */}
+      {showAdd && (
+        <div className="rounded-lg p-3 space-y-2 border" style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+          <input
+            type="text"
+            className="caesar-input w-full text-xs"
+            placeholder="Task title..."
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAdd();
+              if (e.key === 'Escape') setShowAdd(false);
+            }}
+          />
+          <div className="flex gap-2">
+            {(['high', 'medium', 'low'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setNewPriority(p)}
+                className="flex-1 py-1 rounded text-xs font-medium capitalize transition-colors"
+                style={{
+                  backgroundColor: newPriority === p ? `var(--priority-${p})` : 'var(--bg-card)',
+                  color: newPriority === p ? '#fff' : 'var(--text-muted)',
+                  border: `1px solid ${newPriority === p ? `var(--priority-${p})` : 'var(--border)'}`,
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowAdd(false)} className="caesar-btn-ghost text-xs py-1 px-2">Cancel</button>
+            <button onClick={handleAdd} disabled={!newTitle.trim()} className="caesar-btn-primary text-xs py-1 px-2">Add</button>
+          </div>
+        </div>
+      )}
+
+      {incomplete.length === 0 && !showAdd ? (
+        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
+          All caught up!
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(({ label, items, color }) => (
+            <div key={label}>
+              <p className="text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                {label}
+              </p>
+              <ul className="space-y-1">
+                {items.slice(0, 3).map((t) => (
+                  <li key={t.id} className="flex items-center gap-1.5 group">
+                    <button
+                      onClick={() => onComplete(t.id)}
+                      className="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-colors hover:border-[var(--text-secondary)]"
+                      style={{ borderColor: 'var(--border)' }}
+                      title="Mark done"
+                    >
+                      <Check className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-secondary)' }} />
+                    </button>
+                    <span className="text-xs truncate" style={{ color }}>{t.title}</span>
+                  </li>
+                ))}
+                {items.length > 3 && (
+                  <li className="text-xs pl-5" style={{ color: 'var(--text-muted)' }}>
+                    +{items.length - 3} more
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -139,10 +255,11 @@ export default function DailyCommandBrief({
   habits,
   habitTracker,
   setHabitTracker,
-  dailyMoodLogs,
-  setDailyMoodLogs,
+  notes: _notes,
+  setNotes,
+  todos,
+  setTodos,
 }: Props) {
-  const { chartColors } = useTheme();
 
   const today = todayStr();
   const todayDate = new Date();
@@ -225,49 +342,6 @@ export default function DailyCommandBrief({
     (h) => todayHabits.habits[h.id]
   ).length;
 
-  // ── Mood / Energy ───────────────────────────────────────────────────────────
-
-  const todayMoodLog = useMemo(
-    () => dailyMoodLogs.find((m) => m.date === today),
-    [dailyMoodLogs, today]
-  );
-
-  const energyValue: 1 | 2 | 3 | 4 | 5 = todayMoodLog?.energy ?? 3;
-  const moodValue: 1 | 2 | 3 | 4 | 5 = todayMoodLog?.mood ?? 3;
-
-  function updateMoodLog(field: 'energy' | 'mood', val: number) {
-    const clamped = Math.min(5, Math.max(1, val)) as 1 | 2 | 3 | 4 | 5;
-    setDailyMoodLogs((prev) => {
-      const existingIdx = prev.findIndex((m) => m.date === today);
-      if (existingIdx >= 0) {
-        return prev.map((m, i) =>
-          i === existingIdx ? { ...m, [field]: clamped } : m
-        );
-      }
-      const newLog: DailyMoodLog = {
-        date: today,
-        energy: field === 'energy' ? clamped : 3,
-        mood: field === 'mood' ? clamped : 3,
-        note: '',
-      };
-      return [...prev, newLog];
-    });
-  }
-
-  // ── Weekly energy chart data ────────────────────────────────────────────────
-
-  const weeklyEnergyData = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = subDays(todayDate, 6 - i);
-      const dateKey = format(d, 'yyyy-MM-dd');
-      const log = dailyMoodLogs.find((m) => m.date === dateKey);
-      return {
-        day: format(d, 'EEE'),
-        energy: log?.energy ?? null,
-      };
-    });
-  }, [dailyMoodLogs]);
-
   // ── Area color mapping ──────────────────────────────────────────────────────
 
   const areaColors: Record<string, string> = {
@@ -291,10 +365,10 @@ export default function DailyCommandBrief({
       </div>
 
       {/* Main 2-column grid */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
         {/* ── LEFT COLUMN (2/3) ──────────────────────────────────────────────── */}
-        <div className="col-span-2 space-y-5">
+        <div className="col-span-1 md:col-span-2 space-y-5">
 
           {/* Greeting + date + semester */}
           <div className="caesar-card space-y-2">
@@ -390,8 +464,8 @@ export default function DailyCommandBrief({
                 <p className="text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider">
                   New Event
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="col-span-1 sm:col-span-2">
                     <label className="caesar-label block mb-1">Title</label>
                     <input
                       type="text"
@@ -538,7 +612,7 @@ export default function DailyCommandBrief({
                 No habits configured yet.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {habits
                   .slice()
                   .sort((a, b) => a.order - b.order)
@@ -597,82 +671,23 @@ export default function DailyCommandBrief({
             </blockquote>
           </div>
 
-          {/* Energy & Mood Check-in */}
-          <div className="caesar-card space-y-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[var(--text-muted)]" />
-              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                Energy & Mood
-              </h3>
-            </div>
+          {/* Quick Note */}
+          <QuickAddNotePanel onAddNote={(note) => setNotes((prev) => [note, ...prev])} />
 
-            <MoodSlider
-              label="Energy"
-              icon={<Zap className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
-              value={energyValue}
-              onChange={(v) => updateMoodLog('energy', v)}
-              color="var(--text-muted)"
-            />
-
-            <MoodSlider
-              label="Mood"
-              icon={<Heart className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
-              value={moodValue}
-              onChange={(v) => updateMoodLog('mood', v)}
-              color="var(--text-muted)"
-            />
-          </div>
-
-          {/* Weekly Energy Chart */}
-          <div className="caesar-card space-y-3">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[var(--text-muted)]" />
-              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                Weekly Energy
-              </h3>
-            </div>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart
-                data={weeklyEnergyData}
-                margin={{ top: 4, right: 4, bottom: 0, left: -24 }}
-              >
-                <XAxis
-                  dataKey="day"
-                  tick={{ fill: chartColors.text, fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[1, 5]}
-                  ticks={[1, 2, 3, 4, 5]}
-                  tick={{ fill: chartColors.text, fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  content={(props) => (
-                    <EnergyTooltip
-                      active={props.active}
-                      payload={props.payload as { value: number }[] | undefined}
-                      label={props.label}
-                      tooltipBg={chartColors.tooltipBg}
-                      tooltipText={chartColors.tooltipText}
-                      tooltipBorder={chartColors.tooltipBorder}
-                    />
-                  )}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="energy"
-                  stroke="var(--text-muted)"
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--text-muted)', r: 3, strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: 'var(--text-muted)', strokeWidth: 0 }}
-                  connectNulls={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {/* Todo Summary */}
+          <TodoSummaryPanel
+            todos={todos}
+            onComplete={(id) => setTodos((prev) => prev.map((t) => t.id === id ? { ...t, status: 'done' } : t))}
+            onAdd={(title, priority) => setTodos((prev) => [{
+              id: generateId(),
+              title,
+              notes: '',
+              status: 'todo',
+              priority,
+              createdAt: new Date().toISOString(),
+              checklist: [],
+            }, ...prev])}
+          />
 
           {/* Quick Status */}
           <div className="caesar-card space-y-2">

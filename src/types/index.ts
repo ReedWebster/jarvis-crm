@@ -42,6 +42,7 @@ export interface TimeBlock {
   id: string;
   date: string; // YYYY-MM-DD
   categoryId: string;
+  title?: string;   // optional display name; falls back to category name
   startTime: string; // HH:MM
   endTime: string; // HH:MM
   notes: string;
@@ -206,6 +207,37 @@ export interface Candidate {
   email?: string;
   linkedIn?: string;
   linkedVentureId?: string;
+}
+
+// ─── CLIENTS ─────────────────────────────────────────────────────────────────
+
+export type ClientStatus = 'prospect' | 'active' | 'paused' | 'completed';
+export type PaymentStatus = 'pending' | 'paid' | 'overdue';
+
+export interface ClientPayment {
+  id: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  paidDate?: string;
+  status: PaymentStatus;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  company: string;
+  email?: string;
+  phone?: string;
+  status: ClientStatus;
+  services: string[];
+  contractValue: number;
+  billingDay?: number;
+  startDate: string;
+  endDate?: string;
+  notes: string;
+  payments: ClientPayment[];
+  linkedProjectId?: string;
 }
 
 // ─── NOTES ───────────────────────────────────────────────────────────────────

@@ -156,7 +156,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)]" style={{ backgroundColor: 'var(--bg)' }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg)' }}>
       {/* Top Bar */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
@@ -188,7 +188,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
         </div>
 
         {/* Search */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border flex-1 min-w-[150px]"
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border flex-1 min-w-0"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)' }}>
           <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <input
@@ -223,78 +223,76 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
       {/* Filter panel */}
       {showFilters && (
         <div
-          className="flex items-center gap-3 px-4 py-2.5 border-b flex-shrink-0 flex-wrap"
+          className="border-b flex-shrink-0 overflow-x-auto"
           style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
         >
-          {/* Venture */}
-          <select
-            className="caesar-select text-xs"
-            style={{ width: 150 }}
-            value={filters.ventureId}
-            onChange={e => setFilters(f => ({ ...f, ventureId: e.target.value }))}
-          >
-            <option value="all">All Ventures</option>
-            {ventureOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-
-          {/* Relationship type */}
-          <select
-            className="caesar-select text-xs"
-            style={{ width: 150 }}
-            value={filters.relationshipType}
-            onChange={e => setFilters(f => ({ ...f, relationshipType: e.target.value }))}
-          >
-            <option value="all">All Types</option>
-            {ALL_RELATIONSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
-          </select>
-
-          {/* Location */}
-          {locationOptions.length > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2.5 min-w-max">
+            {/* Venture */}
             <select
-              className="caesar-select text-xs"
-              style={{ width: 160 }}
-              value={filters.location}
-              onChange={e => setFilters(f => ({ ...f, location: e.target.value }))}
+              className="caesar-select text-xs min-w-[130px]"
+              value={filters.ventureId}
+              onChange={e => setFilters(f => ({ ...f, ventureId: e.target.value }))}
             >
-              <option value="all">All Locations</option>
-              {locationOptions.map(l => <option key={l}>{l}</option>)}
+              <option value="all">All Ventures</option>
+              {ventureOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-          )}
 
-          {/* Strength */}
-          <select
-            className="caesar-select text-xs"
-            style={{ width: 130 }}
-            value={filters.strength}
-            onChange={e => setFilters(f => ({ ...f, strength: e.target.value as never }))}
-          >
-            <option value="all">All Strengths</option>
-            <option value="hot">Hot Lead</option>
-            <option value="warm">Warm</option>
-            <option value="cold">Cold</option>
-            <option value="personal">Personal</option>
-          </select>
-
-          {/* Follow-up toggle */}
-          <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
-            <input
-              type="checkbox"
-              checked={filters.followUpOnly}
-              onChange={e => setFilters(f => ({ ...f, followUpOnly: e.target.checked }))}
-              className="w-3.5 h-3.5"
-            />
-            Follow-Up Needed
-          </label>
-
-          {activeFilters.length > 0 && (
-            <button
-              onClick={clearAllFilters}
-              className="text-xs px-2 py-1 rounded border"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', backgroundColor: 'transparent' }}
+            {/* Relationship type */}
+            <select
+              className="caesar-select text-xs min-w-[120px]"
+              value={filters.relationshipType}
+              onChange={e => setFilters(f => ({ ...f, relationshipType: e.target.value }))}
             >
-              Clear All
-            </button>
-          )}
+              <option value="all">All Types</option>
+              {ALL_RELATIONSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+
+            {/* Location */}
+            {locationOptions.length > 0 && (
+              <select
+                className="caesar-select text-xs min-w-[130px]"
+                value={filters.location}
+                onChange={e => setFilters(f => ({ ...f, location: e.target.value }))}
+              >
+                <option value="all">All Locations</option>
+                {locationOptions.map(l => <option key={l}>{l}</option>)}
+              </select>
+            )}
+
+            {/* Strength */}
+            <select
+              className="caesar-select text-xs min-w-[120px]"
+              value={filters.strength}
+              onChange={e => setFilters(f => ({ ...f, strength: e.target.value as never }))}
+            >
+              <option value="all">All Strengths</option>
+              <option value="hot">Hot Lead</option>
+              <option value="warm">Warm</option>
+              <option value="cold">Cold</option>
+              <option value="personal">Personal</option>
+            </select>
+
+            {/* Follow-up toggle */}
+            <label className="flex items-center gap-2 text-xs cursor-pointer whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={filters.followUpOnly}
+                onChange={e => setFilters(f => ({ ...f, followUpOnly: e.target.checked }))}
+                className="w-4 h-4"
+              />
+              Follow-Up Needed
+            </label>
+
+            {activeFilters.length > 0 && (
+              <button
+                onClick={clearAllFilters}
+                className="text-xs px-2 py-1 rounded border whitespace-nowrap"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', backgroundColor: 'transparent' }}
+              >
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -356,6 +354,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onDeleteManualConnection={deleteManualConnection}
               onUpdateNodePositions={updateNodePositions}
               onNavigateToCRM={onNavigateToCRM}
+              onAddContact={(contact) => setContacts(prev => [...prev, contact])}
             />
           )}
         </div>

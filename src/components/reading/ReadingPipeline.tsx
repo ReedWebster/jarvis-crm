@@ -822,7 +822,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
           </div>
 
           {/* Type & Status */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="caesar-label">Type</label>
               <select
@@ -893,7 +893,7 @@ export function ReadingPipeline({ readingItems, setReadingItems }: Props) {
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="caesar-label">Started At</label>
               <input

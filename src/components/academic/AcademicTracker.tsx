@@ -357,7 +357,7 @@ function CourseFormModal({ isOpen, onClose, onSave, initial, title }: CourseForm
             onChange={(e) => setForm((f) => ({ ...f, professor: e.target.value }))}
           />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="caesar-label">Credits</label>
             <input
@@ -515,7 +515,7 @@ function AssignmentFormModal({
             required
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Status</label>
             <select
@@ -538,7 +538,7 @@ function AssignmentFormModal({
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Weight (%)</label>
             <input

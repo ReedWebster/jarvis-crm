@@ -904,7 +904,7 @@ export function GoalHierarchy({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Period</label>
               <select
@@ -931,7 +931,7 @@ export function GoalHierarchy({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Life Area</label>
               <select
@@ -957,7 +957,7 @@ export function GoalHierarchy({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Due Date</label>
               <input
@@ -1149,7 +1149,7 @@ export function GoalHierarchy({
         size="md"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Date</label>
               <input

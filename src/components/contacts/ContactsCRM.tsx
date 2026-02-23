@@ -20,6 +20,7 @@ import {
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
 import type { Contact, ContactTag, ContactInteraction } from '../../types';
 import { generateId, todayStr, calcRelationshipHealth, getHealthColor, formatDate } from '../../utils';
+import { useToast } from '../shared/Toast';
 import { Modal } from '../shared/Modal';
 import { Badge } from '../shared/Badge';
 
@@ -361,8 +362,13 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {/* Row 1: Name + Relationship */}
-        <div className="grid grid-cols-2 gap-3">
+
+        {/* ── Basic Info ── */}
+        <div className="flex items-center gap-3">
+          <p className="caesar-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Basic Info</p>
+          <hr className="caesar-divider flex-1" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Name *</label>
             <input
@@ -383,9 +389,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
         </div>
-
-        {/* Row 2: Email + Phone */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Email</label>
             <input
@@ -406,8 +410,6 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
         </div>
-
-        {/* Row 3: Company */}
         <div>
           <label className="caesar-label">Company / Organization</label>
           <input
@@ -418,7 +420,11 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
           />
         </div>
 
-        {/* Tags */}
+        {/* ── Relationship ── */}
+        <div className="flex items-center gap-3 mt-1">
+          <p className="caesar-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Relationship</p>
+          <hr className="caesar-divider flex-1" />
+        </div>
         <div>
           <label className="caesar-label">Tags</label>
           <div className="flex flex-wrap gap-2 mt-1">
@@ -443,9 +449,26 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             })}
           </div>
         </div>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div
+            onClick={() => setForm((f) => ({ ...f, followUpNeeded: !f.followUpNeeded }))}
+            className="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
+            style={{ backgroundColor: form.followUpNeeded ? 'var(--text-muted)' : 'var(--bg-elevated)' }}
+          >
+            <div
+              className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+              style={{ transform: form.followUpNeeded ? 'translateX(20px)' : 'translateX(0)' }}
+            />
+          </div>
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Follow Up Needed</span>
+        </label>
 
-        {/* Row 4: Last Contacted + Follow Up Date */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* ── Dates ── */}
+        <div className="flex items-center gap-3 mt-1">
+          <p className="caesar-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Dates</p>
+          <hr className="caesar-divider flex-1" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Last Contacted</label>
             <input
@@ -465,9 +488,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
         </div>
-
-        {/* Row 5: Birthday + Anniversary */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Birthday</label>
             <input
@@ -488,24 +509,12 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
           </div>
         </div>
 
-        {/* Follow Up Needed */}
-        <label className="flex items-center gap-3 cursor-pointer">
-          <div
-            onClick={() => setForm((f) => ({ ...f, followUpNeeded: !f.followUpNeeded }))}
-            className="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
-            style={{ backgroundColor: form.followUpNeeded ? 'var(--text-muted)' : 'var(--bg-elevated)' }}
-          >
-            <div
-              className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
-              style={{ transform: form.followUpNeeded ? 'translateX(20px)' : 'translateX(0)' }}
-            />
-          </div>
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Follow Up Needed</span>
-        </label>
-
-        {/* Notes */}
+        {/* ── Notes ── */}
+        <div className="flex items-center gap-3 mt-1">
+          <p className="caesar-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>Notes</p>
+          <hr className="caesar-divider flex-1" />
+        </div>
         <div>
-          <label className="caesar-label">Notes</label>
           <textarea
             className="caesar-input w-full resize-none"
             rows={3}
@@ -571,7 +580,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
     <Modal isOpen={isOpen} onClose={onClose} title={contact.name} size="xl">
       <div className="flex flex-col gap-5">
         {/* Info grid */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-2">
             {contact.email && (
               <div className="flex items-center gap-2">
@@ -706,7 +715,7 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
           {/* Add Interaction Form */}
           {showAddInteraction && (
             <div className="rounded-xl p-3 mb-3 border border-[var(--border)]" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-              <div className="grid grid-cols-2 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                 <div>
                   <label className="caesar-label text-xs">Date</label>
                   <input
@@ -814,7 +823,7 @@ function QuickLogModal({ isOpen, onClose, contact, onLog }: QuickLogModalProps) 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Log Interaction — ${contact.name}`} size="sm">
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="caesar-label">Date</label>
             <input
@@ -859,6 +868,7 @@ function QuickLogModal({ isOpen, onClose, contact, onLog }: QuickLogModalProps) 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export default function ContactsCRM({ contacts, setContacts }: Props) {
+  const toast = useToast();
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
   const [filterFollowUp, setFilterFollowUp] = useState(false);
@@ -895,6 +905,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     };
     setContacts((prev) => [newContact, ...(Array.isArray(prev) ? prev : [])]);
     setAddModalOpen(false);
+    toast.success('Contact saved');
   };
 
   const handleEdit = (data: ContactFormData) => {
@@ -906,11 +917,13 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     );
     setEditModalOpen(false);
     setSelectedContact(null);
+    toast.success('Contact updated');
   };
 
   const handleDelete = (id: string) => {
     if (!window.confirm('Delete this contact?')) return;
     setContacts((prev) => (Array.isArray(prev) ? prev : []).filter((c) => c.id !== id));
+    toast.success('Contact deleted');
   };
 
   const handleUpdateContact = (updated: Contact) => {
@@ -932,6 +945,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
           : c
       )
     );
+    toast.success('Interaction logged');
   };
 
   const openEdit = (contact: Contact) => {

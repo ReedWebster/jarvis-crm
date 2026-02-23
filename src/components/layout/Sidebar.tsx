@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
-  DollarSign, Target, BookOpen, UserPlus, FileText, Search, ChevronRight, CheckSquare, Network
+  DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight, CheckSquare, Network
 } from 'lucide-react';
 
 export type NavSection =
@@ -35,7 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'financial',  label: 'Financial',        icon: <DollarSign size={18} /> },
   { id: 'goals',      label: 'Goal Hierarchy',   icon: <Target size={18} /> },
   { id: 'reading',    label: 'Reading Pipeline', icon: <BookOpen size={18} /> },
-  { id: 'recruitment',label: 'Recruitment',      icon: <UserPlus size={18} /> },
+  { id: 'recruitment',label: 'Clients',           icon: <Building2 size={18} /> },
   { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
   { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
   { id: 'networking', label: 'Networking Map',   icon: <Network size={18} /> },
@@ -72,6 +72,8 @@ export function Sidebar({ active, onNavigate, onSearch, mobileOpen, onMobileClos
         style={{
           backgroundColor: 'var(--bg-sidebar)',
           borderRight: '1px solid var(--border)',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
         <div className="flex flex-col h-full">

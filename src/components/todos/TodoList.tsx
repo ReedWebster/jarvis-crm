@@ -10,6 +10,7 @@ import type {
 } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import { Modal } from '../shared/Modal';
+import { useToast } from '../shared/Toast';
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
@@ -28,9 +29,9 @@ interface Props {
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const PRIORITY_CONFIG: Record<TodoPriority, { label: string; color: string }> = {
-  high:   { label: 'High',   color: 'var(--text-primary)' },
-  medium: { label: 'Medium', color: 'var(--text-secondary)' },
-  low:    { label: 'Low',    color: 'var(--text-muted)' },
+  high:   { label: 'High',   color: 'var(--priority-high)' },
+  medium: { label: 'Medium', color: 'var(--priority-medium)' },
+  low:    { label: 'Low',    color: 'var(--priority-low)' },
 };
 
 const STATUS_CONFIG: Record<TodoStatus, { label: string }> = {
@@ -69,8 +70,8 @@ function dueDateColor(dateStr?: string): string {
   if (!dateStr) return 'var(--text-muted)';
   try {
     const d = parseISO(dateStr);
-    if (isPast(d) && !isToday(d)) return 'var(--text-secondary)';
-    if (isToday(d)) return 'var(--text-secondary)';
+    if (isPast(d) && !isToday(d)) return 'var(--priority-high)';
+    if (isToday(d)) return 'var(--priority-medium)';
     return 'var(--text-muted)';
   } catch { return 'var(--text-muted)'; }
 }
@@ -424,6 +425,7 @@ export function TodoList({
   todos, setTodos,
   contacts, projects, goals, courses, notes, readingItems, candidates,
 }: Props) {
+  const toast = useToast();
   const [filter, setFilter] = useState<FilterTab>('all');
   const [sortBy, setSortBy] = useState<'created' | 'due' | 'priority'>('priority');
   const [addOpen, setAddOpen] = useState(false);
@@ -490,6 +492,7 @@ export function TodoList({
     };
     setTodos(prev => [newTodo, ...(Array.isArray(prev) ? prev : [])]);
     setAddOpen(false);
+    toast.success('Task added');
   };
 
   const handleEdit = (data: FormData) => {
@@ -505,6 +508,7 @@ export function TodoList({
       )
     );
     setEditItem(null);
+    toast.success('Task updated');
   };
 
   const handleToggle = (todo: TodoItem) => {
@@ -516,6 +520,7 @@ export function TodoList({
 
   const handleDelete = (id: string) => {
     setTodos(prev => (Array.isArray(prev) ? prev : []).filter(t => t.id !== id));
+    toast.success('Task deleted');
   };
 
   const handleChecklistUpdate = (todoId: string, checklist: TodoChecklistItem[]) => {

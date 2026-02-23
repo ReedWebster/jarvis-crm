@@ -1,14 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Black rounded-rectangle background -->
-  <rect width="1024" height="1024" rx="230" ry="230" fill="#000000"/>
-  <!-- White serif R, centered -->
-  <text
-    x="524"
-    y="738"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-size="630"
-    font-weight="bold"
-    fill="#FFFFFF"
-    text-anchor="middle"
-  >R</text>
+  <!-- Black circle background -->
+  <circle cx="512" cy="512" r="512" fill="#000000"/>
+  <!-- Lighthouse icon (white) -->
+  <!-- Base -->
+  <rect x="420" y="740" width="184" height="60" rx="8" fill="#FFFFFF"/>
+  <!-- Tower body (tapered) -->
+  <path d="M455 740 L440 400 L584 400 L569 740 Z" fill="#FFFFFF"/>
+  <!-- Tower stripes (dark bands) -->
+  <rect x="441" y="530" width="142" height="28" rx="4" fill="#000000" opacity="0.25"/>
+  <rect x="449" y="620" width="126" height="28" rx="4" fill="#000000" opacity="0.25"/>
+  <!-- Lantern room (top) -->
+  <rect x="432" y="320" width="160" height="80" rx="10" fill="#FFFFFF"/>
+  <!-- Lantern glass (bright) -->
+  <rect x="446" y="330" width="132" height="60" rx="6" fill="#FFE066"/>
+  <!-- Light beams -->
+  <path d="M512 360 L320 280" stroke="#FFE066" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+  <path d="M512 360 L280 370" stroke="#FFE066" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
+  <path d="M512 360 L704 280" stroke="#FFE066" stroke-width="14" stroke-linecap="round" opacity="0.5"/>
+  <path d="M512 360 L744 370" stroke="#FFE066" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
+  <!-- Cap / roof -->
+  <polygon points="424,320 600,320 512,240" fill="#FFFFFF"/>
+  <!-- Top finial -->
+  <circle cx="512" cy="230" r="18" fill="#FFFFFF"/>
+  <!-- Door -->
+  <rect x="486" y="680" width="52" height="60" rx="6" fill="#000000" opacity="0.3"/>
+  <!-- Water waves -->
+  <path d="M340 820 Q400 800 460 820 Q520 840 580 820 Q640 800 700 820" stroke="#FFFFFF" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.5"/>
+  <path d="M360 860 Q420 840 480 860 Q540 880 600 860 Q660 840 720 860" stroke="#FFFFFF" stroke-width="10" fill="none" stroke-linecap="round" opacity="0.35"/>
 </svg>

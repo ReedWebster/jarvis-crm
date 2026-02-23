@@ -50,7 +50,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
 }
 
 export function HealthDot({ health }: { health: 'green' | 'yellow' | 'red' }) {
-  const shades = { green: 'var(--text-secondary)', yellow: 'var(--text-muted)', red: 'var(--text-secondary)' };
+  const shades = { green: 'var(--health-green)', yellow: 'var(--health-yellow)', red: 'var(--health-red)' };
   return (
     <span
       className="inline-block w-2.5 h-2.5 rounded-full transition-colors duration-300"

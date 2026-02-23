@@ -12,6 +12,7 @@ import {
 import { format, parseISO } from 'date-fns';
 import type { Project, ProjectStatus, HealthColor } from '../../types';
 import { generateId, todayStr, formatDate, daysUntil, isOverdue } from '../../utils';
+import { useToast } from '../shared/Toast';
 import { Modal } from '../shared/Modal';
 import { StatusBadge, HealthDot, Badge } from '../shared/Badge';
 
@@ -227,7 +228,7 @@ function ProjectForm({ form, onChange, onSubmit, onCancel, isEdit }: ProjectForm
       </div>
 
       {/* Status + Health */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="caesar-label">Status</label>
           <select
@@ -330,6 +331,7 @@ function ProjectForm({ form, onChange, onSubmit, onCancel, isEdit }: ProjectForm
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function ProjectsTracker({ projects, setProjects }: Props) {
+  const toast = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
@@ -400,11 +402,13 @@ export function ProjectsTracker({ projects, setProjects }: Props) {
     }
 
     closeModal();
+    toast.success(editingId ? 'Project updated' : 'Project added');
   };
 
   const handleDelete = (id: string) => {
     if (window.confirm('Delete this project?')) {
       setProjects((prev) => prev.filter((p) => p.id !== id));
+      toast.success('Project deleted');
     }
   };
 

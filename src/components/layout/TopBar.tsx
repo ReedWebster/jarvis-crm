@@ -27,17 +27,19 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
 
   return (
     <header
-      className="fixed top-0 left-0 md:left-56 right-0 h-14 z-30 flex items-center px-4 md:px-6 gap-3 md:gap-4 transition-colors duration-300"
+      className="fixed top-0 left-0 md:left-56 right-0 z-30 transition-colors duration-300"
       style={{
         backgroundColor: 'var(--bg-sidebar)',
         borderBottom: '1px solid var(--border)',
         backdropFilter: 'blur(8px)',
+        paddingTop: 'env(safe-area-inset-top)',
       }}
     >
+    <div className="h-14 flex items-center px-4 md:px-6 gap-3 md:gap-4">
       {/* Hamburger — mobile only */}
       <button
         onClick={onMenuOpen}
-        className="flex md:hidden items-center justify-center w-8 h-8 rounded-lg border flex-shrink-0"
+        className="flex md:hidden items-center justify-center w-11 h-11 rounded-lg border flex-shrink-0"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         aria-label="Open menu"
       >
@@ -95,7 +97,7 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
       {/* Theme toggle */}
       <button
         onClick={onThemeToggle}
-        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       >
@@ -111,12 +113,13 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
       {/* Logout */}
       <button
         onClick={() => supabase.auth.signOut()}
-        className="flex items-center justify-center w-8 h-8 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title="Sign out"
       >
         <LogOut size={14} />
       </button>
+    </div>
     </header>
   );
 }

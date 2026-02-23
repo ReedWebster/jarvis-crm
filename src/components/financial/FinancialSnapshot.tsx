@@ -1309,7 +1309,7 @@ export function FinancialSnapshot({
         size="md"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Date</label>
               <input
@@ -1343,7 +1343,7 @@ export function FinancialSnapshot({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Amount ($)</label>
               <input
@@ -1416,7 +1416,7 @@ export function FinancialSnapshot({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Target ($)</label>
               <input
@@ -1441,7 +1441,7 @@ export function FinancialSnapshot({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="caesar-label">Deadline</label>
               <input
