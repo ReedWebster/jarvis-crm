@@ -284,6 +284,19 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
   );
 }
 
+// ─── PHONE FORMATTING ────────────────────────────────────────────────────────
+
+function formatPhone(raw: string): string {
+  if (!raw) return '';
+  // Pass international numbers (+...) through as-is
+  if (raw.startsWith('+')) return raw;
+  const digits = raw.replace(/\D/g, '').slice(0, 10);
+  if (!digits) return '';
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 // ─── ADD/EDIT CONTACT MODAL ───────────────────────────────────────────────────
 
 interface ContactFormData {
@@ -404,9 +417,10 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             <label className="caesar-label">Phone</label>
             <input
               className="caesar-input w-full"
-              placeholder="+1 (555) 000-0000"
+              type="tel"
+              placeholder="(555) 000-0000"
               value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, phone: formatPhone(e.target.value) }))}
             />
           </div>
         </div>

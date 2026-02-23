@@ -18,7 +18,7 @@ import {
   Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, LayoutGrid, Zap, ZapOff, UserPlus } from 'lucide-react';
+import { X, LayoutGrid, Zap, ZapOff, UserPlus, Building2 } from 'lucide-react';
 import type { Contact, Project, ContactMapData, NetworkingMapState, NetworkManualConnection, MapFilters, ContactTag } from '../../types';
 import { generateId } from '../../utils';
 import {
@@ -111,7 +111,40 @@ const ContactNode = memo(({ data, id }: NodeProps) => {
 });
 ContactNode.displayName = 'ContactNode';
 
-const nodeTypes = { contact: ContactNode };
+// ─── ORG BUBBLE NODE ──────────────────────────────────────────────────────────
+
+const ORG_COLORS = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ec4899','#14b8a6','#f97316','#84cc16'];
+
+function orgColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = ((h * 31) + c.charCodeAt(0)) & 0xffffff;
+  return ORG_COLORS[Math.abs(h) % ORG_COLORS.length];
+}
+
+const OrgBubbleNode = memo(({ data }: NodeProps) => {
+  const d = data as { label: string; color: string };
+  return (
+    <div className="w-full h-full relative" style={{ pointerEvents: 'none' }}>
+      <div
+        className="absolute inset-0"
+        style={{
+          borderRadius: 20,
+          border: `2px dashed ${d.color}55`,
+          background: `${d.color}09`,
+        }}
+      />
+      <span
+        className="absolute top-3 left-3.5 font-bold uppercase tracking-widest"
+        style={{ fontSize: 10, color: d.color, opacity: 0.75, whiteSpace: 'nowrap' }}
+      >
+        {d.label}
+      </span>
+    </div>
+  );
+});
+OrgBubbleNode.displayName = 'OrgBubbleNode';
+
+const nodeTypes = { contact: ContactNode, orgBubble: OrgBubbleNode };
 
 // ─── CONNECTION LABEL MODAL ───────────────────────────────────────────────────
 
@@ -285,6 +318,7 @@ export function NetworkView({
   onAddContact,
 }: Props) {
   const [showAddContact, setShowAddContact] = useState(false);
+  const [showOrgBubbles, setShowOrgBubbles] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [pendingConnection, setPendingConnection] = useState<{ sourceId: string; targetId: string } | null>(null);
@@ -313,7 +347,7 @@ export function NetworkView({
   }, [highlightedId, contacts, mapState.showAutoConnections, mapState.manualConnections]);
 
   const buildNodes = useCallback((): Node[] => {
-    return contacts.map((c, i) => {
+    const contactNodes: Node[] = contacts.map((c, i) => {
       const d = mapState.contactData[c.id] ?? defaultContactMapData(c.id);
       const x = d.nodeX ?? (i % 5) * 180 + 80;
       const y = d.nodeY ?? Math.floor(i / 5) * 160 + 80;
@@ -335,9 +369,55 @@ export function NetworkView({
           },
         } satisfies ContactNodeData,
         draggable: true,
+        zIndex: 1,
       };
     });
-  }, [contacts, mapState.contactData, filteredIds, connectedIds]);
+
+    if (!showOrgBubbles) return contactNodes;
+
+    // Build org bubble background nodes grouped by company
+    const groups = new Map<string, Contact[]>();
+    contacts.forEach(c => {
+      const co = c.company?.trim();
+      if (!co) return;
+      groups.set(co, [...(groups.get(co) ?? []), c]);
+    });
+
+    const orgNodes: Node[] = [];
+    groups.forEach((orgContacts, company) => {
+      const PAD = 55;
+      const NODE_FOOTPRINT = 80;
+      const positions = orgContacts.map(c => {
+        const idx = contacts.indexOf(c);
+        const d = mapState.contactData[c.id];
+        return {
+          x: d?.nodeX ?? (idx % 5) * 180 + 80,
+          y: d?.nodeY ?? Math.floor(idx / 5) * 160 + 80,
+        };
+      });
+      const minX = Math.min(...positions.map(p => p.x)) - PAD;
+      const minY = Math.min(...positions.map(p => p.y)) - PAD;
+      const w = Math.max(...positions.map(p => p.x)) + NODE_FOOTPRINT + PAD - minX;
+      const h = Math.max(...positions.map(p => p.y)) + NODE_FOOTPRINT + PAD - minY;
+      const color = orgColor(company);
+
+      orgNodes.push({
+        id: `org-bubble-${company}`,
+        type: 'orgBubble',
+        position: { x: minX, y: minY },
+        data: { label: company, color },
+        style: { width: w, height: h },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        deletable: false,
+        zIndex: 0,
+      });
+    });
+
+    // Org nodes go first so they render behind contact nodes
+    return [...orgNodes, ...contactNodes];
+  }, [contacts, mapState.contactData, filteredIds, connectedIds, showOrgBubbles]);
 
   const buildEdges = useCallback((): Edge[] => {
     const autoEdges: Edge[] = mapState.showAutoConnections ? buildAutoEdges(contacts) : [];
@@ -488,6 +568,18 @@ export function NetworkView({
             >
               {mapState.showAutoConnections ? <Zap size={12} /> : <ZapOff size={12} />}
               {mapState.showAutoConnections ? 'Auto-Links On' : 'Auto-Links Off'}
+            </button>
+            <button
+              onClick={() => setShowOrgBubbles(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow transition-colors"
+              style={{
+                backgroundColor: showOrgBubbles ? 'var(--bg-elevated)' : 'var(--bg-card)',
+                borderColor: showOrgBubbles ? 'var(--border-strong)' : 'var(--border)',
+                color: showOrgBubbles ? 'var(--text-primary)' : 'var(--text-secondary)',
+              }}
+              title="Group contacts by organization"
+            >
+              <Building2 size={12} /> Org Bubbles
             </button>
           </div>
         </Panel>
