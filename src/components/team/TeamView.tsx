@@ -13,7 +13,8 @@ import { supabase } from '../../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 import { Building2, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react';
 import { RecruitmentTracker } from '../recruitment/RecruitmentTracker';
-import type { Client } from '../../types';
+import { DocHub } from '../dochub/DocHub';
+import type { Client, DocFolder, DocFile } from '../../types';
 import { ThemeContext, buildThemeValue, useThemeState } from '../../hooks/useTheme';
 import { ToastProvider } from '../shared/Toast';
 import { useWorkspaceStorage } from '../../hooks/useWorkspaceStorage';
@@ -120,12 +121,61 @@ function TeamLogin() {
   );
 }
 
+// ─── Founder roster ───────────────────────────────────────────────────────────
+
+const FOUNDERS = [
+  { name: 'Reed Webster',  role: 'Co-Founder & CEO',      initials: 'RW', color: '#10b981' },
+  { name: 'Luke Wills',    role: 'Co-Founder & COO',      initials: 'LW', color: '#6366f1' },
+  { name: 'Sam Suh',       role: 'Co-Founder & CTO',      initials: 'SS', color: '#f59e0b' },
+];
+
+function FounderRoster() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2
+          className="text-xs font-semibold uppercase tracking-widest mb-4"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em' }}
+        >
+          Founding Team
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {FOUNDERS.map(f => (
+            <div
+              key={f.name}
+              className="rounded-xl p-5 flex flex-col gap-3"
+              style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}
+            >
+              <div
+                className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold"
+                style={{ backgroundColor: `${f.color}22`, color: f.color, letterSpacing: '0.04em' }}
+              >
+                {f.initials}
+              </div>
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {f.name}
+                </div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  {f.role}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Inner content (after auth) ───────────────────────────────────────────────
 
-type TeamTab = 'clients' | 'calendar';
+type TeamTab = 'clients' | 'calendar' | 'team' | 'docs';
 
 function TeamContent({ session }: { session: Session }) {
   const [clients, setClients] = useWorkspaceStorage<Client[]>('clients', []);
+  const [docFolders, setDocFolders] = useWorkspaceStorage<DocFolder[]>('teamDocs:folders', []);
+  const [docFiles, setDocFiles] = useWorkspaceStorage<DocFile[]>('teamDocs:files', []);
   const [activeTab, setActiveTab] = useState<TeamTab>('clients');
   const { theme, toggle } = useThemeState();
 
@@ -182,17 +232,22 @@ function TeamContent({ session }: { session: Session }) {
 
         {/* Tab bar */}
         <div className="flex px-5 gap-1 pb-0" style={{ borderTop: '1px solid var(--border)' }}>
-          {(['clients', 'calendar'] as TeamTab[]).map(tab => (
+          {([
+            { id: 'clients',  label: 'Clients' },
+            { id: 'calendar', label: 'Calendar' },
+            { id: 'team',     label: 'Team' },
+            { id: 'docs',     label: 'Doc Hub' },
+          ] as { id: TeamTab; label: string }[]).map(({ id, label }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={id}
+              onClick={() => setActiveTab(id)}
               className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors relative"
               style={{
-                color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-muted)',
-                borderBottom: activeTab === tab ? '2px solid #10b981' : '2px solid transparent',
+                color: activeTab === id ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderBottom: activeTab === id ? '2px solid #10b981' : '2px solid transparent',
               }}
             >
-              {tab === 'clients' ? 'Clients' : 'Calendar'}
+              {label}
             </button>
           ))}
         </div>
@@ -208,6 +263,17 @@ function TeamContent({ session }: { session: Session }) {
         )}
         {activeTab === 'calendar' && (
           <TeamCalendarView />
+        )}
+        {activeTab === 'team' && (
+          <FounderRoster />
+        )}
+        {activeTab === 'docs' && (
+          <DocHub
+            folders={docFolders}
+            setFolders={setDocFolders}
+            files={docFiles}
+            setFiles={setDocFiles}
+          />
         )}
       </main>
     </div>
