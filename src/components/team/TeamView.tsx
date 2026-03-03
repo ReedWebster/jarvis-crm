@@ -11,7 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
-import { Building2, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react';
+import { Building2, LogOut, Moon, Sun, Eye, EyeOff, Pencil, Check, X } from 'lucide-react';
 import { RecruitmentTracker } from '../recruitment/RecruitmentTracker';
 import { DocHub } from '../dochub/DocHub';
 import type { Client, DocFolder, DocFile } from '../../types';
@@ -123,46 +123,145 @@ function TeamLogin() {
 
 // ─── Founder roster ───────────────────────────────────────────────────────────
 
-const FOUNDERS = [
-  { name: 'Reed Webster',  role: 'Co-Founder & CEO',      initials: 'RW', color: '#10b981' },
-  { name: 'Luke Wills',    role: 'Co-Founder & COO',      initials: 'LW', color: '#6366f1' },
-  { name: 'Sam Suh',       role: 'Co-Founder & CTO',      initials: 'SS', color: '#f59e0b' },
+export interface FounderEntry {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+  role: string;
+  focus: string;
+}
+
+const DEFAULT_FOUNDERS: FounderEntry[] = [
+  { id: 'rw', name: 'Reed Webster', initials: 'RW', color: '#10b981', role: 'Co-Founder & CEO', focus: '' },
+  { id: 'lw', name: 'Luke Wills',   initials: 'LW', color: '#6366f1', role: 'Co-Founder & COO', focus: '' },
+  { id: 'ss', name: 'Sam Suh',      initials: 'SS', color: '#f59e0b', role: 'Co-Founder & CTO', focus: '' },
 ];
 
-function FounderRoster() {
+interface FounderRosterProps {
+  founders: FounderEntry[];
+  setFounders: (v: FounderEntry[] | ((p: FounderEntry[]) => FounderEntry[])) => void;
+}
+
+function FounderRoster({ founders, setFounders }: FounderRosterProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ role: string; focus: string }>({ role: '', focus: '' });
+
+  function startEdit(f: FounderEntry) {
+    setEditingId(f.id);
+    setDraft({ role: f.role, focus: f.focus });
+  }
+
+  function saveEdit(id: string) {
+    setFounders(prev => prev.map(f => f.id === id ? { ...f, ...draft } : f));
+    setEditingId(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
   return (
     <div className="space-y-4">
-      <div>
-        <h2
-          className="text-xs font-semibold uppercase tracking-widest mb-4"
-          style={{ color: 'var(--text-muted)', letterSpacing: '0.12em' }}
-        >
-          Founding Team
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {FOUNDERS.map(f => (
+      <h2
+        className="text-xs font-semibold uppercase tracking-widest mb-4"
+        style={{ color: 'var(--text-muted)', letterSpacing: '0.12em' }}
+      >
+        Founding Team
+      </h2>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {founders.map(f => {
+          const isEditing = editingId === f.id;
+          return (
             <div
-              key={f.name}
+              key={f.id}
               className="rounded-xl p-5 flex flex-col gap-3"
-              style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              style={{ backgroundColor: 'var(--bg-card)', border: `1px solid ${isEditing ? f.color + '66' : 'var(--border)'}` }}
             >
-              <div
-                className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ backgroundColor: `${f.color}22`, color: f.color, letterSpacing: '0.04em' }}
-              >
-                {f.initials}
-              </div>
-              <div>
-                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  {f.name}
+              {/* Avatar + edit button */}
+              <div className="flex items-start justify-between">
+                <div
+                  className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold"
+                  style={{ backgroundColor: `${f.color}22`, color: f.color, letterSpacing: '0.04em' }}
+                >
+                  {f.initials}
                 </div>
-                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {f.role}
-                </div>
+                {isEditing ? (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => saveEdit(f.id)}
+                      className="p-1.5 rounded-lg"
+                      style={{ color: '#10b981', backgroundColor: '#10b98122' }}
+                      title="Save"
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="p-1.5 rounded-lg"
+                      style={{ color: 'var(--text-muted)', backgroundColor: 'var(--bg-elevated)' }}
+                      title="Cancel"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => startEdit(f)}
+                    className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--bg-elevated)]"
+                    style={{ color: 'var(--text-muted)' }}
+                    title="Edit"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                )}
               </div>
+
+              {/* Name */}
+              <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {f.name}
+              </div>
+
+              {isEditing ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    className="caesar-input w-full text-xs"
+                    placeholder="Title / role"
+                    value={draft.role}
+                    onChange={e => setDraft(d => ({ ...d, role: e.target.value }))}
+                    autoFocus
+                  />
+                  <textarea
+                    className="caesar-input w-full text-xs resize-none"
+                    placeholder="Current focus / responsibilities…"
+                    rows={3}
+                    value={draft.focus}
+                    onChange={e => setDraft(d => ({ ...d, focus: e.target.value }))}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5 cursor-pointer group" onClick={() => startEdit(f)}>
+                  <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                    {f.role || <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Add role…</span>}
+                  </div>
+                  {f.focus && (
+                    <div
+                      className="text-xs leading-relaxed"
+                      style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}
+                    >
+                      {f.focus}
+                    </div>
+                  )}
+                  {!f.focus && (
+                    <div className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.4, fontStyle: 'italic' }}>
+                      Click to add focus / responsibilities…
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -174,6 +273,7 @@ type TeamTab = 'clients' | 'calendar' | 'team' | 'docs';
 
 function TeamContent({ session }: { session: Session }) {
   const [clients, setClients] = useWorkspaceStorage<Client[]>('clients', []);
+  const [founders, setFounders] = useWorkspaceStorage<FounderEntry[]>('teamFounders', DEFAULT_FOUNDERS);
   const [docFolders, setDocFolders] = useWorkspaceStorage<DocFolder[]>('teamDocs:folders', []);
   const [docFiles, setDocFiles] = useWorkspaceStorage<DocFile[]>('teamDocs:files', []);
   const [activeTab, setActiveTab] = useState<TeamTab>('clients');
@@ -265,7 +365,7 @@ function TeamContent({ session }: { session: Session }) {
           <TeamCalendarView />
         )}
         {activeTab === 'team' && (
-          <FounderRoster />
+          <FounderRoster founders={founders} setFounders={setFounders} />
         )}
         {activeTab === 'docs' && (
           <DocHub
