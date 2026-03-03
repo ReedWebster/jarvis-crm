@@ -1,6 +1,16 @@
 node_modules
 .claude/
 .vercel
+dist/
+dev-dist/
+
+# Environment files — never commit real keys
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.vercel
+.env.development
+.env.staging
+.env.production
+*.env
