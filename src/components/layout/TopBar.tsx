@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Zap, Sun, Moon, Menu, LogOut } from 'lucide-react';
+import { Zap, Sun, Moon, Menu, LogOut, Bell, Users } from 'lucide-react';
 import type { StatusMode, Identity } from '../../types';
 import { supabase } from '../../lib/supabase';
 
@@ -18,9 +18,11 @@ interface TopBarProps {
   onThemeToggle: () => void;
   isDark: boolean;
   onMenuOpen: () => void;
+  urgentCount?: number;
+  onNotificationClick?: () => void;
 }
 
-export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, onMenuOpen }: TopBarProps) {
+export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, onMenuOpen, urgentCount = 0, onNotificationClick }: TopBarProps) {
   const now = new Date();
   const statusCfg = STATUS_CONFIG[identity.status];
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -103,6 +105,34 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
       >
         {isDark ? <Sun size={15} /> : <Moon size={15} />}
       </button>
+
+      {/* Notification bell */}
+      <button
+        onClick={onNotificationClick}
+        className="relative flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+        title="Notifications"
+      >
+        <Bell size={15} />
+        {urgentCount > 0 && (
+          <span
+            className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
+            style={{ backgroundColor: '#ef4444' }}
+          />
+        )}
+      </button>
+
+      {/* Team page link */}
+      <a
+        href="/?view=team"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+        title="Open team page"
+      >
+        <Users size={15} />
+      </a>
 
       {/* Power indicator — desktop only */}
       <div className="hidden sm:flex items-center gap-1.5">

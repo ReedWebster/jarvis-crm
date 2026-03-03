@@ -1,28 +1,13 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   Plus,
   Trash2,
   Clock,
-  Zap,
   Settings,
   ChevronLeft,
   ChevronRight,
-  Target,
-  Check,
-  X,
-  CalendarDays,
-  LayoutGrid,
-  Calendar,
-  FileText,
-  ListTodo,
+  Bell,
 } from 'lucide-react';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import {
   format,
   startOfWeek,
@@ -40,17 +25,32 @@ import {
   generateId,
   todayStr,
   calcDurationHours,
-  aggregateTimeByCategory,
   getCategoryColor,
   getCategoryName,
   formatTime,
 } from '../../utils';
+import { analyzeTime } from '../../utils/intelligence';
 import { Modal } from '../shared/Modal';
+import { TimeSelect } from '../shared/TimeSelect';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
+import { useCalendarNotifications } from '../../hooks/useCalendarNotifications';
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+
+const HOUR_HEIGHT = 64;
+const MIN_EVENT_HEIGHT = 22;
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const WEEK_DAYS_SHORT = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const DEFAULT_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#06b6d4', '#ec4899', '#6b7280',
+];
+const ENERGY_EMOJIS: Record<number, string> = { 1: '😴', 2: '😐', 3: '🙂', 4: '😊', 5: '🔥' };
+const ENERGY_LABELS: Record<number, string> = { 1: 'Exhausted', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Peak' };
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-type PlannerView = 'daily' | 'weekly' | 'monthly';
+type CalView = 'day' | 'week' | 'month';
 
 interface Props {
   timeBlocks: TimeBlock[];
@@ -62,6 +62,8 @@ interface Props {
   todos: TodoItem[];
 }
 
+type RepeatOption = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+
 interface LogFormState {
   date: string;
   categoryId: string;
@@ -70,39 +72,84 @@ interface LogFormState {
   endTime: string;
   notes: string;
   energy: 1 | 2 | 3 | 4 | 5;
+  editingId?: string;
+  repeat: RepeatOption;
+  repeatUntil: string;
 }
 
-interface CategoryFormState {
-  name: string;
-  color: string;
+interface EventLayoutInfo {
+  col: number;
+  totalCols: number;
 }
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-const PRIORITY_CATEGORY_IDS = ['cat-rca', 'cat-vanta', 'cat-aibs'];
-
-const ENERGY_EMOJIS: Record<number, string> = {
-  1: '😴',
-  2: '😐',
-  3: '🙂',
-  4: '😊',
-  5: '🔥',
-};
-
-const ENERGY_LABELS: Record<number, string> = {
-  1: 'Exhausted',
-  2: 'Low',
-  3: 'Okay',
-  4: 'Good',
-  5: 'Peak',
-};
-
-const DEFAULT_COLORS = ['#111111','#222222','#333333','#444444','#555555','#666666','#777777','#888888'];
-
-// Hours shown in daily view (6am → 11pm)
-const DAY_HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
+interface GhostBlock {
+  date: string;
+  startMin: number;
+  endMin: number;
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+function snapToGrid(minutes: number): number {
+  return Math.round(minutes / 15) * 15;
+}
+
+function minutesToTimeStr(minutes: number): string {
+  const clamped = Math.min(Math.max(minutes, 0), 23 * 60 + 59);
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function eventTopPx(startTime: string): number {
+  return (timeToMinutes(startTime) / 60) * HOUR_HEIGHT;
+}
+
+function eventHeightPx(startTime: string, endTime: string): number {
+  return Math.max(calcDurationHours(startTime, endTime) * HOUR_HEIGHT, MIN_EVENT_HEIGHT);
+}
+
+function buildOverlapLayout(blocks: TimeBlock[]): Map<string, EventLayoutInfo> {
+  const sorted = [...blocks].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const colEnds: number[] = [];
+  const blockCols = new Map<string, number>();
+
+  for (const block of sorted) {
+    const startMin = timeToMinutes(block.startTime);
+    let col = colEnds.findIndex((end) => end <= startMin);
+    if (col === -1) { col = colEnds.length; colEnds.push(timeToMinutes(block.endTime)); }
+    else colEnds[col] = timeToMinutes(block.endTime);
+    blockCols.set(block.id, col);
+  }
+
+  const result = new Map<string, EventLayoutInfo>();
+  for (const block of sorted) {
+    const col = blockCols.get(block.id)!;
+    const startMin = timeToMinutes(block.startTime);
+    const endMin = timeToMinutes(block.endTime);
+    let maxCol = col;
+    for (const [id, c] of blockCols) {
+      const other = sorted.find((b) => b.id === id);
+      if (!other) continue;
+      const oStart = timeToMinutes(other.startTime);
+      const oEnd = timeToMinutes(other.endTime);
+      if (oStart < endMin && oEnd > startMin) maxCol = Math.max(maxCol, c);
+    }
+    result.set(block.id, { col, totalCols: maxCol + 1 });
+  }
+  return result;
+}
+
+function formatHourLabel(hour: number): string {
+  if (hour === 0) return '12 AM';
+  if (hour === 12) return '12 PM';
+  return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
+}
 
 function getDayBlocks(blocks: TimeBlock[], date: string): TimeBlock[] {
   return blocks.filter((b) => b.date === date);
@@ -117,182 +164,604 @@ function roundHours(h: number): string {
 }
 
 function getWeekDays(referenceDate: Date): Date[] {
-  const monday = startOfWeek(referenceDate, { weekStartsOn: 1 });
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const sunday = startOfWeek(referenceDate, { weekStartsOn: 0 });
+  return Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
 }
 
-function calcFocusScore(blocks: TimeBlock[], categories: TimeCategory[]): number {
-  if (blocks.length === 0) return 0;
-  const total = getTotalHours(blocks);
-  if (total === 0) return 0;
-  const priorityCatIds = categories
-    .filter(
-      (c) =>
-        PRIORITY_CATEGORY_IDS.includes(c.id) ||
-        ['rca', 'vanta', 'aibs'].some((key) => c.name.toLowerCase().includes(key))
-    )
-    .map((c) => c.id);
-  const priorityHours = blocks
-    .filter((b) => priorityCatIds.includes(b.categoryId))
-    .reduce((sum, b) => sum + calcDurationHours(b.startTime, b.endTime), 0);
-  return Math.round((priorityHours / total) * 100);
+/** Compute y-offset within the time grid from a mouse event.
+ *  getBoundingClientRect() is already viewport-relative (accounts for scroll),
+ *  so clientY - rect.top gives the absolute pixel position within the column.
+ */
+function getMinutesAtClientY(
+  containerEl: HTMLElement,
+  _scrollEl: HTMLElement | null,
+  clientY: number
+): number {
+  const rect = containerEl.getBoundingClientRect();
+  const y = clientY - rect.top;
+  return snapToGrid(Math.round((y / HOUR_HEIGHT) * 60));
 }
 
-function calcEnergyAvg(blocks: TimeBlock[]): number {
-  if (blocks.length === 0) return 0;
-  return blocks.reduce((sum, b) => sum + b.energy, 0) / blocks.length;
-}
+// ─── EVENT BLOCK ──────────────────────────────────────────────────────────────
 
-// Returns blocks that overlap an hour slot (e.g., hour=9 means 09:00–10:00)
-function getBlocksForHour(blocks: TimeBlock[], hour: number): TimeBlock[] {
-  return blocks.filter((b) => {
-    const [sh] = b.startTime.split(':').map(Number);
-    const [eh] = b.endTime.split(':').map(Number);
-    return sh <= hour && eh > hour;
-  });
-}
+function EventBlock({
+  block, categories, top, height, colPct, widthPct, onClick,
+}: {
+  block: TimeBlock;
+  categories: TimeCategory[];
+  top: number;
+  height: number;
+  colPct: number;
+  widthPct: number;
+  onClick: () => void;
+}) {
+  const color = getCategoryColor(block.categoryId, categories);
+  const catName = getCategoryName(block.categoryId, categories);
+  const displayName = block.title?.trim() || catName;
+  const isShort = height < 38;
 
-// ─── SUB-COMPONENTS ──────────────────────────────────────────────────────────
-
-function DonutTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const { name, hours, color } = payload[0].payload;
-  const total = payload[0].payload.total;
-  const pct = total > 0 ? Math.round((hours / total) * 100) : 0;
   return (
     <div
-      className="px-3 py-2 rounded-lg border text-xs shadow-lg"
-      style={{ backgroundColor: 'var(--bg-card)', borderColor: `${color}50`, color: 'var(--text-primary)' }}
+      onMouseDown={(e) => e.stopPropagation()} // prevent triggering drag
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
+      style={{
+        position: 'absolute',
+        top: top + 1,
+        height: height - 2,
+        left: `calc(${colPct}% + 2px)`,
+        width: `calc(${widthPct}% - 4px)`,
+        backgroundColor: `${color}28`,
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 6,
+        cursor: 'pointer',
+        overflow: 'hidden',
+        padding: isShort ? '0 5px' : '3px 6px',
+        display: 'flex',
+        flexDirection: isShort ? 'row' : 'column',
+        alignItems: isShort ? 'center' : 'flex-start',
+        gap: isShort ? 4 : 1,
+        zIndex: 1,
+        boxSizing: 'border-box',
+        transition: 'filter 0.1s',
+      }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(0.92)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = 'none'; }}
     >
-      <p className="font-semibold" style={{ color }}>{name}</p>
-      <p style={{ color: 'var(--text-secondary)' }}>{roundHours(hours)} · {pct}%</p>
+      <span style={{
+        fontSize: 11, fontWeight: 600, color,
+        lineHeight: 1.3, whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+      }}>
+        {displayName}
+      </span>
+      {!isShort && (
+        <span style={{ fontSize: 10, color: `${color}bb`, lineHeight: 1.2 }}>
+          {formatTime(block.startTime)} – {formatTime(block.endTime)}
+        </span>
+      )}
     </div>
   );
 }
 
-// Quick Add Note — saves directly to Notes & Intel
-function QuickAddNotePanel({ onAddNote }: { onAddNote: (note: Note) => void }) {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [saved, setSaved] = useState(false);
+// ─── GHOST BLOCK (drag preview) ───────────────────────────────────────────────
 
-  const handleSave = () => {
-    if (!content.trim() && !title.trim()) return;
-    const now = new Date().toISOString();
-    onAddNote({
-      id: generateId(),
-      title: title.trim() || format(new Date(), 'MMM d, h:mm a'),
-      content: content.trim(),
-      tags: [],
-      pinned: false,
-      createdAt: now,
-      updatedAt: now,
-      isMeetingNote: false,
-    });
-    setTitle('');
-    setContent('');
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
+function GhostEventBlock({ startMin, endMin }: { startMin: number; endMin: number }) {
+  const top = (startMin / 60) * HOUR_HEIGHT;
+  const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 24);
   return (
-    <div className="caesar-card flex flex-col gap-2">
-      <h2 className="text-xs font-semibold flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-        <FileText size={12} /> QUICK NOTE
-      </h2>
-      <input
-        className="caesar-input text-xs w-full"
-        placeholder="Title (optional)"
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-      />
-      <textarea
-        className="caesar-input text-xs w-full resize-none"
-        rows={4}
-        placeholder="Capture a thought, insight, or intel…"
-        value={content}
-        onChange={e => setContent(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); }}
-      />
-      <button
-        onClick={handleSave}
-        disabled={!content.trim() && !title.trim()}
-        className="caesar-btn-primary text-xs py-1.5 flex items-center justify-center gap-1.5"
-      >
-        {saved ? <><Check size={12} /> Saved to Notes</> : <><Plus size={12} /> Add to Notes & Intel</>}
-      </button>
+    <div
+      style={{
+        position: 'absolute',
+        top: top + 1,
+        height: height - 2,
+        left: 2, right: 2,
+        backgroundColor: 'rgba(59,130,246,0.15)',
+        border: '2px solid #3b82f6',
+        borderRadius: 6,
+        zIndex: 3,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'flex-start',
+        padding: '3px 6px',
+      }}
+    >
+      <span style={{ fontSize: 10, fontWeight: 600, color: '#3b82f6' }}>
+        {minutesToTimeStr(startMin).replace(/^0/, '')} – {minutesToTimeStr(endMin).replace(/^0/, '')}
+      </span>
     </div>
   );
 }
 
-// Todo Summary — shows incomplete todos for the sidebar
-function TodoSummaryPanel({ todos }: { todos: TodoItem[] }) {
-  const incomplete = todos.filter(t => t.status !== 'done');
-  const high = incomplete.filter(t => t.priority === 'high');
-  const medium = incomplete.filter(t => t.priority === 'medium');
-  const low = incomplete.filter(t => t.priority === 'low');
+// ─── CURRENT TIME INDICATOR ───────────────────────────────────────────────────
 
-  const renderGroup = (label: string, items: TodoItem[], dot: string) => {
-    if (items.length === 0) return null;
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: dot }} />
-          <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)', fontSize: 10 }}>{label}</span>
+function CurrentTimeIndicator({ topPx }: { topPx: number }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: topPx - 1,
+        left: -7, right: 0,
+        zIndex: 5,
+        display: 'flex', alignItems: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#ef4444', flexShrink: 0 }} />
+      <div style={{ flex: 1, height: 2, backgroundColor: '#ef4444' }} />
+    </div>
+  );
+}
+
+// ─── HOUR GRID LINES ──────────────────────────────────────────────────────────
+
+function HourLines() {
+  return (
+    <>
+      {HOURS.map((h) => (
+        <React.Fragment key={h}>
+          <div style={{ position: 'absolute', top: h * HOUR_HEIGHT, left: 0, right: 0, borderTop: '1px solid var(--border)', zIndex: 0 }} />
+          <div style={{ position: 'absolute', top: h * HOUR_HEIGHT + HOUR_HEIGHT / 2, left: 0, right: 0, borderTop: '1px solid var(--border)', opacity: 0.35, zIndex: 0 }} />
+        </React.Fragment>
+      ))}
+    </>
+  );
+}
+
+// ─── TIME LABELS COLUMN ───────────────────────────────────────────────────────
+
+function TimeLabels() {
+  return (
+    <div style={{ width: 52, flexShrink: 0 }}>
+      {HOURS.map((h) => (
+        <div key={h} style={{ height: HOUR_HEIGHT, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: 10, paddingTop: 6 }}>
+          {h > 0 && (
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+              {formatHourLabel(h)}
+            </span>
+          )}
         </div>
-        {items.slice(0, 3).map(t => (
-          <div key={t.id} className="flex items-start gap-2 pl-3">
-            <div className="w-3 h-3 rounded border flex-shrink-0 mt-0.5" style={{ borderColor: 'var(--border)' }} />
-            <span className="text-xs leading-tight truncate" style={{ color: 'var(--text-secondary)' }}>{t.title}</span>
-          </div>
-        ))}
-        {items.length > 3 && (
-          <p className="text-xs pl-3" style={{ color: 'var(--text-muted)' }}>+{items.length - 3} more</p>
-        )}
-      </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── DRAG HOOK ────────────────────────────────────────────────────────────────
+
+function useDragCreate(
+  scrollRef: React.RefObject<HTMLDivElement>,
+  onComplete: (date: string, startTime: string, endTime: string) => void
+) {
+  const [ghost, setGhost] = useState<GhostBlock | null>(null);
+  const dragRef = useRef<{ date: string; startMin: number; containerEl: HTMLElement } | null>(null);
+
+  const startDrag = useCallback((
+    e: React.MouseEvent,
+    date: string,
+  ) => {
+    // Only left button, not on an event block
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const containerEl = e.currentTarget as HTMLElement;
+    const startMin = Math.min(
+      Math.max(getMinutesAtClientY(containerEl, scrollRef.current, e.clientY), 0),
+      23 * 60
     );
-  };
+    dragRef.current = { date, startMin, containerEl };
+    setGhost({ date, startMin, endMin: startMin + 60 });
+
+    const onMove = (me: MouseEvent) => {
+      if (!dragRef.current) return;
+      const endMin = Math.min(
+        Math.max(
+          getMinutesAtClientY(dragRef.current.containerEl, scrollRef.current, me.clientY),
+          dragRef.current.startMin + 15
+        ),
+        24 * 60
+      );
+      setGhost({ date: dragRef.current.date, startMin: dragRef.current.startMin, endMin });
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!dragRef.current) return;
+      const { date: d, startMin } = dragRef.current;
+      dragRef.current = null;
+      setGhost((prev) => {
+        const endMin = prev ? prev.endMin : startMin + 60;
+        onComplete(d, minutesToTimeStr(startMin), minutesToTimeStr(Math.min(endMin, 23 * 60 + 45)));
+        return null;
+      });
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [scrollRef, onComplete]);
+
+  return { ghost, startDrag };
+}
+
+// ─── DAY VIEW ─────────────────────────────────────────────────────────────────
+
+function AppleDayView({
+  date, blocks, categories, currentTimePx, isToday,
+  onCreateBlock, onClickBlock, scrollRef,
+}: {
+  date: string;
+  blocks: TimeBlock[];
+  categories: TimeCategory[];
+  currentTimePx: number | null;
+  isToday: boolean;
+  onCreateBlock: (date: string, startTime: string, endTime: string) => void;
+  onClickBlock: (block: TimeBlock) => void;
+  scrollRef: React.RefObject<HTMLDivElement>;
+}) {
+  const layout = useMemo(() => buildOverlapLayout(blocks), [blocks]);
+  const total = getTotalHours(blocks);
+  const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
 
   return (
-    <div className="caesar-card flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-          <ListTodo size={12} /> TODO LIST
-        </h2>
-        {incomplete.length > 0 && (
-          <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-            {incomplete.length} open
+    <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
+      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', minWidth: 0 }}>
+      {/* Day header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold tracking-widest"
+            style={{ color: isToday ? '#3b82f6' : 'var(--text-muted)' }}>
+            {format(parseISO(date), 'EEE').toUpperCase()}
+          </span>
+          <span className="text-2xl font-bold w-9 h-9 flex items-center justify-center rounded-full"
+            style={{ color: isToday ? '#ffffff' : 'var(--text-primary)', backgroundColor: isToday ? '#3b82f6' : 'transparent' }}>
+            {format(parseISO(date), 'd')}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {format(parseISO(date), 'MMMM yyyy')}
+          </span>
+        </div>
+        {total > 0 && (
+          <span className="ml-auto text-xs px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+            {roundHours(Math.round(total * 10) / 10)} logged
           </span>
         )}
       </div>
-      {incomplete.length === 0 ? (
-        <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>All caught up ✓</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {renderGroup('High Priority', high, '#dc2626')}
-          {renderGroup('Medium', medium, '#d97706')}
-          {renderGroup('Low', low, '#6b7280')}
+
+      {/* Scrollable grid */}
+      <div ref={scrollRef} style={{ overflowY: 'auto', flex: 1, maxHeight: 'calc(100vh - 280px)' }}>
+        <div style={{ display: 'flex' }}>
+          <TimeLabels />
+          <div
+            style={{
+              flex: 1, position: 'relative',
+              height: 24 * HOUR_HEIGHT,
+              borderLeft: '1px solid var(--border)',
+              cursor: 'crosshair',
+              userSelect: 'none',
+            }}
+            onMouseDown={(e) => startDrag(e, date)}
+          >
+            <HourLines />
+            {blocks.map((block) => {
+              const info = layout.get(block.id);
+              if (!info) return null;
+              return (
+                <EventBlock
+                  key={block.id} block={block} categories={categories}
+                  top={eventTopPx(block.startTime)}
+                  height={eventHeightPx(block.startTime, block.endTime)}
+                  colPct={(100 / info.totalCols) * info.col}
+                  widthPct={100 / info.totalCols}
+                  onClick={() => onClickBlock(block)}
+                />
+              );
+            })}
+            {ghost && ghost.date === date && (
+              <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />
+            )}
+            {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── WEEK VIEW ────────────────────────────────────────────────────────────────
+
+function AppleWeekView({
+  weekDays, timeBlocks, categories, currentTimePx, today,
+  onCreateBlock, onClickBlock, scrollRef,
+}: {
+  weekDays: Date[];
+  timeBlocks: TimeBlock[];
+  categories: TimeCategory[];
+  currentTimePx: number | null;
+  today: string;
+  onCreateBlock: (date: string, startTime: string, endTime: string) => void;
+  onClickBlock: (block: TimeBlock) => void;
+  scrollRef: React.RefObject<HTMLDivElement>;
+}) {
+  const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
+
+  return (
+    <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
+      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', minWidth: 0 }}>
+      {/* Day headers */}
+      <div className="flex border-b" style={{ borderColor: 'var(--border)', flexShrink: 0 }}>
+        <div style={{ width: 52, flexShrink: 0 }} />
+        {weekDays.map((day) => {
+          const dayStr = format(day, 'yyyy-MM-dd');
+          const isToday = dayStr === today;
+          return (
+            <div key={dayStr} className="flex-1 flex flex-col items-center py-2 border-l"
+              style={{ borderColor: 'var(--border)' }}>
+              <span className="font-semibold mb-1 tracking-widest"
+                style={{ color: isToday ? '#3b82f6' : 'var(--text-muted)', fontSize: 9 }}>
+                {WEEK_DAYS_SHORT[day.getDay()]}
+              </span>
+              <span className="text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full"
+                style={{ color: isToday ? '#ffffff' : 'var(--text-primary)', backgroundColor: isToday ? '#3b82f6' : 'transparent' }}>
+                {format(day, 'd')}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Scrollable time grid */}
+      <div ref={scrollRef} style={{ overflowY: 'auto', flex: 1, maxHeight: 'calc(100vh - 280px)' }}>
+        <div style={{ display: 'flex', height: 24 * HOUR_HEIGHT }}>
+          <TimeLabels />
+          {weekDays.map((day) => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const isToday = dayStr === today;
+            const dayBlocks = getDayBlocks(timeBlocks, dayStr);
+            const layout = buildOverlapLayout(dayBlocks);
+            return (
+              <div
+                key={dayStr}
+                style={{
+                  flex: 1, position: 'relative',
+                  borderLeft: '1px solid var(--border)',
+                  height: 24 * HOUR_HEIGHT,
+                  backgroundColor: isToday ? 'rgba(59,130,246,0.04)' : 'transparent',
+                  cursor: 'crosshair',
+                  userSelect: 'none',
+                }}
+                onMouseDown={(e) => startDrag(e, dayStr)}
+              >
+                <HourLines />
+                {dayBlocks.map((block) => {
+                  const info = layout.get(block.id);
+                  if (!info) return null;
+                  return (
+                    <EventBlock
+                      key={block.id} block={block} categories={categories}
+                      top={eventTopPx(block.startTime)}
+                      height={eventHeightPx(block.startTime, block.endTime)}
+                      colPct={(100 / info.totalCols) * info.col}
+                      widthPct={100 / info.totalCols}
+                      onClick={() => onClickBlock(block)}
+                    />
+                  );
+                })}
+                {ghost?.date === dayStr && (
+                  <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />
+                )}
+                {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MONTH VIEW ───────────────────────────────────────────────────────────────
+
+function AppleMonthView({
+  timeBlocks, timeCategories, selectedDay, onSelectDay, monthOffset, onMonthOffsetChange,
+}: {
+  timeBlocks: TimeBlock[];
+  timeCategories: TimeCategory[];
+  selectedDay: string;
+  onSelectDay: (d: string, switchToDay?: boolean) => void;
+  monthOffset: number;
+  onMonthOffsetChange: (n: number) => void;
+}) {
+  const today = todayStr();
+  const referenceDate = addMonths(new Date(), monthOffset);
+  const monthStart = startOfMonth(referenceDate);
+  const monthEnd = endOfMonth(referenceDate);
+  const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const startPad = getDay(monthStart);
+  const paddedDays: (Date | null)[] = [...Array(startPad).fill(null), ...daysInMonth];
+  while (paddedDays.length % 7 !== 0) paddedDays.push(null);
+  const MAX_PILLS = 3;
+
+  return (
+    <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
+      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', minWidth: 0 }}>
+      <div className="grid grid-cols-7 border-b" style={{ borderColor: 'var(--border)' }}>
+        {WEEK_DAYS_SHORT.map((d) => (
+          <div key={d} className="py-2.5 text-center font-semibold tracking-widest"
+            style={{ color: 'var(--text-muted)', fontSize: 10 }}>{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 flex-1">
+        {paddedDays.map((day, i) => {
+          if (!day) return <div key={i} className="border-b border-r" style={{ borderColor: 'var(--border)', minHeight: 96 }} />;
+          const dayStr = format(day, 'yyyy-MM-dd');
+          const dayBlocks = getDayBlocks(timeBlocks, dayStr);
+          const isToday = dayStr === today;
+          const isSelected = dayStr === selectedDay;
+          const isCurrentMonth = isSameMonth(day, referenceDate);
+          const sorted = dayBlocks.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
+          const visible = sorted.slice(0, MAX_PILLS);
+          const overflow = sorted.length - MAX_PILLS;
+
+          return (
+            <div key={dayStr}
+              className="border-b border-r flex flex-col cursor-pointer transition-colors"
+              style={{
+                borderColor: 'var(--border)', minHeight: 96, padding: '6px 4px 4px',
+                opacity: isCurrentMonth ? 1 : 0.38,
+                backgroundColor: isSelected ? 'var(--bg-elevated)' : 'transparent',
+              }}
+              onClick={() => onSelectDay(dayStr)}
+              onDoubleClick={() => onSelectDay(dayStr, true)}
+              onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'; }}
+              onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
+            >
+              <div className="text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mb-1 self-start"
+                style={{
+                  fontSize: 12, fontWeight: isToday ? 700 : 500,
+                  color: isToday ? '#ffffff' : 'var(--text-primary)',
+                  backgroundColor: isToday ? '#3b82f6' : 'transparent',
+                }}>
+                {format(day, 'd')}
+              </div>
+              <div className="flex flex-col gap-px overflow-hidden flex-1">
+                {visible.map((block) => {
+                  const color = getCategoryColor(block.categoryId, timeCategories);
+                  const name = block.title?.trim() || getCategoryName(block.categoryId, timeCategories);
+                  return (
+                    <div key={block.id} className="rounded truncate"
+                      style={{ backgroundColor: `${color}28`, borderLeft: `2px solid ${color}`, fontSize: 10, lineHeight: '15px', paddingLeft: 3, color }}>
+                      {name}
+                    </div>
+                  );
+                })}
+                {overflow > 0 && (
+                  <div style={{ fontSize: 10, lineHeight: '15px', color: 'var(--text-muted)', paddingLeft: 3 }}>
+                    +{overflow} more
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── CALENDAR SIDEBAR ─────────────────────────────────────────────────────────
+
+function CalendarSidebar({
+  selectedDay, onSelectDay, timeCategories, hiddenCategoryIds,
+  onToggleCategory, onAddEvent,
+}: {
+  selectedDay: string;
+  onSelectDay: (d: string) => void;
+  timeCategories: TimeCategory[];
+  hiddenCategoryIds: Set<string>;
+  onToggleCategory: (id: string) => void;
+  onAddEvent: () => void;
+}) {
+  const [miniOffset, setMiniOffset] = useState(0);
+  const today = todayStr();
+  const refDate = addMonths(new Date(), miniOffset);
+  const monthStart = startOfMonth(refDate);
+  const monthEnd = endOfMonth(refDate);
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const startPad = getDay(monthStart);
+  const padded: (Date | null)[] = [...Array(startPad).fill(null), ...days];
+  while (padded.length % 7 !== 0) padded.push(null);
+
+  return (
+    <div style={{ width: 220, flexShrink: 0 }} className="flex flex-col gap-3">
+      <button onClick={onAddEvent} className="caesar-btn-primary w-full flex items-center justify-center gap-2">
+        <Plus size={14} /> Add Event
+      </button>
+
+      <div className="caesar-card p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {format(refDate, 'MMMM yyyy')}
+          </span>
+          <div className="flex gap-0.5">
+            <button onClick={() => setMiniOffset((o) => o - 1)}
+              className="p-1 rounded transition-colors" style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}>
+              <ChevronLeft size={12} />
+            </button>
+            <button onClick={() => setMiniOffset((o) => o + 1)}
+              className="p-1 rounded transition-colors" style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}>
+              <ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-7 mb-0.5">
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+            <div key={i} className="text-center" style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: '20px' }}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {padded.map((day, i) => {
+            if (!day) return <div key={i} style={{ height: 24 }} />;
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const isToday = dayStr === today;
+            const isSelected = dayStr === selectedDay;
+            const inMonth = isSameMonth(day, refDate);
+            return (
+              <button key={dayStr} onClick={() => onSelectDay(dayStr)}
+                style={{
+                  height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, borderRadius: '50%', fontWeight: isToday || isSelected ? 700 : 400,
+                  color: isToday ? '#ffffff' : isSelected ? '#3b82f6' : inMonth ? 'var(--text-primary)' : 'var(--text-muted)',
+                  backgroundColor: isToday ? '#3b82f6' : isSelected ? 'rgba(59,130,246,0.12)' : 'transparent',
+                  opacity: inMonth ? 1 : 0.4,
+                }}>
+                {format(day, 'd')}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {timeCategories.length > 0 && (
+        <div className="caesar-card p-3">
+          <p className="text-xs font-semibold mb-2 tracking-widest" style={{ color: 'var(--text-muted)', fontSize: 9 }}>CALENDARS</p>
+          <div className="flex flex-col gap-1.5">
+            {timeCategories.map((cat) => {
+              const hidden = hiddenCategoryIds.has(cat.id);
+              return (
+                <button key={cat.id} onClick={() => onToggleCategory(cat.id)}
+                  className="flex items-center gap-2 text-left w-full">
+                  <div style={{ width: 11, height: 11, borderRadius: 3, flexShrink: 0, backgroundColor: hidden ? 'transparent' : cat.color, border: `2px solid ${cat.color}` }} />
+                  <span style={{ fontSize: 11, color: hidden ? 'var(--text-muted)' : 'var(--text-primary)', textDecoration: hidden ? 'line-through' : 'none' }}>
+                    {cat.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ─── ENERGY PICKER ────────────────────────────────────────────────────────────
+
 function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 | 3 | 4 | 5) => void }) {
   return (
     <div className="flex gap-2">
       {([1, 2, 3, 4, 5] as const).map((n) => (
-        <button
-          key={n}
-          type="button"
-          onClick={() => onChange(n)}
+        <button key={n} type="button" onClick={() => onChange(n)}
           className="flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg border transition-all text-xs"
           style={{
             borderColor: value === n ? 'var(--border-strong)' : 'var(--border)',
             backgroundColor: value === n ? 'var(--bg-elevated)' : 'transparent',
             color: 'var(--text-primary)',
-          }}
-        >
+          }}>
           <span className="text-base">{ENERGY_EMOJIS[n]}</span>
           <span>{ENERGY_LABELS[n]}</span>
         </button>
@@ -301,634 +770,112 @@ function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 
   );
 }
 
-// Block chip for daily timeline
-function BlockChip({
-  block, categories, onDelete, onRename,
-}: {
-  block: TimeBlock;
-  categories: TimeCategory[];
-  onDelete: (id: string) => void;
-  onRename?: (id: string, title: string) => void;
-}) {
-  const color = getCategoryColor(block.categoryId, categories);
-  const catName = getCategoryName(block.categoryId, categories);
-  const displayName = block.title?.trim() || catName;
-  const duration = calcDurationHours(block.startTime, block.endTime);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(block.title ?? '');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const commitRename = () => {
-    setEditing(false);
-    onRename?.(block.id, draft.trim());
-  };
-
-  const startEdit = () => {
-    setDraft(block.title ?? '');
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  };
-
-  return (
-    <div
-      className="flex items-center gap-2 px-2 py-1 rounded text-xs group"
-      style={{ backgroundColor: `${color}22`, border: `1px solid ${color}55` }}
-    >
-      {editing ? (
-        <input
-          ref={inputRef}
-          className="flex-1 bg-transparent outline-none font-semibold min-w-0"
-          style={{ color }}
-          value={draft}
-          placeholder={catName}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={e => {
-            if (e.key === 'Enter') commitRename();
-            if (e.key === 'Escape') { setEditing(false); setDraft(block.title ?? ''); }
-          }}
-        />
-      ) : (
-        <button
-          onClick={startEdit}
-          className="font-semibold truncate flex-1 text-left hover:underline"
-          style={{ color }}
-          title="Click to rename"
-        >
-          {displayName}
-        </button>
-      )}
-      <span style={{ color: 'var(--text-muted)' }}>{formatTime(block.startTime)}–{formatTime(block.endTime)}</span>
-      <span style={{ color: 'var(--text-muted)' }}>({roundHours(duration)})</span>
-      <span title={ENERGY_LABELS[block.energy]}>{ENERGY_EMOJIS[block.energy]}</span>
-      <button
-        onClick={() => onDelete(block.id)}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        <X size={10} />
-      </button>
-    </div>
-  );
-}
-
-// ─── FOCUS AREAS PANEL ────────────────────────────────────────────────────────
-
-function FocusAreasPanel({
-  date,
-  focusItems,
-  onUpdate,
-}: {
-  date: string;
-  focusItems: string[];
-  onUpdate: (items: string[]) => void;
-}) {
-  const [draft, setDraft] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const addItem = () => {
-    if (!draft.trim()) return;
-    onUpdate([...focusItems, draft.trim()]);
-    setDraft('');
-    inputRef.current?.focus();
-  };
-
-  const removeItem = (i: number) => {
-    onUpdate(focusItems.filter((_, idx) => idx !== i));
-  };
-
-  const updateItem = (i: number, val: string) => {
-    const updated = [...focusItems];
-    updated[i] = val;
-    onUpdate(updated);
-  };
-
-  return (
-    <div className="caesar-card">
-      <div className="flex items-center gap-2 mb-3">
-        <Target size={14} style={{ color: 'var(--text-muted)' }} />
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Focus Areas — {format(parseISO(date), 'EEEE, MMM d')}
-        </h2>
-      </div>
-
-      <div className="flex flex-col gap-1.5 mb-3">
-        {focusItems.length === 0 && (
-          <p className="text-xs py-1" style={{ color: 'var(--text-muted)' }}>
-            No focus areas set for today. Add your top priorities below.
-          </p>
-        )}
-        {focusItems.map((item, i) => (
-          <div key={i} className="flex items-center gap-2 group">
-            <div
-              className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
-              style={{ border: '1.5px solid var(--text-muted)', color: 'var(--text-muted)' }}
-            >
-              {i + 1}
-            </div>
-            <input
-              className="flex-1 text-sm bg-transparent outline-none border-b border-transparent focus:border-b-[var(--border)]"
-              style={{ color: 'var(--text-primary)' }}
-              value={item}
-              onChange={e => updateItem(i, e.target.value)}
-            />
-            <button
-              onClick={() => removeItem(i)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          ref={inputRef}
-          className="caesar-input flex-1 text-sm"
-          placeholder="Add a focus area..."
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
-        />
-        <button
-          onClick={addItem}
-          disabled={!draft.trim()}
-          className="caesar-btn-ghost px-3 py-1.5"
-          style={{ fontSize: 12 }}
-        >
-          <Plus size={13} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── DAILY VIEW ───────────────────────────────────────────────────────────────
-
-function DailyView({
-  date,
-  blocks,
-  categories,
-  onAddBlock,
-  onDeleteBlock,
-  onRenameBlock,
-  focusItems,
-  onUpdateFocus,
-}: {
-  date: string;
-  blocks: TimeBlock[];
-  categories: TimeCategory[];
-  onAddBlock: (startHour: number) => void;
-  onDeleteBlock: (id: string) => void;
-  onRenameBlock: (id: string, title: string) => void;
-  focusItems: string[];
-  onUpdateFocus: (items: string[]) => void;
-}) {
-  const total = getTotalHours(blocks);
-
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Focus Areas */}
-      <FocusAreasPanel date={date} focusItems={focusItems} onUpdate={onUpdateFocus} />
-
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="caesar-card py-3 flex flex-col items-center">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Hours Logged</span>
-          <span className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
-            {total > 0 ? roundHours(Math.round(total * 10) / 10) : '—'}
-          </span>
-        </div>
-        <div className="caesar-card py-3 flex flex-col items-center">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Blocks</span>
-          <span className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{blocks.length}</span>
-        </div>
-        <div className="caesar-card py-3 flex flex-col items-center">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Avg Energy</span>
-          <span className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
-            {blocks.length > 0 ? ENERGY_EMOJIS[Math.round(calcEnergyAvg(blocks))] : '—'}
-          </span>
-        </div>
-        <div className="caesar-card py-3 flex flex-col items-center">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Focus Areas</span>
-          <span className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{focusItems.length}</span>
-        </div>
-      </div>
-
-      {/* Hourly Timeline */}
-      <div className="caesar-card">
-        <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-          Schedule
-        </h2>
-        <div className="flex flex-col">
-          {DAY_HOURS.map((hour) => {
-            const hourBlocks = getBlocksForHour(blocks, hour);
-            const timeLabel = `${hour === 12 ? '12' : hour > 12 ? hour - 12 : hour}${hour < 12 ? 'am' : hour === 12 ? 'pm' : 'pm'}`;
-            return (
-              <div
-                key={hour}
-                className="flex gap-3 min-h-[44px] border-b group"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                {/* Hour label */}
-                <div
-                  className="w-12 text-xs text-right pt-2 flex-shrink-0 font-mono"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {timeLabel}
-                </div>
-
-                {/* Block area */}
-                <div className="flex-1 py-1.5 flex flex-col gap-1">
-                  {hourBlocks.map(b => (
-                    <BlockChip key={b.id} block={b} categories={categories} onDelete={onDeleteBlock} onRename={onRenameBlock} />
-                  ))}
-                  {hourBlocks.length === 0 && (
-                    <button
-                      onClick={() => onAddBlock(hour)}
-                      className="w-full text-left text-xs py-1 opacity-0 group-hover:opacity-100 transition-opacity rounded"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      + add block
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── WEEKLY VIEW ─────────────────────────────────────────────────────────────
-
-function WeekDayColumn({
-  day, blocks, categories, isSelected, isToday, onClick,
-}: {
-  day: Date; blocks: TimeBlock[]; categories: TimeCategory[];
-  isSelected: boolean; isToday: boolean; onClick: () => void;
-}) {
-  const totalHours = getTotalHours(blocks);
-  const MAX_DISPLAY_HOURS = 10;
-  const maxHeight = 120;
-
-  const segments = blocks.map((b) => {
-    const h = calcDurationHours(b.startTime, b.endTime);
-    const proportion = Math.min(h / MAX_DISPLAY_HOURS, 1);
-    return { height: Math.max(proportion * maxHeight, 3), color: getCategoryColor(b.categoryId, categories), id: b.id };
-  });
-  const rawTotal = segments.reduce((s, seg) => s + seg.height, 0);
-  const scale = rawTotal > maxHeight ? maxHeight / rawTotal : 1;
-  const scaled = segments.map((s) => ({ ...s, height: s.height * scale }));
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-1.5 flex-1 rounded-xl p-2 transition-all border"
-      style={{
-        borderColor: isSelected || isToday ? 'var(--border)' : 'transparent',
-        backgroundColor: isSelected ? 'var(--bg-elevated)' : 'transparent',
-      }}
-      onMouseEnter={e => { if (!isSelected && !isToday) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-      onMouseLeave={e => { if (!isSelected && !isToday) (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}
-    >
-      <span className="text-xs font-medium" style={{ color: isToday ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-        {format(day, 'EEE')}
-      </span>
-      <span className="text-sm font-bold" style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-        {format(day, 'd')}
-      </span>
-      <div
-        className="w-full rounded overflow-hidden flex flex-col-reverse gap-px"
-        style={{ height: `${maxHeight}px`, backgroundColor: 'var(--bg-elevated)' }}
-      >
-        {scaled.map((seg, i) => (
-          <div key={i} style={{ height: `${seg.height}px`, backgroundColor: seg.color, opacity: 0.85 }} />
-        ))}
-      </div>
-      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        {totalHours > 0 ? roundHours(Math.round(totalHours * 10) / 10) : '—'}
-      </span>
-    </button>
-  );
-}
-
-function WeeklyView({
-  weekDays, timeBlocks, timeCategories, selectedDay, onSelectDay, weekOffset, onWeekOffsetChange,
-}: {
-  weekDays: Date[]; timeBlocks: TimeBlock[]; timeCategories: TimeCategory[];
-  selectedDay: string; onSelectDay: (d: string) => void;
-  weekOffset: number; onWeekOffsetChange: (n: number) => void;
-}) {
-  const today = todayStr();
-  const weeklyBlocks = timeBlocks.filter(b => {
-    const start = format(weekDays[0], 'yyyy-MM-dd');
-    const end = format(weekDays[6], 'yyyy-MM-dd');
-    return b.date >= start && b.date <= end;
-  });
-  const weeklyTotals = aggregateTimeByCategory(weeklyBlocks, timeCategories);
-  const maxWeeklyHours = weeklyTotals.length > 0 ? weeklyTotals[0].hours : 1;
-
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Week navigator */}
-      <div className="caesar-card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Week of {format(weekDays[0], 'MMM d')}
-          </h2>
-          <div className="flex items-center gap-1">
-            <button onClick={() => onWeekOffsetChange(weekOffset - 1)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}>
-              <ChevronLeft size={15} />
-            </button>
-            <button onClick={() => onWeekOffsetChange(0)} className="px-2 py-1 text-xs transition-colors" style={{ color: 'var(--text-muted)' }}>
-              This Week
-            </button>
-            <button onClick={() => onWeekOffsetChange(weekOffset + 1)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}>
-              <ChevronRight size={15} />
-            </button>
-          </div>
-        </div>
-        <div className="flex gap-1">
-          {weekDays.map((day) => {
-            const dayStr = format(day, 'yyyy-MM-dd');
-            return (
-              <WeekDayColumn
-                key={dayStr}
-                day={day}
-                blocks={getDayBlocks(timeBlocks, dayStr)}
-                categories={timeCategories}
-                isSelected={dayStr === selectedDay}
-                isToday={dayStr === today}
-                onClick={() => onSelectDay(dayStr)}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Weekly Totals */}
-      <div className="caesar-card">
-        <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-          Week Totals — {roundHours(Math.round(getTotalHours(weeklyBlocks) * 10) / 10)}
-        </h2>
-        {weeklyTotals.length === 0 ? (
-          <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No time logged this week.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {weeklyTotals.map((t, i) => {
-              const barWidth = maxWeeklyHours > 0 ? Math.round((t.hours / maxWeeklyHours) * 100) : 0;
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
-                  <span className="w-24 truncate" style={{ color: 'var(--text-secondary)' }}>{t.name}</span>
-                  <div className="flex-1 rounded-full h-1.5 overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${barWidth}%`, backgroundColor: t.color }} />
-                  </div>
-                  <span className="w-10 text-right" style={{ color: 'var(--text-secondary)' }}>{roundHours(t.hours)}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Selected Day Summary */}
-      {selectedDay && (() => {
-        const selBlocks = getDayBlocks(timeBlocks, selectedDay);
-        const label = selectedDay === today ? 'Today' : format(parseISO(selectedDay), 'EEEE, MMM d');
-        return (
-          <div className="caesar-card">
-            <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-              {label}
-              {selBlocks.length > 0 && (
-                <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>
-                  {roundHours(Math.round(getTotalHours(selBlocks) * 10) / 10)}
-                </span>
-              )}
-            </h2>
-            {selBlocks.length === 0 ? (
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No blocks logged.</p>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {selBlocks.slice().sort((a, b) => a.startTime.localeCompare(b.startTime)).map(block => (
-                  <BlockChip key={block.id} block={block} categories={timeCategories} onDelete={() => {}} onRename={() => {}} />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-    </div>
-  );
-}
-
-// ─── MONTHLY VIEW ─────────────────────────────────────────────────────────────
-
-function MonthlyView({
-  timeBlocks, timeCategories, selectedDay, onSelectDay, monthOffset, onMonthOffsetChange,
-}: {
-  timeBlocks: TimeBlock[]; timeCategories: TimeCategory[];
-  selectedDay: string; onSelectDay: (d: string) => void;
-  monthOffset: number; onMonthOffsetChange: (n: number) => void;
-}) {
-  const today = todayStr();
-  const referenceDate = addMonths(new Date(), monthOffset);
-  const monthStart = startOfMonth(referenceDate);
-  const monthEnd = endOfMonth(referenceDate);
-  const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  // Pad to start on Monday
-  const startPad = (getDay(monthStart) + 6) % 7; // 0=Mon … 6=Sun
-  const paddedDays: (Date | null)[] = [
-    ...Array(startPad).fill(null),
-    ...daysInMonth,
-  ];
-  // Pad end to complete last row
-  while (paddedDays.length % 7 !== 0) paddedDays.push(null);
-
-  const WEEK_LABELS_LONG = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const WEEK_LABELS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-  return (
-    <div className="caesar-card">
-      {/* Month Navigator */}
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {format(referenceDate, 'MMMM yyyy')}
-        </h2>
-        <div className="flex items-center gap-1">
-          <button onClick={() => onMonthOffsetChange(monthOffset - 1)} className="p-1.5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
-            <ChevronLeft size={15} />
-          </button>
-          <button onClick={() => onMonthOffsetChange(0)} className="px-2 py-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-            Today
-          </button>
-          <button onClick={() => onMonthOffsetChange(monthOffset + 1)} className="p-1.5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* Day of week headers */}
-      <div className="grid grid-cols-7 mb-2">
-        {WEEK_LABELS_LONG.map((d, i) => (
-          <div key={i} className="text-center text-xs font-medium py-1" style={{ color: 'var(--text-muted)' }}>
-            <span className="hidden sm:inline">{d}</span>
-            <span className="sm:hidden">{WEEK_LABELS_SHORT[i]}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-px" style={{ backgroundColor: 'var(--border)' }}>
-        {paddedDays.map((day, i) => {
-          if (!day) return <div key={i} style={{ backgroundColor: 'var(--bg-card)' }} className="h-14 sm:h-20" />;
-          const dayStr = format(day, 'yyyy-MM-dd');
-          const dayBlocks = getDayBlocks(timeBlocks, dayStr);
-          const total = getTotalHours(dayBlocks);
-          const isCurrentMonth = isSameMonth(day, referenceDate);
-          const isSelected = dayStr === selectedDay;
-          const isToday = dayStr === today;
-
-          // Get category color dots (top 3 categories)
-          const catGroups = dayBlocks.reduce<Record<string, number>>((acc, b) => {
-            acc[b.categoryId] = (acc[b.categoryId] ?? 0) + 1;
-            return acc;
-          }, {});
-          const topCats = Object.entries(catGroups).sort((a, b) => b[1] - a[1]).slice(0, 3);
-
-          return (
-            <button
-              key={dayStr}
-              onClick={() => onSelectDay(dayStr)}
-              className="h-14 sm:h-20 p-1 sm:p-1.5 flex flex-col text-left transition-colors"
-              style={{
-                backgroundColor: isSelected ? 'var(--bg-elevated)' : 'var(--bg-card)',
-                opacity: isCurrentMonth ? 1 : 0.4,
-              }}
-              onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'; }}
-              onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-card)'; }}
-            >
-              <div
-                className="text-xs font-semibold w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded-full flex-shrink-0"
-                style={{
-                  color: isToday ? 'var(--bg-card)' : 'var(--text-primary)',
-                  backgroundColor: isToday ? 'var(--text-primary)' : 'transparent',
-                }}
-              >
-                {format(day, 'd')}
-              </div>
-              {total > 0 && (
-                <div className="text-xs font-mono hidden sm:block" style={{ color: 'var(--text-muted)' }}>
-                  {roundHours(Math.round(total * 10) / 10)}
-                </div>
-              )}
-              <div className="flex gap-0.5 mt-auto flex-wrap">
-                {topCats.map(([catId]) => (
-                  <div
-                    key={catId}
-                    className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
-                    style={{ backgroundColor: getCategoryColor(catId, timeCategories) }}
-                  />
-                ))}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTimeCategories, notes, setNotes, todos }: Props) {
+export function TimeTracker({
+  timeBlocks, setTimeBlocks, timeCategories, setTimeCategories,
+}: Props) {
   const today = todayStr();
 
-  // ── Planner State ──
-  const [plannerView, setPlannerView] = useState<PlannerView>('daily');
+  const [calView, setCalView] = useState<CalView>(() => {
+    try {
+      const v = localStorage.getItem('jarvis:calView') as CalView | null;
+      return (v === 'day' || v === 'week' || v === 'month') ? v : 'week';
+    } catch { return 'week'; }
+  });
   const [selectedDay, setSelectedDay] = useState<string>(today);
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(new Set());
 
-  // ── Daily Focus ──
-  const [dailyFocus, setDailyFocus] = useSupabaseStorage<Record<string, string[]>>('jarvis:dailyFocus', {});
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const getFocusItems = (date: string) => dailyFocus[date] ?? [];
-  const updateFocusItems = (date: string, items: string[]) => {
-    setDailyFocus(prev => ({ ...prev, [date]: items }));
-  };
+  // Persist selected calendar view across sessions
+  useEffect(() => {
+    try { localStorage.setItem('jarvis:calView', calView); } catch { /* ignore */ }
+  }, [calView]);
 
-  // ── Log Modal ──
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+  const currentTimePx = (currentTime.getHours() + currentTime.getMinutes() / 60) * HOUR_HEIGHT;
+
+  useEffect(() => {
+    if ((calView === 'day' || calView === 'week') && scrollRef.current) {
+      scrollRef.current.scrollTop = Math.max(0, currentTimePx - 160);
+    }
+  }, [calView]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // ─── Calendar event notifications ───────────────────────────────────────────
+  const { permissionState: notifPermission, requestPermission } =
+    useCalendarNotifications(timeBlocks, timeCategories, 10, 'J.A.R.V.I.S.');
+
+  // ─── Smart defaults from intelligence engine ────────────────────────────────
+  const timeIntel = useMemo(() => analyzeTime(timeBlocks, timeCategories), [timeBlocks, timeCategories]);
+  const smartCategoryId = timeIntel.suggestedCategoryId ?? timeCategories[0]?.id ?? '';
+
   const [logForm, setLogForm] = useState<LogFormState>({
     date: today,
-    categoryId: timeCategories[0]?.id ?? '',
-    title: '',
-    startTime: '09:00',
-    endTime: '10:00',
-    notes: '',
-    energy: 3,
+    categoryId: smartCategoryId,
+    title: '', startTime: '09:00', endTime: '10:00', notes: '', energy: 3,
+    repeat: 'none', repeatUntil: format(addDays(new Date(), 28), 'yyyy-MM-dd'),
   });
+  const [catForm, setCatForm] = useState({ name: '', color: '#3b82f6' });
 
-  // ── Category Settings ──
-  const [catForm, setCatForm] = useState<CategoryFormState>({ name: '', color: '#555555' });
+  const weekDays = useMemo(() => getWeekDays(addDays(new Date(), weekOffset * 7)), [weekOffset]);
 
-  // ── Week Days ──
-  const weekDays = useMemo(() => {
-    const ref = addDays(new Date(), weekOffset * 7);
-    return getWeekDays(ref);
-  }, [weekOffset]);
+  const filteredBlocks = useMemo(() =>
+    hiddenCategoryIds.size === 0 ? timeBlocks : timeBlocks.filter((b) => !hiddenCategoryIds.has(b.categoryId)),
+    [timeBlocks, hiddenCategoryIds]
+  );
 
-  // ── Derived ──
-  const selectedBlocks = useMemo(() => getDayBlocks(timeBlocks, selectedDay), [timeBlocks, selectedDay]);
-  const todayBlocks = useMemo(() => getDayBlocks(timeBlocks, today), [timeBlocks, today]);
-  const totalHoursToday = useMemo(() => getTotalHours(todayBlocks), [todayBlocks]);
-  const focusScore = useMemo(() => calcFocusScore(todayBlocks, timeCategories), [todayBlocks, timeCategories]);
+  const navTitle = useMemo(() => {
+    if (calView === 'day') return format(parseISO(selectedDay), 'EEEE, MMMM d, yyyy');
+    if (calView === 'week') {
+      const s = weekDays[0]; const e = weekDays[6];
+      return format(s, 'MMM d') + ' – ' + format(e, isSameMonth(s, e) ? 'd' : 'MMM d');
+    }
+    return format(addMonths(new Date(), monthOffset), 'MMMM yyyy');
+  }, [calView, selectedDay, weekDays, monthOffset]);
 
-  // Donut chart for today
-  const donutData = useMemo(() => {
-    const agg = aggregateTimeByCategory(todayBlocks, timeCategories);
-    const total = agg.reduce((s, a) => s + a.hours, 0);
-    return agg.map((a) => ({ ...a, total }));
-  }, [todayBlocks, timeCategories]);
-
-  const handleAddNote = useCallback((note: Note) => {
-    setNotes(prev => [note, ...prev]);
-  }, [setNotes]);
-
-  // ── Handlers ──
-  const openLogModal = useCallback((startHour?: number) => {
-    const sh = startHour !== undefined ? `${String(startHour).padStart(2, '0')}:00` : '09:00';
-    const eh = startHour !== undefined ? `${String(startHour + 1).padStart(2, '0')}:00` : '10:00';
+  const openLogModal = useCallback((date?: string, startTime?: string, endTime?: string) => {
+    const baseDate = date ?? selectedDay;
     setLogForm({
-      date: selectedDay,
-      categoryId: timeCategories[0]?.id ?? '',
+      date: baseDate,
+      categoryId: smartCategoryId,
       title: '',
-      startTime: sh,
-      endTime: eh,
-      notes: '',
-      energy: 3,
+      startTime: startTime ?? '09:00',
+      endTime: endTime ?? '10:00',
+      notes: '', energy: 3,
+      repeat: 'none',
+      repeatUntil: format(addDays(parseISO(baseDate), 28), 'yyyy-MM-dd'),
     });
     setLogModalOpen(true);
-  }, [selectedDay, timeCategories]);
+  }, [selectedDay, smartCategoryId]);
+
+  const openEditModal = useCallback((block: TimeBlock) => {
+    setLogForm({
+      date: block.date, categoryId: block.categoryId,
+      title: block.title ?? '', startTime: block.startTime, endTime: block.endTime,
+      notes: block.notes, energy: block.energy, editingId: block.id,
+      repeat: 'none', repeatUntil: format(addDays(parseISO(block.date), 28), 'yyyy-MM-dd'),
+    });
+    setLogModalOpen(true);
+  }, []);
+
+  const handleCreateBlock = useCallback((date: string, startTime: string, endTime: string) => {
+    openLogModal(date, startTime, endTime);
+  }, [openLogModal]);
 
   const handleLogSubmit = () => {
-    if (!logForm.categoryId || !logForm.startTime || !logForm.endTime) return;
-    const duration = calcDurationHours(logForm.startTime, logForm.endTime);
-    if (duration <= 0) return;
-    const block: TimeBlock = {
-      id: generateId(),
-      date: logForm.date,
+    if (!logForm.categoryId || calcDurationHours(logForm.startTime, logForm.endTime) <= 0) return;
+
+    const baseFields = {
       categoryId: logForm.categoryId,
       title: logForm.title.trim() || undefined,
       startTime: logForm.startTime,
@@ -936,305 +883,310 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
       notes: logForm.notes.trim(),
       energy: logForm.energy,
     };
-    setTimeBlocks((prev) => [...prev, block]);
+
+    if (logForm.editingId) {
+      setTimeBlocks((prev) => prev.map((b) => b.id === logForm.editingId
+        ? { ...b, date: logForm.date, ...baseFields }
+        : b));
+    } else if (logForm.repeat !== 'none' && logForm.repeatUntil >= logForm.date) {
+      const recurrenceId = generateId();
+      const newBlocks: TimeBlock[] = [];
+      let cur = parseISO(logForm.date);
+      const until = parseISO(logForm.repeatUntil);
+      let safetyCount = 0;
+      while (cur <= until && safetyCount < 365) {
+        newBlocks.push({ id: generateId(), date: format(cur, 'yyyy-MM-dd'), ...baseFields, recurrenceId });
+        if (logForm.repeat === 'daily') cur = addDays(cur, 1);
+        else if (logForm.repeat === 'weekly') cur = addDays(cur, 7);
+        else if (logForm.repeat === 'biweekly') cur = addDays(cur, 14);
+        else cur = addMonths(cur, 1);
+        safetyCount++;
+      }
+      setTimeBlocks((prev) => [...prev, ...newBlocks]);
+    } else {
+      setTimeBlocks((prev) => [...prev, { id: generateId(), date: logForm.date, ...baseFields }]);
+    }
     setLogModalOpen(false);
   };
 
-  const handleRenameBlock = useCallback((id: string, title: string) => {
-    setTimeBlocks(prev => prev.map(b => b.id === id ? { ...b, title: title || undefined } : b));
-  }, [setTimeBlocks]);
-
-  const handleDeleteBlock = useCallback((id: string) => {
-    setTimeBlocks((prev) => prev.filter((b) => b.id !== id));
-  }, [setTimeBlocks]);
+  const handleDeleteBlock = (id: string, deleteAll = false) => {
+    setTimeBlocks((prev) => {
+      if (deleteAll) {
+        const block = prev.find((b) => b.id === id);
+        if (block?.recurrenceId) return prev.filter((b) => b.recurrenceId !== block.recurrenceId);
+      }
+      return prev.filter((b) => b.id !== id);
+    });
+    setLogModalOpen(false);
+  };
 
   const handleAddCategory = () => {
     if (!catForm.name.trim()) return;
-    const newCat: TimeCategory = { id: generateId(), name: catForm.name.trim(), color: catForm.color };
-    setTimeCategories((prev) => [...prev, newCat]);
+    setTimeCategories((prev) => [...prev, { id: generateId(), name: catForm.name.trim(), color: catForm.color }]);
     setCatForm({ name: '', color: DEFAULT_COLORS[timeCategories.length % DEFAULT_COLORS.length] });
   };
 
-  const handleDeleteCategory = (id: string) => {
-    setTimeCategories((prev) => prev.filter((c) => c.id !== id));
+  const handleDeleteCategory = (id: string) => setTimeCategories((prev) => prev.filter((c) => c.id !== id));
+
+  const handleToggleCategory = (id: string) => {
+    setHiddenCategoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
-  // When week view day is clicked → navigate to daily view
-  const handleWeekDaySelect = (dayStr: string) => {
-    setSelectedDay(dayStr);
+  const handleNavPrev = () => {
+    if (calView === 'day') setSelectedDay(format(addDays(parseISO(selectedDay), -1), 'yyyy-MM-dd'));
+    else if (calView === 'week') setWeekOffset((o) => o - 1);
+    else setMonthOffset((o) => o - 1);
   };
-
-  // When month view day is clicked → switch to daily view
-  const handleMonthDaySelect = (dayStr: string) => {
-    setSelectedDay(dayStr);
-    setPlannerView('daily');
+  const handleNavNext = () => {
+    if (calView === 'day') setSelectedDay(format(addDays(parseISO(selectedDay), 1), 'yyyy-MM-dd'));
+    else if (calView === 'week') setWeekOffset((o) => o + 1);
+    else setMonthOffset((o) => o + 1);
   };
+  const handleToday = () => { setSelectedDay(today); setWeekOffset(0); setMonthOffset(0); };
 
   return (
-    <div className="flex flex-col gap-5 transition-colors duration-300">
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="section-title flex items-center gap-2">
-            <Clock size={20} />
-            Time Planner
-          </h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </p>
+    <div className="flex flex-col gap-4 animate-fade-in">
+      {/* Navigation Bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          {[handleNavPrev, handleNavNext].map((fn, i) => {
+            const Icon = i === 0 ? ChevronLeft : ChevronRight;
+            return (
+              <button key={i} onClick={fn} className="p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}>
+                <Icon size={16} />
+              </button>
+            );
+          })}
+          <button onClick={handleToday}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}>
+            Today
+          </button>
+          <span className="text-sm font-semibold ml-1 hidden sm:block" style={{ color: 'var(--text-primary)' }}>
+            {navTitle}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* View Toggle */}
-          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-            {([
-              { key: 'daily' as PlannerView, icon: <CalendarDays size={13} />, label: 'Day' },
-              { key: 'weekly' as PlannerView, icon: <LayoutGrid size={13} />, label: 'Week' },
-              { key: 'monthly' as PlannerView, icon: <Calendar size={13} />, label: 'Month' },
-            ]).map(v => (
-              <button
-                key={v.key}
-                onClick={() => setPlannerView(v.key)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors"
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-full p-0.5" style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            {(['day', 'week', 'month'] as CalView[]).map((v) => (
+              <button key={v} onClick={() => setCalView(v)}
+                className="px-3 py-1 text-xs font-medium rounded-full transition-all capitalize"
                 style={{
-                  backgroundColor: plannerView === v.key ? 'var(--bg-elevated)' : 'transparent',
-                  color: plannerView === v.key ? 'var(--text-primary)' : 'var(--text-muted)',
-                  borderRight: '1px solid var(--border)',
-                }}
-              >
-                {v.icon}
-                {v.label}
+                  backgroundColor: calView === v ? 'var(--bg-card)' : 'transparent',
+                  color: calView === v ? 'var(--text-primary)' : 'var(--text-muted)',
+                  boxShadow: calView === v ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                }}>
+                {v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
-
-          {/* Date Navigator (daily/weekly) */}
-          {plannerView === 'daily' && (
-            <div className="flex items-center gap-1 rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-              <button
-                onClick={() => setSelectedDay(format(addDays(parseISO(selectedDay), -1), 'yyyy-MM-dd'))}
-                className="p-1.5 transition-colors" style={{ color: 'var(--text-secondary)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <span className="text-xs px-2" style={{ color: 'var(--text-muted)' }}>
-                {selectedDay === today ? 'Today' : format(parseISO(selectedDay), 'MMM d')}
-              </span>
-              <button
-                onClick={() => setSelectedDay(format(addDays(parseISO(selectedDay), 1), 'yyyy-MM-dd'))}
-                className="p-1.5 transition-colors" style={{ color: 'var(--text-secondary)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Log Time */}
-          <button onClick={() => openLogModal()} className="caesar-btn-primary flex items-center gap-2">
-            <Plus size={14} /> Log Time
-          </button>
-
-          <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-2" title="Manage categories">
+          <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-2" title="Manage calendars">
             <Settings size={16} />
           </button>
         </div>
       </div>
 
-      {/* ── Main Layout ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
-        {/* Left sidebar — stats + chart */}
-        <div className="xl:col-span-1 flex flex-col gap-4">
-          {/* Today Stats */}
-          <div className="caesar-card flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>TODAY</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {totalHoursToday > 0 ? roundHours(Math.round(totalHoursToday * 10) / 10) : '—'}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>hours logged</div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{focusScore}%</div>
-                <div className="text-xs flex items-center gap-1 justify-end" style={{ color: 'var(--text-muted)' }}>
-                  <Zap size={10} /> focus
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Donut */}
-          <div className="caesar-card">
-            <h2 className="text-xs font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>TODAY'S BREAKDOWN</h2>
-            {donutData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-2" style={{ color: 'var(--text-muted)' }}>
-                <Clock size={24} />
-                <p className="text-xs">No blocks yet</p>
-              </div>
-            ) : (
-              <>
-                <div className="relative">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <PieChart>
-                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                        paddingAngle={2} dataKey="hours" isAnimationActive animationBegin={0} animationDuration={600}>
-                        {donutData.map((entry, i) => <Cell key={i} fill={entry.color} opacity={0.9} />)}
-                      </Pie>
-                      <Tooltip content={<DonutTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {roundHours(Math.round(totalHoursToday * 10) / 10)}
-                    </span>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>logged</span>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1.5 mt-1">
-                  {donutData.map((d, i) => {
-                    const pct = totalHoursToday > 0 ? Math.round((d.hours / totalHoursToday) * 100) : 0;
-                    return (
-                      <div key={i} className="flex items-center gap-2 text-xs">
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{d.name}</span>
-                        <span style={{ color: 'var(--text-muted)' }}>{roundHours(d.hours)}</span>
-                        <span className="font-semibold w-8 text-right" style={{ color: d.color }}>{pct}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Quick Add Note */}
-          <QuickAddNotePanel onAddNote={handleAddNote} />
-
-          {/* Todo Summary */}
-          <TodoSummaryPanel todos={todos} />
+      {/* Main Layout */}
+      <div className="flex gap-4 items-start">
+        <div className="hidden lg:block">
+          <CalendarSidebar
+            selectedDay={selectedDay}
+            onSelectDay={(d) => { setSelectedDay(d); if (calView !== 'month') setCalView('day'); }}
+            timeCategories={timeCategories}
+            hiddenCategoryIds={hiddenCategoryIds}
+            onToggleCategory={handleToggleCategory}
+            onAddEvent={() => openLogModal()}
+          />
         </div>
 
-        {/* Right main area */}
-        <div className="xl:col-span-3">
-          {plannerView === 'daily' && (
-            <DailyView
-              date={selectedDay}
-              blocks={selectedBlocks}
-              categories={timeCategories}
-              onAddBlock={openLogModal}
-              onDeleteBlock={handleDeleteBlock}
-              onRenameBlock={handleRenameBlock}
-              focusItems={getFocusItems(selectedDay)}
-              onUpdateFocus={(items) => updateFocusItems(selectedDay, items)}
-            />
-          )}
-
-          {plannerView === 'weekly' && (
-            <WeeklyView
-              weekDays={weekDays}
-              timeBlocks={timeBlocks}
-              timeCategories={timeCategories}
-              selectedDay={selectedDay}
-              onSelectDay={handleWeekDaySelect}
-              weekOffset={weekOffset}
-              onWeekOffsetChange={setWeekOffset}
-            />
-          )}
-
-          {plannerView === 'monthly' && (
-            <MonthlyView
-              timeBlocks={timeBlocks}
-              timeCategories={timeCategories}
-              selectedDay={selectedDay}
-              onSelectDay={handleMonthDaySelect}
-              monthOffset={monthOffset}
-              onMonthOffsetChange={setMonthOffset}
-            />
-          )}
-        </div>
+        {calView === 'day' && (
+          <AppleDayView
+            date={selectedDay}
+            blocks={getDayBlocks(filteredBlocks, selectedDay)}
+            categories={timeCategories}
+            currentTimePx={currentTimePx}
+            isToday={selectedDay === today}
+            onCreateBlock={handleCreateBlock}
+            onClickBlock={openEditModal}
+            scrollRef={scrollRef}
+          />
+        )}
+        {calView === 'week' && (
+          <AppleWeekView
+            weekDays={weekDays}
+            timeBlocks={filteredBlocks}
+            categories={timeCategories}
+            currentTimePx={currentTimePx}
+            today={today}
+            onCreateBlock={handleCreateBlock}
+            onClickBlock={openEditModal}
+            scrollRef={scrollRef}
+          />
+        )}
+        {calView === 'month' && (
+          <AppleMonthView
+            timeBlocks={filteredBlocks} timeCategories={timeCategories}
+            selectedDay={selectedDay}
+            onSelectDay={(d, sw) => { setSelectedDay(d); if (sw) setCalView('day'); }}
+            monthOffset={monthOffset}
+            onMonthOffsetChange={setMonthOffset}
+          />
+        )}
       </div>
 
-      {/* ── Log Time Modal ── */}
-      <Modal isOpen={logModalOpen} onClose={() => setLogModalOpen(false)} title="Log Time Block" size="md">
+      {/* New / Edit Event Modal */}
+      <Modal isOpen={logModalOpen} onClose={() => setLogModalOpen(false)}
+        title={logForm.editingId ? 'Edit Event' : 'New Event'} size="md">
         <div className="flex flex-col gap-4">
           <div>
-            <label className="caesar-label">Event Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-            <input
-              className="caesar-input w-full"
-              placeholder="e.g. Team standup, Deep work session…"
-              value={logForm.title}
-              onChange={(e) => setLogForm((f) => ({ ...f, title: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="caesar-label">Date</label>
-            <input type="date" className="caesar-input w-full" value={logForm.date}
-              onChange={(e) => setLogForm((f) => ({ ...f, date: e.target.value }))} />
-          </div>
-          <div>
-            <label className="caesar-label">Category</label>
-            {timeCategories.length === 0 ? (
-              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>No categories yet — add one in Settings.</p>
-            ) : (
-              <select className="caesar-input w-full" value={logForm.categoryId}
-                onChange={(e) => setLogForm((f) => ({ ...f, categoryId: e.target.value }))}>
-                {timeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+            <label className="caesar-label">Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+            <input className="caesar-input w-full" placeholder="e.g. Deep work, Team standup…"
+              value={logForm.title} onChange={(e) => setLogForm((f) => ({ ...f, title: e.target.value }))} autoFocus />
+            {timeIntel.recentTitles.length > 0 && !logForm.title && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {timeIntel.recentTitles.map((t) => (
+                  <button key={t} type="button"
+                    onClick={() => setLogForm((f) => ({ ...f, title: t }))}
+                    className="px-2 py-0.5 rounded-full text-xs border transition-colors"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-elevated)' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="caesar-label">Start Time</label>
-              <input type="time" className="caesar-input w-full" value={logForm.startTime}
-                onChange={(e) => setLogForm((f) => ({ ...f, startTime: e.target.value }))} />
+              <label className="caesar-label">Date</label>
+              <input type="date" className="caesar-input w-full" value={logForm.date}
+                onChange={(e) => setLogForm((f) => ({ ...f, date: e.target.value }))} />
             </div>
             <div>
-              <label className="caesar-label">End Time</label>
-              <input type="time" className="caesar-input w-full" value={logForm.endTime}
-                onChange={(e) => setLogForm((f) => ({ ...f, endTime: e.target.value }))} />
+              <label className="caesar-label">Calendar</label>
+              {timeCategories.length === 0 ? (
+                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>No calendars — add in Settings.</p>
+              ) : (
+                <select className="caesar-input w-full" value={logForm.categoryId}
+                  onChange={(e) => setLogForm((f) => ({ ...f, categoryId: e.target.value }))}>
+                  {timeCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
             </div>
           </div>
-          {logForm.startTime && logForm.endTime && (() => {
+
+          {/* Clean time selects */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="caesar-label">Start</label>
+              <TimeSelect value={logForm.startTime} onChange={(v) => setLogForm((f) => ({ ...f, startTime: v }))} />
+            </div>
+            <div>
+              <label className="caesar-label">End</label>
+              <TimeSelect value={logForm.endTime} onChange={(v) => setLogForm((f) => ({ ...f, endTime: v }))} />
+            </div>
+          </div>
+
+          {(() => {
             const d = calcDurationHours(logForm.startTime, logForm.endTime);
-            return (
-              <div className="text-xs -mt-2 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                <Clock size={11} />
-                {d > 0 ? <span>{roundHours(d)} duration</span> : <span style={{ color: 'var(--text-secondary)' }}>End time must be after start</span>}
-              </div>
+            return d > 0 ? (
+              <p className="text-xs -mt-2 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                <Clock size={11} /> {roundHours(d)} duration
+              </p>
+            ) : (
+              <p className="text-xs -mt-2" style={{ color: '#ef4444' }}>End must be after start</p>
             );
           })()}
+
+          {/* Repeat options — only on new events */}
+          {!logForm.editingId && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="caesar-label">Repeat</label>
+                <select className="caesar-input w-full" value={logForm.repeat}
+                  onChange={(e) => setLogForm((f) => ({ ...f, repeat: e.target.value as RepeatOption }))}>
+                  <option value="none">Does not repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Every 2 weeks</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              {logForm.repeat !== 'none' && (
+                <div>
+                  <label className="caesar-label">Repeat until</label>
+                  <input type="date" className="caesar-input w-full"
+                    value={logForm.repeatUntil}
+                    min={logForm.date}
+                    onChange={(e) => setLogForm((f) => ({ ...f, repeatUntil: e.target.value }))} />
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="caesar-label">Notes</label>
             <textarea className="caesar-input w-full resize-none" rows={2} placeholder="What did you work on?"
               value={logForm.notes} onChange={(e) => setLogForm((f) => ({ ...f, notes: e.target.value }))} />
           </div>
           <div>
-            <label className="caesar-label">Energy Level</label>
+            <label className="caesar-label">Energy</label>
             <EnergyPicker value={logForm.energy} onChange={(v) => setLogForm((f) => ({ ...f, energy: v }))} />
           </div>
+
           <div className="flex gap-3 pt-1">
+            {logForm.editingId && (() => {
+              const isRecurring = !!timeBlocks.find((b) => b.id === logForm.editingId)?.recurrenceId;
+              return isRecurring ? (
+                <>
+                  <button onClick={() => handleDeleteBlock(logForm.editingId!)}
+                    className="caesar-btn-ghost px-3 flex items-center gap-1.5 text-xs"
+                    style={{ color: '#ef4444' }}>
+                    <Trash2 size={13} /> This event
+                  </button>
+                  <button onClick={() => handleDeleteBlock(logForm.editingId!, true)}
+                    className="caesar-btn-ghost px-3 flex items-center gap-1.5 text-xs"
+                    style={{ color: '#ef4444' }}>
+                    <Trash2 size={13} /> All events
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => handleDeleteBlock(logForm.editingId!)}
+                  className="caesar-btn-ghost px-3 flex items-center gap-1.5 text-xs"
+                  style={{ color: '#ef4444' }}>
+                  <Trash2 size={13} /> Delete
+                </button>
+              );
+            })()}
             <button onClick={() => setLogModalOpen(false)} className="caesar-btn-ghost flex-1">Cancel</button>
             <button onClick={handleLogSubmit} className="caesar-btn-primary flex-1"
-              disabled={!logForm.categoryId || !logForm.startTime || !logForm.endTime || calcDurationHours(logForm.startTime, logForm.endTime) <= 0}>
-              Log Block
+              disabled={!logForm.categoryId || calcDurationHours(logForm.startTime, logForm.endTime) <= 0}>
+              {logForm.editingId ? 'Save Changes' : 'Add Event'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* ── Settings Modal ── */}
-      <Modal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Manage Time Categories" size="md">
+      {/* Settings Modal */}
+      <Modal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="Manage Calendars" size="md">
         <div className="flex flex-col gap-5">
           <div>
-            <p className="caesar-label mb-2">Current Categories</p>
+            <p className="caesar-label mb-2">Calendars</p>
             {timeCategories.length === 0 ? (
-              <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No categories yet.</p>
+              <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No calendars yet.</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {timeCategories.map((cat) => (
@@ -1242,7 +1194,7 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
                     style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
                     <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
                     <span className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>{cat.name}</span>
-                    <button onClick={() => handleDeleteCategory(cat.id)} className="p-1 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                    <button onClick={() => handleDeleteCategory(cat.id)} className="p-1" style={{ color: 'var(--text-muted)' }}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -1252,33 +1204,62 @@ export function TimeTracker({ timeBlocks, setTimeBlocks, timeCategories, setTime
           </div>
           <div className="border-t" style={{ borderColor: 'var(--border)' }} />
           <div>
-            <p className="caesar-label mb-3">Add New Category</p>
+            <p className="caesar-label mb-3">New Calendar</p>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="caesar-label">Category Name</label>
-                <input className="caesar-input w-full" placeholder="e.g. Deep Work, Admin, Exercise"
+                <label className="caesar-label">Name</label>
+                <input className="caesar-input w-full" placeholder="e.g. Work, Personal, Health"
                   value={catForm.name} onChange={(e) => setCatForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div>
                 <label className="caesar-label">Color</label>
                 <div className="flex items-center gap-3">
                   <input type="color" className="w-10 h-10 rounded cursor-pointer border"
-                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
+                    style={{ borderColor: 'var(--border)' }}
                     value={catForm.color} onChange={(e) => setCatForm((f) => ({ ...f, color: e.target.value }))} />
                   <div className="flex flex-wrap gap-1.5">
                     {DEFAULT_COLORS.map((c) => (
                       <button key={c} onClick={() => setCatForm((f) => ({ ...f, color: c }))}
                         className="w-6 h-6 rounded-full border-2 transition-all"
-                        style={{ backgroundColor: c, borderColor: catForm.color === c ? 'white' : 'transparent', transform: catForm.color === c ? 'scale(1.1)' : 'scale(1)' }} />
+                        style={{ backgroundColor: c, borderColor: catForm.color === c ? 'white' : 'transparent', transform: catForm.color === c ? 'scale(1.15)' : 'scale(1)' }} />
                     ))}
                   </div>
                 </div>
               </div>
-              <button onClick={handleAddCategory} className="caesar-btn-primary flex items-center gap-2 w-full justify-center" disabled={!catForm.name.trim()}>
-                <Plus size={14} /> Add Category
+              <button onClick={handleAddCategory} className="caesar-btn-primary flex items-center gap-2 justify-center" disabled={!catForm.name.trim()}>
+                <Plus size={14} /> Add Calendar
               </button>
             </div>
           </div>
+          {/* Notifications */}
+          <div className="border-t pt-4" style={{ borderColor: 'var(--border)' }}>
+            <p className="caesar-label mb-2 flex items-center gap-1.5">
+              <Bell size={12} /> Event Reminders
+            </p>
+            {notifPermission === 'granted' ? (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Notifications on — you'll be reminded 10 min before each event today.
+              </p>
+            ) : notifPermission === 'denied' ? (
+              <p className="text-xs" style={{ color: '#ef4444' }}>
+                Notifications blocked — enable them in your browser settings to get reminders.
+              </p>
+            ) : notifPermission === 'unsupported' ? (
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Push notifications not supported in this browser.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Get a notification 10 min before each event starts today.
+                </p>
+                <button onClick={requestPermission} className="caesar-btn-primary flex items-center gap-2 justify-center">
+                  <Bell size={13} /> Enable Reminders
+                </button>
+              </div>
+            )}
+          </div>
+
           <button onClick={() => setSettingsOpen(false)} className="caesar-btn-ghost w-full">Done</button>
         </div>
       </Modal>

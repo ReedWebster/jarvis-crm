@@ -47,6 +47,7 @@ export interface TimeBlock {
   endTime: string; // HH:MM
   notes: string;
   energy: 1 | 2 | 3 | 4 | 5;
+  recurrenceId?: string; // groups repeating events for bulk delete
 }
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
@@ -66,6 +67,10 @@ export interface Contact {
   email?: string;
   phone?: string;
   company?: string;
+  address?: string;    // display address string
+  mapLat?: number;     // geocoded lat from address autocomplete selection
+  mapLng?: number;     // geocoded lng from address autocomplete selection
+  mapLabel?: string;   // short "City, State" label derived from geocoding
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
@@ -365,6 +370,7 @@ export interface ContactMapData {
   lat?: number;
   lng?: number;
   locationLabel?: string;
+  geocodedAddress?: string; // address string that produced the current lat/lng
   nodeX?: number;
   nodeY?: number;
   mapNotes: string;
@@ -394,6 +400,26 @@ export interface MapFilters {
   strength: RelationshipStrength | 'all';
   followUpOnly: boolean;
   search: string;
+}
+
+// ─── DOC HUB ─────────────────────────────────────────────────────────────────
+
+export interface DocFolder {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  createdAt: string;
+}
+
+export interface DocFile {
+  id: string;
+  name: string;
+  folderId: string | null;
+  type: string;
+  size: number;
+  uploadedAt: string;
+  content: string; // base64 data URL
 }
 
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────

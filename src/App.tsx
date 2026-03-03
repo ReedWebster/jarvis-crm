@@ -47,8 +47,15 @@ import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker'
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
 import { NetworkingMap } from './components/networking/NetworkingMap';
+import { DocHub } from './components/dochub/DocHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
+import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
+import { QuickCaptureSheet } from './components/shared/QuickCaptureSheet';
 import { useSupabaseStorage } from './hooks/useSupabaseStorage';
+import { useWorkspaceStorage } from './hooks/useWorkspaceStorage';
+import { TeamView } from './components/team/TeamView';
+import { useNotifications } from './hooks/useNotifications';
+import { computeInsights } from './utils/intelligence';
 import { ThemeContext, buildThemeValue, useThemeState } from './hooks/useTheme';
 import { ToastProvider } from './components/shared/Toast';
 import { DEFAULT_STATE } from './data/defaultData';
@@ -57,6 +64,7 @@ import type {
   FinancialEntry, SavingsGoal, VentureFinancial, Goal, WeeklyReview,
   DecisionLog, ReadingItem, Candidate, Note, DailyEvent, Habit,
   HabitTracker, DailyMoodLog, StatusMode, TodoItem, Client,
+  DocFolder, DocFile,
 } from './types';
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -73,9 +81,17 @@ const SECTION_TITLES: Record<NavSection, string> = {
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
   networking: 'Networking Map',
+  dochub: 'Doc Hub',
 };
 
+// Route to TeamView for co-founders; all hooks live in MainApp so Rules of Hooks are satisfied
 export default function App() {
+  const isTeamView = new URLSearchParams(window.location.search).get('view') === 'team';
+  if (isTeamView) return <TeamView />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [activeSection, setActiveSection] = useState<NavSection>('command');
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -83,17 +99,73 @@ export default function App() {
   // ─── Auth ──────────────────────────────────────────────────────────────────
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  // roleChecked stays false until the ownership check resolves, blocking the full app render
+  const [roleChecked, setRoleChecked] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setAuthLoading(false);
+      if (!session) setRoleChecked(true); // No session → no role check needed, show login
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (!session) setRoleChecked(true);
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Owner gate — blocks full app render until role is confirmed ──────────
+  // Primary check: VITE_OWNER_EMAIL env var (baked in at build time — instant, no SQL needed).
+  // Any signed-in user whose email doesn't match is redirected to ?view=team immediately.
+  useEffect(() => {
+    if (!session?.user.email) return;
+    setRoleChecked(false); // Hold the spinner while we check
+
+    const ownerEmail = (import.meta.env.VITE_OWNER_EMAIL as string | undefined)?.trim().toLowerCase();
+    const userEmail = session.user.email.trim().toLowerCase();
+
+    if (ownerEmail) {
+      // Fast path — no database call needed
+      if (userEmail !== ownerEmail) {
+        window.location.replace(window.location.origin + '/?view=team');
+        // Do NOT setRoleChecked — page is navigating away
+      } else {
+        setRoleChecked(true); // Confirmed owner
+      }
+      return;
+    }
+
+    // Fallback (env var not set): use workspace_data table
+    const uid = session.user.id;
+    supabase
+      .from('workspace_data')
+      .select('value')
+      .eq('key', 'workspace_config')
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          // Table doesn't exist yet — assume owner (workspace not yet set up)
+          setRoleChecked(true);
+          return;
+        }
+        if (!data?.value) {
+          // No owner on record — register this user and proceed
+          supabase.from('workspace_data').upsert(
+            { key: 'workspace_config', value: { owner_user_id: uid }, updated_at: new Date().toISOString() },
+            { onConflict: 'key' },
+          );
+          setRoleChecked(true);
+        } else {
+          const cfg = data.value as { owner_user_id?: string };
+          if (cfg.owner_user_id && cfg.owner_user_id !== uid) {
+            window.location.replace(window.location.origin + '/?view=team');
+          } else {
+            setRoleChecked(true);
+          }
+        }
+      });
+  }, [session?.user.email, session?.user.id]);
 
   // ─── Theme ─────────────────────────────────────────────────────────────────
   const { theme, toggle } = useThemeState();
@@ -114,7 +186,8 @@ export default function App() {
   const [decisionLogs, setDecisionLogs] = useSupabaseStorage<DecisionLog[]>('jarvis:decisionLogs', DEFAULT_STATE.decisionLogs);
   const [readingItems, setReadingItems] = useSupabaseStorage<ReadingItem[]>('jarvis:readingItems', DEFAULT_STATE.readingItems);
   const [candidates, setCandidates] = useSupabaseStorage<Candidate[]>('jarvis:candidates', DEFAULT_STATE.candidates);
-  const [clients, setClients] = useSupabaseStorage<Client[]>('jarvis:clients', []);
+  // Clients are workspace-shared — all team members read/write the same data
+  const [clients, setClients] = useWorkspaceStorage<Client[]>('clients', []);
   const [notes, setNotes] = useSupabaseStorage<Note[]>('jarvis:notes', DEFAULT_STATE.notes);
   const [dailyEvents, setDailyEvents] = useSupabaseStorage<DailyEvent[]>('jarvis:dailyEvents', DEFAULT_STATE.dailyEvents);
   const [habits] = useSupabaseStorage<Habit[]>('jarvis:habits', DEFAULT_STATE.habits);
@@ -122,10 +195,54 @@ export default function App() {
   const [dailyMoodLogs, setDailyMoodLogs] = useSupabaseStorage<DailyMoodLog[]>('jarvis:dailyMoodLogs', DEFAULT_STATE.dailyMoodLogs);
   const [scratchpad, setScratchpad] = useSupabaseStorage<string>('jarvis:scratchpad', DEFAULT_STATE.scratchpad);
   const [todos, setTodos] = useSupabaseStorage<TodoItem[]>('jarvis:todos', []);
+  const [docFolders, setDocFolders] = useSupabaseStorage<DocFolder[]>('jarvis:docFolders', []);
+  const [docFiles, setDocFiles] = useSupabaseStorage<DocFile[]>('jarvis:docFiles', []);
+  const [navOrder, setNavOrder] = useSupabaseStorage<NavSection[]>('jarvis:navOrder', []);
+
+  // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
+  useEffect(() => {
+    if (!session?.user.id || clients.length > 0) return;
+    const uid = session.user.id;
+    supabase
+      .from('user_data')
+      .select('value')
+      .eq('user_id', uid)
+      .eq('key', 'jarvis:clients')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data?.value || !Array.isArray(data.value) || data.value.length === 0) return;
+        // Workspace is still empty — migrate old clients across
+        supabase
+          .from('workspace_data')
+          .upsert({ key: 'clients', value: data.value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+          .then(() => { setClients(data.value as Client[]); });
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id]);
 
   const handleStatusChange = (status: StatusMode) => {
     setIdentity(prev => ({ ...prev, status }));
   };
+
+  // ─── Intelligence + Notifications ─────────────────────────────────────────
+  const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [insightsPanelOpen, setInsightsPanelOpen] = useState(false);
+
+  const insightsData = useMemo(() => ({
+    contacts, timeBlocks, timeCategories, goals, todos,
+    financialEntries, savingsGoals, readingItems, notes,
+    dailyMoodLogs, habits, habitTracker,
+  }), [contacts, timeBlocks, timeCategories, goals, todos,
+       financialEntries, savingsGoals, readingItems, notes,
+       dailyMoodLogs, habits, habitTracker]);
+
+  const allInsights = useMemo(() => computeInsights(insightsData), [insightsData]);
+  const urgentCount = useMemo(
+    () => allInsights.filter(i => i.priority === 'urgent' || i.priority === 'high').length,
+    [allInsights]
+  );
+
+  const { requestPermission } = useNotifications(allInsights);
 
   const renderSection = () => {
     switch (activeSection) {
@@ -133,9 +250,9 @@ export default function App() {
         return (
           <DailyCommandBrief
             identity={identity}
-            goals={goals}
-            dailyEvents={dailyEvents}
-            setDailyEvents={setDailyEvents}
+            timeBlocks={timeBlocks}
+            timeCategories={timeCategories}
+            onNavigateToCalendar={() => setActiveSection('time')}
             habits={habits}
             habitTracker={habitTracker}
             setHabitTracker={setHabitTracker}
@@ -224,13 +341,22 @@ export default function App() {
             onNavigateToCRM={() => setActiveSection('contacts')}
           />
         );
+      case 'dochub':
+        return (
+          <DocHub
+            folders={docFolders}
+            setFolders={setDocFolders}
+            files={docFiles}
+            setFiles={setDocFiles}
+          />
+        );
       default:
         return null;
     }
   };
 
-  // Auth gate — show loading spinner, then login, then app
-  if (authLoading) {
+  // Auth gate — spinner until both auth AND role check resolve
+  if (authLoading || !roleChecked) {
     return (
       <ThemeContext.Provider value={themeCtx}>
         <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
@@ -258,6 +384,8 @@ export default function App() {
           onSearch={() => setSearchOpen(true)}
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
+          navOrder={navOrder}
+          onNavOrderChange={order => setNavOrder(() => order)}
         />
 
         <TopBar
@@ -267,6 +395,8 @@ export default function App() {
           onThemeToggle={toggle}
           isDark={theme === 'dark'}
           onMenuOpen={() => setMobileSidebarOpen(true)}
+          urgentCount={urgentCount}
+          onNotificationClick={() => { requestPermission(); setInsightsPanelOpen(true); }}
         />
 
         {/* Main Content */}
@@ -327,6 +457,44 @@ export default function App() {
           setReadingItems={setReadingItems}
           setScratchpad={setScratchpad}
           setDailyEvents={setDailyEvents}
+        />
+
+        {/* J.A.R.V.I.S. Insights Panel */}
+        <JarvisInsightsPanel
+          data={insightsData}
+          onNavigate={setActiveSection}
+          onRequestNotificationPermission={requestPermission}
+          externalOpen={insightsPanelOpen}
+          onExternalOpenChange={setInsightsPanelOpen}
+        />
+
+        {/* Mobile Quick Capture FAB */}
+        <button
+          onClick={() => setQuickCaptureOpen(true)}
+          className="fixed bottom-6 left-4 md:hidden z-[60] w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          style={{
+            background: 'linear-gradient(135deg, #10b981, #059669)',
+            boxShadow: '0 4px 20px rgba(16,185,129,0.4)',
+            color: '#fff',
+            fontSize: 24,
+            fontWeight: 300,
+          }}
+          aria-label="Quick capture"
+        >
+          +
+        </button>
+
+        {/* Quick Capture Sheet */}
+        <QuickCaptureSheet
+          isOpen={quickCaptureOpen}
+          onClose={() => setQuickCaptureOpen(false)}
+          timeCategories={timeCategories}
+          contacts={contacts}
+          onAddTimeBlock={(b) => setTimeBlocks(prev => [...prev, b])}
+          onAddTodo={(t) => setTodos(prev => [...prev, t])}
+          onAddNote={(n) => setNotes(prev => [...prev, n])}
+          onAddContact={(c) => setContacts(prev => [...prev, c])}
+          onAddEvent={(e) => setDailyEvents(prev => [...prev, e])}
         />
       </div>
       </ToastProvider>

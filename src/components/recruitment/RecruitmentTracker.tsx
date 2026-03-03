@@ -3,12 +3,14 @@ import {
   Building2, Plus, Edit3, Trash2, Mail, Phone, Search,
   CheckCircle2, Clock, AlertCircle, Users, Bell,
   CreditCard, FileText, Briefcase, RefreshCw,
-  Upload, Download, Eye, FileCheck, FilePlus, Printer,
+  Upload, Download, Eye, FileCheck, FilePlus, Printer, PenLine,
 } from 'lucide-react';
 import { differenceInDays } from 'date-fns';
+import { PDFDocument, rgb } from 'pdf-lib';
 import type { Client, ClientPayment, ClientStatus, PaymentStatus, ClientContractInfo } from '../../types';
 import { generateId, todayStr, formatDate } from '../../utils';
 import { Modal } from '../shared/Modal';
+import { ContractSignModal } from './ContractSignModal';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -131,9 +133,14 @@ function generateContractHTML(client: Client, opts: ContractOpts): string {
     ul { margin: 8px 0 8px 22px; }
     li { margin: 3px 0; }
     .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 64px; padding-top: 24px; border-top: 1px solid #ccc; }
-    .sig-block strong { display: block; margin-bottom: 52px; }
-    .sig-line { border-top: 1px solid #333; padding-top: 7px; font-size: 11px; color: #666; }
-    .sig-date { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 7px; font-size: 11px; color: #666; }
+    .sig-block strong { display: block; margin-bottom: 8px; }
+    .sig-img { display: block; height: 60px; max-width: 220px; object-fit: contain; margin-bottom: 4px; }
+    .sig-placeholder { height: 60px; display: flex; align-items: flex-end; margin-bottom: 4px; }
+    .sig-line { border-top: 1px solid #333; padding-top: 7px; font-size: 11px; color: #444; }
+    .sig-date { margin-top: 16px; border-top: 1px solid #ccc; padding-top: 7px; font-size: 11px; color: #666; }
+    .sig-instructions { margin-top: 14px; padding: 10px 12px; background: #f8f9fa; border: 1px solid #e2e4e6; border-radius: 4px; font-size: 11px; color: #555; line-height: 1.6; }
+    .sig-instructions strong { color: #1a1a1a; }
+    .sign-here-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #10b981; font-weight: bold; margin-bottom: 4px; }
     .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; }
     @media print {
       body { margin: 24px; padding: 0; }
@@ -150,7 +157,7 @@ function generateContractHTML(client: Client, opts: ContractOpts): string {
   <div class="parties">
     <div>
       <div class="party-label">Agency</div>
-      <div class="party-name">Vanta Marketing Co.</div>
+      <div class="party-name">Vanta Brand Scaling LLC</div>
     </div>
     <div>
       <div class="party-label">Client</div>
@@ -160,7 +167,7 @@ function generateContractHTML(client: Client, opts: ContractOpts): string {
     </div>
   </div>
 
-  <p>This Marketing Services Agreement ("Agreement") is entered into as of ${dateStr} between <strong>Vanta Marketing Co.</strong> ("Agency") and <strong>${client.company || client.name}</strong> ("Client").</p>
+  <p>This Marketing Services Agreement ("Agreement") is entered into as of ${dateStr} between <strong>Vanta Brand Scaling LLC</strong> ("Agency") and <strong>${client.company || client.name}</strong> ("Client").</p>
 
   <section>
     <h2>1. Services</h2>
@@ -213,7 +220,7 @@ function generateContractHTML(client: Client, opts: ContractOpts): string {
 
   <section>
     <h2>10. Governing Law &amp; Dispute Resolution</h2>
-    <p>This Agreement shall be governed by the laws of the State of Utah. Any dispute arising under this Agreement shall first be subject to good-faith negotiation. If unresolved within thirty (30) days, disputes shall be submitted to binding arbitration in Salt Lake County, Utah, under the rules of the American Arbitration Association.</p>
+    <p>This Agreement shall be governed by the laws of the State of Wyoming. Any dispute arising under this Agreement shall first be subject to good-faith negotiation. If unresolved within thirty (30) days, disputes shall be submitted to binding arbitration in Laramie County, Wyoming, under the rules of the American Arbitration Association.</p>
   </section>
 
   <section>
@@ -222,23 +229,52 @@ function generateContractHTML(client: Client, opts: ContractOpts): string {
   </section>
 
   <div class="signatures">
+    <!--AGENCY_SIG_PLACEHOLDER-->
     <div class="sig-block">
-      <strong>Vanta Marketing Co. ("Agency")</strong>
+      <strong>Vanta Brand Scaling LLC ("Agency")</strong>
+      <div class="sig-placeholder"></div>
       <div class="sig-line">Authorized Signature</div>
       <div class="sig-line" style="margin-top:12px;">Printed Name &amp; Title</div>
       <div class="sig-date">Date</div>
     </div>
+    <!--END_AGENCY_SIG_PLACEHOLDER-->
     <div class="sig-block">
+      <div class="sign-here-label">✦ Signature required</div>
       <strong>${client.company || client.name} ("Client")</strong>
+      <div class="sig-placeholder"></div>
       <div class="sig-line">Authorized Signature</div>
-      <div class="sig-line" style="margin-top:12px;">Printed Name &amp; Title</div>
+      <div class="sig-line" style="margin-top:12px;">${client.name ? client.name + ' — Printed Name' : 'Printed Name &amp; Title'}</div>
       <div class="sig-date">Date</div>
+      <div class="sig-instructions">
+        <strong>How to sign:</strong><br>
+        1. Print this document (File → Print or Ctrl+P)<br>
+        2. Sign above the signature line<br>
+        3. Scan or photograph the signed page<br>
+        4. Return to: <strong>Vanta Brand Scaling LLC</strong>
+      </div>
     </div>
   </div>
 
-  <div class="footer">Generated by Vanta Marketing Co. via LITEHOUSE CRM · ${dateStr}</div>
+  <div class="footer">Generated by Vanta Brand Scaling LLC via LITEHOUSE CRM · ${dateStr}</div>
 </body>
 </html>`;
+}
+
+// Injects the signature image + signer info into the Agency sig block of the contract HTML
+function injectSignatureIntoHTML(html: string, sigDataUrl: string, signerName: string, dateStr: string): string {
+  const replacement = `<!--AGENCY_SIG_PLACEHOLDER-->
+    <div class="sig-block">
+      <strong>Vanta Brand Scaling LLC ("Agency")</strong>
+      <img src="${sigDataUrl}" class="sig-img" alt="Signature" />
+      <div class="sig-line">${signerName || 'Authorized Signatory'}</div>
+      <div class="sig-line" style="margin-top:12px;">Authorized Signatory · Vanta Brand Scaling LLC</div>
+      <div class="sig-date">${dateStr}</div>
+    </div>
+    <!--END_AGENCY_SIG_PLACEHOLDER-->`;
+  return html.replace(
+    /<!--AGENCY_SIG_PLACEHOLDER-->[\s\S]*?<!--END_AGENCY_SIG_PLACEHOLDER-->/,
+    replacement,
+  );
 }
 
 function emptyPayment(): Omit<ClientPayment, 'id'> {
@@ -418,6 +454,7 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [signModalOpen, setSignModalOpen] = useState(false);
   const [form, setForm] = useState<Omit<Client, 'id'>>(emptyClient());
   const [tab, setTab] = useState<'details' | 'payments' | 'notes' | 'contract'>('details');
   const [searchQuery, setSearchQuery] = useState('');
@@ -692,6 +729,104 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
     if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 400); }
   }
 
+  async function handleSignContract(sigDataUrl: string, signerName: string) {
+    if (!form.contract) return;
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const baseName = form.contract.fileName.replace(/\.[^.]+$/, '');
+
+    if (form.contract.type === 'generated') {
+      const clientSnapshot = { ...form, id: editingClient?.id ?? '' } as Client;
+      const html = generateContractHTML(clientSnapshot, {
+        pricingModel: form.contract.pricingModel ?? 'retainer',
+        retainerAmount: form.contract.retainerAmount ?? form.contractValue,
+        commissionRate: form.contract.commissionRate ?? 10,
+        commissionBasis: form.contract.commissionBasis ?? '',
+        paymentTerms: form.contract.paymentTerms ?? 'Net 15',
+        contractDuration: form.contract.contractDuration ?? 'Month-to-month',
+        additionalNotes: form.contract.additionalNotes ?? '',
+      });
+      const signedHtml = injectSignatureIntoHTML(html, sigDataUrl, signerName, dateStr);
+      // Use a Blob URL — more popup-friendly than window.open('', '_blank')
+      const htmlBlob = new Blob([signedHtml], { type: 'text/html;charset=utf-8' });
+      const htmlUrl = URL.createObjectURL(htmlBlob);
+      const win = window.open(htmlUrl, '_blank');
+      if (win) {
+        win.onload = () => { win.focus(); win.print(); };
+      } else {
+        // Popup blocked — fall back to direct download
+        const a = document.createElement('a');
+        a.href = htmlUrl;
+        a.download = `${baseName}_SIGNED.html`;
+        a.click();
+      }
+    } else if (form.contract.type === 'uploaded' && form.contract.fileData && form.contract.fileType?.includes('pdf')) {
+      try {
+        // Decode base64 to bytes
+        const binary = atob(form.contract.fileData);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+        // Load PDF
+        const pdfDoc = await PDFDocument.load(bytes);
+        const pages = pdfDoc.getPages();
+        const lastPage = pages[pages.length - 1];
+        // Embed signature image (decode data URL directly — no fetch needed)
+        const sigBase64 = sigDataUrl.split(',')[1];
+        const sigBinary = atob(sigBase64);
+        const sigBytes = new Uint8Array(sigBinary.length);
+        for (let i = 0; i < sigBinary.length; i++) sigBytes[i] = sigBinary.charCodeAt(i);
+        const sigImage = await pdfDoc.embedPng(sigBytes);
+        const sigDims = sigImage.scale(Math.min(160 / sigImage.width, 56 / sigImage.height));
+
+        // Signature block at bottom-left
+        const margin = 60;
+        const yBase = margin + 80;
+
+        lastPage.drawImage(sigImage, {
+          x: margin,
+          y: yBase,
+          width: sigDims.width,
+          height: sigDims.height,
+        });
+
+        // Signature line
+        lastPage.drawLine({
+          start: { x: margin, y: yBase - 4 },
+          end: { x: margin + 200, y: yBase - 4 },
+          thickness: 0.5,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+
+        // Signer name text
+        const font = await pdfDoc.embedFont('Helvetica' as Parameters<typeof pdfDoc.embedFont>[0]);
+        lastPage.drawText(signerName, {
+          x: margin, y: yBase - 16,
+          size: 9, font, color: rgb(0.3, 0.3, 0.3),
+        });
+        lastPage.drawText(dateStr, {
+          x: margin, y: yBase - 28,
+          size: 8, font, color: rgb(0.5, 0.5, 0.5),
+        });
+
+        // Save + download — slice the ArrayBuffer to exact byte range (buffer may be oversized)
+        const pdfBytes = await pdfDoc.save();
+        const pdfBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
+        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${baseName}_SIGNED.pdf`;
+        a.click();
+      } catch (err) {
+        console.error('PDF signing failed:', err);
+        alert('Could not sign this PDF. Try downloading it and signing manually.');
+      }
+    } else {
+      // Non-PDF upload — download as-is with SIGNED suffix
+      handleDownloadContract();
+    }
+    setSignModalOpen(false);
+  }
+
   const paymentsTotal = form.payments.reduce((s, p) => s + p.amount, 0);
   const paymentsPaid = form.payments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
 
@@ -706,7 +841,7 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
             <Building2 size={22} style={{ color: 'var(--text-muted)' }} />
             Clients
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Vanta Marketing Co. · Client & payment tracker</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Vanta Brand Scaling LLC · Client & payment tracker</p>
         </div>
         <button onClick={openAdd} className="caesar-btn-primary flex items-center gap-2">
           <Plus size={16} /> Add Client
@@ -1079,6 +1214,11 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
                       <Printer size={12} /> Print / Save PDF
                     </button>
                   )}
+                  <button onClick={() => setSignModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all hover:opacity-90"
+                    style={{ backgroundColor: '#10b981', borderColor: '#10b981', color: '#fff' }}>
+                    <PenLine size={12} /> Sign &amp; Download
+                  </button>
                   <button onClick={() => setForm(f => ({ ...f, contract: undefined }))}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ml-auto transition-all"
                     style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#ef4444' }}>
@@ -1221,6 +1361,14 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
           <button onClick={closeModal} className="caesar-btn-ghost flex-1">Cancel</button>
         </div>
       </Modal>
+
+      {signModalOpen && form.contract && (
+        <ContractSignModal
+          contractName={form.contract.fileName}
+          onSign={handleSignContract}
+          onClose={() => setSignModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

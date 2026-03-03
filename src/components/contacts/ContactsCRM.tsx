@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -297,6 +297,149 @@ function formatPhone(raw: string): string {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
+// ─── ADDRESS AUTOCOMPLETE (ArcGIS World Geocoding — USPS + county assessor data)
+
+// ArcGIS World Geocoding Service: uses USPS, county assessors, HERE maps, and
+// government parcel data — the most accurate US address source available for free.
+const ARCGIS_BASE = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer';
+
+interface ArcGISSuggestion {
+  text: string;
+  magicKey: string;
+  isCollection: boolean;
+}
+
+/** Resolve a suggestion's magicKey (or any text address) to coordinates. */
+async function arcgisGeocode(
+  text: string,
+  magicKey?: string
+): Promise<{ lat: number; lng: number; label: string; formatted: string } | null> {
+  try {
+    const params = new URLSearchParams({
+      singleLine: text,
+      outFields: 'City,RegionAbbr,Postal',
+      countryCode: 'USA',
+      maxLocations: '1',
+      f: 'json',
+    });
+    if (magicKey) params.set('magicKey', magicKey);
+    const res = await fetch(`${ARCGIS_BASE}/findAddressCandidates?${params}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data.candidates?.[0];
+    if (!c || !c.location) return null;
+    const city = (c.attributes?.City ?? '') as string;
+    const state = (c.attributes?.RegionAbbr ?? '') as string;
+    const label = [city, state].filter(Boolean).join(', ');
+    return { lat: c.location.y, lng: c.location.x, label, formatted: c.address ?? text };
+  } catch {
+    return null;
+  }
+}
+
+function AddressAutocomplete({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (address: string, lat?: number, lng?: number, label?: string) => void;
+}) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState<ArcGISSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const q = e.target.value;
+    setQuery(q);
+    onChange(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (q.length < 3) { setSuggestions([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          text: q,
+          category: 'Address,Postal,City',
+          countryCode: 'USA',
+          maxSuggestions: '6',
+          f: 'json',
+        });
+        const res = await fetch(`${ARCGIS_BASE}/suggest?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          const list: ArcGISSuggestion[] = (data.suggestions ?? []).filter(
+            (s: ArcGISSuggestion) => !s.isCollection
+          );
+          setSuggestions(list);
+          setOpen(list.length > 0);
+        }
+      } catch { /* silently ignore */ }
+      setLoading(false);
+    }, 300);
+  };
+
+  const handleSelect = async (s: ArcGISSuggestion) => {
+    setQuery(s.text);
+    setSuggestions([]);
+    setOpen(false);
+    onChange(s.text); // optimistic update
+    const result = await arcgisGeocode(s.text, s.magicKey);
+    if (result) {
+      setQuery(result.formatted);
+      onChange(result.formatted, result.lat, result.lng, result.label);
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        className="caesar-input w-full"
+        placeholder="e.g. 123 Main St, Denver, CO"
+        value={query}
+        onChange={handleInput}
+        onFocus={() => suggestions.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        autoComplete="off"
+      />
+      {loading && (
+        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: 'var(--text-muted)', pointerEvents: 'none' }}>
+          Searching…
+        </span>
+      )}
+      {open && suggestions.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: 8, marginTop: 4, overflow: 'hidden',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.14)',
+        }}>
+          {suggestions.map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              onMouseDown={() => handleSelect(s)}
+              style={{
+                width: '100%', textAlign: 'left', padding: '8px 12px',
+                display: 'block', backgroundColor: 'transparent',
+                borderBottom: i < suggestions.length - 1 ? '1px solid var(--border)' : 'none',
+                fontSize: 12, color: 'var(--text-primary)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}
+            >
+              {s.text}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ADD/EDIT CONTACT MODAL ───────────────────────────────────────────────────
 
 interface ContactFormData {
@@ -304,6 +447,10 @@ interface ContactFormData {
   email: string;
   phone: string;
   company: string;
+  address: string;
+  mapLat?: number;
+  mapLng?: number;
+  mapLabel?: string;
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
@@ -323,11 +470,15 @@ interface ContactFormModalProps {
 }
 
 function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFormModalProps) {
-  const [form, setForm] = useState<ContactFormData>({
+  const emptyForm = (): ContactFormData => ({
     name: initial?.name ?? '',
     email: initial?.email ?? '',
     phone: initial?.phone ?? '',
     company: initial?.company ?? '',
+    address: initial?.address ?? '',
+    mapLat: initial?.mapLat,
+    mapLng: initial?.mapLng,
+    mapLabel: initial?.mapLabel,
     relationship: initial?.relationship ?? '',
     tags: initial?.tags ?? [],
     lastContacted: initial?.lastContacted ?? todayStr(),
@@ -338,24 +489,11 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
     notes: initial?.notes ?? '',
   });
 
+  const [form, setForm] = useState<ContactFormData>(emptyForm);
+
   // Sync form when initial changes (e.g. opening edit for different contact)
   React.useEffect(() => {
-    if (isOpen) {
-      setForm({
-        name: initial?.name ?? '',
-        email: initial?.email ?? '',
-        phone: initial?.phone ?? '',
-        company: initial?.company ?? '',
-        relationship: initial?.relationship ?? '',
-        tags: initial?.tags ?? [],
-        lastContacted: initial?.lastContacted ?? todayStr(),
-        followUpDate: initial?.followUpDate ?? '',
-        followUpNeeded: initial?.followUpNeeded ?? false,
-        birthday: initial?.birthday ?? '',
-        anniversary: initial?.anniversary ?? '',
-        notes: initial?.notes ?? '',
-      });
-    }
+    if (isOpen) setForm(emptyForm());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -431,6 +569,20 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             placeholder="Company name"
             value={form.company}
             onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="caesar-label">
+            Address{' '}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+              — auto-pins on Networking Map
+            </span>
+          </label>
+          <AddressAutocomplete
+            value={form.address}
+            onChange={(address, lat, lng, label) =>
+              setForm((f) => ({ ...f, address, mapLat: lat, mapLng: lng, mapLabel: label }))
+            }
           />
         </div>
 
@@ -1132,6 +1284,10 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             email: selectedContact.email ?? '',
             phone: selectedContact.phone ?? '',
             company: selectedContact.company ?? '',
+            address: selectedContact.address ?? '',
+            mapLat: selectedContact.mapLat,
+            mapLng: selectedContact.mapLng,
+            mapLabel: selectedContact.mapLabel,
             relationship: selectedContact.relationship,
             tags: selectedContact.tags,
             lastContacted: selectedContact.lastContacted,

@@ -122,9 +122,18 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-          Personal access only
-        </p>
+        <div className="text-center space-y-1">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Personal access only
+          </p>
+          <a
+            href="/?view=team"
+            className="text-xs underline underline-offset-2 transition-opacity hover:opacity-70"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Team member? Sign in here →
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -304,6 +304,85 @@ function GoalCard({
   );
 }
 
+// ─── 2026 SEED GOALS ──────────────────────────────────────────────────────────
+
+const SEED_2026_GOALS: Goal[] = (() => {
+  const annual = (id: string, title: string, area: LifeArea): Goal => ({
+    id, title, description: '2026 annual goal', period: 'annual',
+    status: 'not-started', progress: 0, area,
+    dueDate: '2026-12-31', createdAt: '2026-01-01',
+  });
+  const child = (id: string, title: string, parentId: string, area: LifeArea, sixMonth = false): Goal => ({
+    id, title, description: sixMonth ? '6-month commitment' : '', period: 'quarterly',
+    status: 'not-started', progress: 0, area, parentId,
+    dueDate: sixMonth ? '2026-06-30' : '2026-12-31', createdAt: '2026-01-01',
+  });
+
+  return [
+    // ── Annual parents ───────────────────────────────────────────────────────
+    annual('ella-sp-2026',   'Ella — Spiritual 2026',    'spiritual'),
+    annual('ella-int-2026',  'Ella — Intellectual 2026', 'academic'),
+    annual('ella-phys-2026', 'Ella — Physical 2026',     'health'),
+    annual('ella-emo-2026',  'Ella — Emotional 2026',    'personal'),
+    annual('reed-sp-2026',   'Reed — Spiritual 2026',    'spiritual'),
+    annual('reed-int-2026',  'Reed — Intellectual 2026', 'academic'),
+    annual('reed-phys-2026', 'Reed — Physical 2026',     'health'),
+    annual('reed-emo-2026',  'Reed — Emotional 2026',    'personal'),
+    annual('us-2026',        'Us — Together 2026',       'relationships'),
+
+    // ── Ella Spiritual ───────────────────────────────────────────────────────
+    child('ella-sp-1', 'Stay on top of Come Follow Me',                                     'ella-sp-2026', 'spiritual'),
+    child('ella-sp-2', '15 min scripture study daily',                                       'ella-sp-2026', 'spiritual', true),
+    child('ella-sp-3', 'In prayers, always express specific things I\'m grateful for',       'ella-sp-2026', 'spiritual', true),
+    child('ella-sp-4', 'Be PRESENT at church — intentionally meet members',                  'ella-sp-2026', 'spiritual', true),
+
+    // ── Ella Intellectual ────────────────────────────────────────────────────
+    child('ella-int-1', 'Figure out Psychology internship',    'ella-int-2026', 'academic'),
+    child('ella-int-2', 'No homework on Sundays',              'ella-int-2026', 'academic', true),
+    child('ella-int-3', "Utilize TA's",                        'ella-int-2026', 'academic', true),
+    child('ella-int-4', 'Read 4 books',                        'ella-int-2026', 'academic', true),
+
+    // ── Ella Physical ────────────────────────────────────────────────────────
+    child('ella-phys-1', 'Intentional mornings — gym, breakfast',      'ella-phys-2026', 'health'),
+    child('ella-phys-2', 'ALWAYS be performing in team',                'ella-phys-2026', 'health', true),
+    child('ella-phys-3', 'Strive for well-rounded meals',               'ella-phys-2026', 'health', true),
+    child('ella-phys-4', 'Drink 2 Owalas daily',                        'ella-phys-2026', 'health', true),
+
+    // ── Ella Emotional ───────────────────────────────────────────────────────
+    child('ella-emo-1', 'Journal daily — something that made me smile, a tender mercy, and a stressor', 'ella-emo-2026', 'personal'),
+    child('ella-emo-2', 'Reach out to two friends a week (hang out, call, text, write a letter, etc.)', 'ella-emo-2026', 'personal', true),
+    child('ella-emo-3', 'Make getting ready for bed a positive experience #staypositive',               'ella-emo-2026', 'personal', true),
+    child('ella-emo-4', 'Set aside 15 min in afternoon to respond/clear notifications',                 'ella-emo-2026', 'personal', true),
+
+    // ── Reed Spiritual ───────────────────────────────────────────────────────
+    child('reed-sp-1', 'Read the whole Old Testament (CFM)',                                                  'reed-sp-2026', 'spiritual'),
+    child('reed-sp-2', 'Scripture study before media — at least 15 min daily + 1 sentence journal/takeaway', 'reed-sp-2026', 'spiritual'),
+    child('reed-sp-3', 'Come to Sunday with a plan: 1 question you want answered + 1 person to talk to or serve', 'reed-sp-2026', 'spiritual'),
+    child('reed-sp-4', 'Serve intentionally (ministering)',                                                   'reed-sp-2026', 'spiritual'),
+
+    // ── Reed Intellectual ────────────────────────────────────────────────────
+    child('reed-int-1', "Become 'dangerously competent' in one high-leverage skill: Meta ads", 'reed-int-2026', 'academic'),
+    child('reed-int-2', 'Reading: 6 business, 3 spiritual, 2 relationship/psychology',         'reed-int-2026', 'academic'),
+
+    // ── Reed Physical ────────────────────────────────────────────────────────
+    child('reed-phys-1', 'Two real meals and one clean snack daily', 'reed-phys-2026', 'health'),
+    child('reed-phys-2', '12% body fat percentage',                  'reed-phys-2026', 'health'),
+    child('reed-phys-3', 'Lift 4 days a week, cardio 2 times a week', 'reed-phys-2026', 'health'),
+    child('reed-phys-4', 'PPL program',                               'reed-phys-2026', 'health'),
+
+    // ── Reed Emotional ───────────────────────────────────────────────────────
+    child('reed-emo-1', 'Fully unplug on Sundays',           'reed-emo-2026', 'personal'),
+    child('reed-emo-2', 'No work on Tuesdays (date night)',  'reed-emo-2026', 'personal'),
+    child('reed-emo-3', 'Journal weekly on Sundays',          'reed-emo-2026', 'personal'),
+
+    // ── Together ─────────────────────────────────────────────────────────────
+    child('us-1', 'Go to the temple monthly',            'us-2026', 'relationships'),
+    child('us-2', 'Only eat out once a week',            'us-2026', 'relationships'),
+    child('us-3', 'Finish Book of Mormon together',      'us-2026', 'relationships'),
+    child('us-4', '30 min weekly talk / comp counsel',   'us-2026', 'relationships'),
+  ];
+})();
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function GoalHierarchy({
@@ -667,12 +746,24 @@ export function GoalHierarchy({
               );
             })}
           </div>
-          <button
-            onClick={() => openAddGoal()}
-            className="caesar-btn-primary flex items-center gap-1 text-xs"
-          >
-            <Plus size={13} /> Add Goal
-          </button>
+          <div className="flex items-center gap-2">
+            {!goals.some(g => g.id.startsWith('ella-') || g.id.startsWith('reed-') || g.id === 'us-2026') && (
+              <button
+                onClick={() => setGoals(prev => [...prev, ...SEED_2026_GOALS])}
+                className="caesar-btn-ghost flex items-center gap-1 text-xs border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                title="Load pre-built 2026 goals for Ella, Reed, and Together"
+              >
+                Load 2026 Goals
+              </button>
+            )}
+            <button
+              onClick={() => openAddGoal()}
+              className="caesar-btn-primary flex items-center gap-1 text-xs"
+            >
+              <Plus size={13} /> Add Goal
+            </button>
+          </div>
         </div>
 
         {/* Goal Tree */}

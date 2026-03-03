@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Globe, Network, X, Filter, Search } from 'lucide-react';
 import type {
   Contact,
@@ -12,6 +12,7 @@ import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import {
   defaultMapState,
   applyFilters,
+  forwardGeocode,
 } from '../../utils/networkingMap';
 import { GeographicView } from './GeographicView';
 import { NetworkView } from './NetworkView';
@@ -97,6 +98,58 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
       },
     }));
   };
+
+  // ─── SYNC CONTACT ADDRESSES → MAP PINS ──────────────────────────────────────
+  // Two strategies:
+  //   1. Instant: contact has mapLat/mapLng from autocomplete selection → copy directly.
+  //   2. Lazy:    contact has address text only → forward-geocode via Nominatim (rate-limited).
+  const geocodingRef = useRef(false);
+  useEffect(() => {
+    // Strategy 1: contacts with pre-geocoded coords (autocomplete selection)
+    contacts.forEach(c => {
+      if (c.mapLat === undefined || c.mapLng === undefined) return;
+      const d = mapState.contactData[c.id];
+      // Sync if the address changed since last sync, or no pin yet
+      if (d?.geocodedAddress !== c.address?.trim()) {
+        updateMapData(c.id, {
+          lat: c.mapLat,
+          lng: c.mapLng,
+          locationLabel: c.mapLabel ?? '',
+          geocodedAddress: c.address?.trim() ?? '',
+        });
+      }
+    });
+
+    // Strategy 2: contacts with plain text address but no pre-geocoded coords
+    if (geocodingRef.current) return;
+    const pending = contacts.filter(c => {
+      if (c.mapLat !== undefined) return false; // already handled above
+      if (!c.address?.trim()) return false;
+      const d = mapState.contactData[c.id];
+      return !d?.geocodedAddress || d.geocodedAddress !== c.address.trim();
+    });
+    if (pending.length === 0) return;
+
+    geocodingRef.current = true;
+    let i = 0;
+    const geocodeNext = async () => {
+      if (i >= pending.length) { geocodingRef.current = false; return; }
+      const contact = pending[i++];
+      const result = await forwardGeocode(contact.address!.trim());
+      if (result) {
+        updateMapData(contact.id, {
+          lat: result.lat, lng: result.lng,
+          locationLabel: result.label,
+          geocodedAddress: contact.address!.trim(),
+        });
+      } else {
+        updateMapData(contact.id, { geocodedAddress: contact.address!.trim() });
+      }
+      setTimeout(geocodeNext, 1100); // Nominatim rate-limit: 1 req/sec
+    };
+    geocodeNext();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts]);
 
   const updateContact = (updated: Contact) => {
     setContacts(prev => prev.map(c => c.id === updated.id ? updated : c));

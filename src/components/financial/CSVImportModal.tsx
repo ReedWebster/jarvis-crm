@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
+import { extractTextFromPDF, parseAFCUFromText } from '../../utils/afcuPdfParser';
 import {
   Upload,
   FileText,
@@ -264,6 +265,52 @@ function parseMercury(rows: Record<string, string>[], ventureId: string): Parsed
     });
 }
 
+// ─── PDF PARSER FOR AFCU ─────────────────────────────────────────────────────
+
+/** Convert MM/DD (no year) to yyyy-MM-dd using the current year. */
+function parseMMDDSlash(raw: string): string {
+  const parts = raw.trim().split('/');
+  if (parts.length === 3) return parseMMDDYYYY(raw); // has year already
+  if (parts.length === 2) {
+    const month = parts[0].padStart(2, '0');
+    const day = parts[1].padStart(2, '0');
+    const year = new Date().getFullYear();
+    return `${year}-${month}-${day}`;
+  }
+  return raw.trim();
+}
+
+function parseAFCUPDF(text: string): ParsedTransaction[] {
+  const raw = parseAFCUFromText(text);
+  return raw
+    .filter((r) => r.rawDescription.trim().length > 0)
+    .map((r) => {
+      const dateStr = parseMMDDSlash(r.rawDate);
+      const description = cleanAFCUDescription(r.rawDescription);
+      const amount = r.amount;
+      // AFCU PDFs: positive amounts in statements are usually credits (income),
+      // negative are debits (expenses). If unsigned, rely on description keywords.
+      const type: 'income' | 'expense' = amount >= 0 ? 'income' : 'expense';
+      const absAmount = Math.abs(amount);
+      const { category, ventureId } = autoCategorize(description, 'afcu', amount);
+      return {
+        id: crypto.randomUUID(),
+        date: dateStr,
+        description,
+        rawDescription: r.rawDescription,
+        amount: absAmount,
+        type,
+        category,
+        ventureId,
+        bank: 'afcu' as const,
+        status: 'cleared' as const,
+        include: true,
+        isPending: false,
+        isDuplicate: false,
+      };
+    });
+}
+
 // ─── BANK BADGE ───────────────────────────────────────────────────────────────
 
 function BankBadge({ bank }: { bank: BankSource }) {
@@ -283,6 +330,193 @@ function BankBadge({ bank }: { bank: BankSource }) {
     >
       {isAFCU ? 'AFCU' : 'Mercury'}
     </span>
+  );
+}
+
+// ─── IMPORT SUGGESTIONS ──────────────────────────────────────────────────────
+
+function ImportSuggestions({ txs }: { txs: ParsedTransaction[] }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const imported = txs.filter((t) => t.include);
+
+  const totalIncome = imported
+    .filter((t) => t.type === 'income')
+    .reduce((s, t) => s + t.amount, 0);
+
+  const totalExpenses = imported
+    .filter((t) => t.type === 'expense')
+    .reduce((s, t) => s + t.amount, 0);
+
+  const netFlow = totalIncome - totalExpenses;
+
+  // Top spending categories
+  const categoryTotals = new Map<string, number>();
+  for (const tx of imported.filter((t) => t.type === 'expense')) {
+    categoryTotals.set(tx.category, (categoryTotals.get(tx.category) ?? 0) + tx.amount);
+  }
+  const topCategories = [...categoryTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  const maxCatAmount = topCategories[0]?.[1] ?? 1;
+
+  // Possible recurring charges: same merchant appears 2+ times
+  const merchantMap = new Map<string, number[]>();
+  for (const tx of imported.filter((t) => t.type === 'expense')) {
+    const key = tx.description.slice(0, 15).toLowerCase().trim();
+    if (!merchantMap.has(key)) merchantMap.set(key, []);
+    merchantMap.get(key)!.push(tx.amount);
+  }
+  const recurring = [...merchantMap.entries()]
+    .filter(([, amounts]) => amounts.length >= 2)
+    .map(([key, amounts]) => ({
+      name: key,
+      count: amounts.length,
+      avg: amounts.reduce((s, a) => s + a, 0) / amounts.length,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4);
+
+  // Largest single expenses
+  const largest = [...imported]
+    .filter((t) => t.type === 'expense')
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 3);
+
+  const uncategorized = imported.filter((t) => t.category === 'Uncategorized').length;
+
+  if (imported.length === 0) return null;
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        borderRadius: 12,
+        border: '1px solid var(--border)',
+        backgroundColor: 'var(--bg-elevated)',
+        overflow: 'hidden',
+        width: '100%',
+        textAlign: 'left',
+      }}
+    >
+      {/* Header */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          backgroundColor: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+          Account Insights
+        </span>
+        {expanded ? <ChevronUp size={14} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />}
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Net cash flow */}
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Net Cash Flow</p>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)' }}>{fmt(totalIncome)}</p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>Income</p>
+              </div>
+              <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-secondary)' }}>{fmt(totalExpenses)}</p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>Expenses</p>
+              </div>
+              <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 700, color: netFlow >= 0 ? '#22c55e' : '#ef4444' }}>
+                  {netFlow >= 0 ? '+' : ''}{fmt(netFlow)}
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>Net</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Top spending categories */}
+          {topCategories.length > 0 && (
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Top Spending</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {topCategories.map(([cat, amount]) => (
+                  <div key={cat}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{cat}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{fmt(amount)}</span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 2, backgroundColor: 'var(--border)' }}>
+                      <div style={{ height: '100%', borderRadius: 2, backgroundColor: 'var(--text-muted)', width: `${(amount / maxCatAmount) * 100}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recurring / subscriptions */}
+          {recurring.length > 0 && (
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Possible Recurring Charges
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {recurring.map((r) => (
+                  <div key={r.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{r.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {r.count}× · ~{fmt(r.avg)}/time
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Largest expenses */}
+          {largest.length > 0 && (
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Largest Expenses
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {largest.map((tx) => (
+                  <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{tx.description}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#ef4444' }}>${tx.amount.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Uncategorized warning */}
+          {uncategorized > 0 && (
+            <div style={{ padding: '10px 12px', borderRadius: 8, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{uncategorized} transaction{uncategorized !== 1 ? 's' : ''}</span>{' '}
+                landed in Uncategorized. Review them in the Financial Snapshot to assign categories.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -364,6 +598,7 @@ export function CSVImportModal({
   const [mercuryVentureId, setMercuryVentureId] = useState<string>(ventureFinancials[0]?.id ?? '');
   const [pendingOpen, setPendingOpen] = useState(false);
   const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
   const [importResult, setImportResult] = useState({ imported: 0, duplicates: 0, pending: 0 });
 
@@ -385,6 +620,7 @@ export function CSVImportModal({
     setPendingOpen(false);
     setBulkCategoryOpen(false);
     setBulkCategory('');
+    setIsParsing(false);
     setLedgerSearch('');
     setLedgerTypeFilter('all');
     setLedgerBankFilter('all');
@@ -393,8 +629,8 @@ export function CSVImportModal({
 
   // ── File handling ─────────────────────────────────────────────────────────
   const handleFileSelect = useCallback((file: File) => {
-    if (!file.name.endsWith('.csv')) {
-      setParseError('Please select a .csv file.');
+    if (!file.name.endsWith('.csv') && !file.name.endsWith('.pdf')) {
+      setParseError('Please select a .csv or .pdf file.');
       return;
     }
     setSelectedFile(file);
@@ -412,38 +648,63 @@ export function CSVImportModal({
   );
 
   // ── Parse file ────────────────────────────────────────────────────────────
-  const handleParse = useCallback(() => {
+  const handleParse = useCallback(async () => {
     if (!selectedFile || !selectedBank) return;
     setParseError(null);
+    setIsParsing(true);
 
-    Papa.parse<Record<string, string>>(selectedFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        try {
-          let parsed: ParsedTransaction[];
-          if (selectedBank === 'afcu') {
-            parsed = parseAFCU(results.data);
-          } else {
-            parsed = parseMercury(results.data, mercuryVentureId);
-          }
-
-          // Run duplicate detection
-          const withDupes = parsed.map((tx) => {
-            const isDuplicate = detectDuplicate(tx, existingEntries);
-            return { ...tx, isDuplicate, include: isDuplicate ? false : tx.include };
-          });
-
-          setTransactions(withDupes);
-          setStep(2);
-        } catch (err) {
-          setParseError(`Parse error: ${err instanceof Error ? err.message : String(err)}`);
+    try {
+      if (selectedFile.name.endsWith('.pdf')) {
+        // PDF path — AFCU only (Mercury doesn't provide PDFs with structured tx data)
+        const text = await extractTextFromPDF(selectedFile);
+        const parsed = parseAFCUPDF(text);
+        if (parsed.length === 0) {
+          setParseError('No transactions found in this PDF. Make sure it is an AFCU account statement.');
+          setIsParsing(false);
+          return;
         }
-      },
-      error: (err) => {
-        setParseError(`CSV parse error: ${err.message}`);
-      },
-    });
+        const withDupes = parsed.map((tx) => {
+          const isDuplicate = detectDuplicate(tx, existingEntries);
+          return { ...tx, isDuplicate, include: isDuplicate ? false : tx.include };
+        });
+        setTransactions(withDupes);
+        setStep(2);
+        setIsParsing(false);
+      } else {
+        // CSV path (existing)
+        Papa.parse<Record<string, string>>(selectedFile, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            try {
+              let parsed: ParsedTransaction[];
+              if (selectedBank === 'afcu') {
+                parsed = parseAFCU(results.data);
+              } else {
+                parsed = parseMercury(results.data, mercuryVentureId);
+              }
+              const withDupes = parsed.map((tx) => {
+                const isDuplicate = detectDuplicate(tx, existingEntries);
+                return { ...tx, isDuplicate, include: isDuplicate ? false : tx.include };
+              });
+              setTransactions(withDupes);
+              setStep(2);
+            } catch (err) {
+              setParseError(`Parse error: ${err instanceof Error ? err.message : String(err)}`);
+            } finally {
+              setIsParsing(false);
+            }
+          },
+          error: (err) => {
+            setParseError(`CSV parse error: ${err.message}`);
+            setIsParsing(false);
+          },
+        });
+      }
+    } catch (err) {
+      setParseError(`PDF parse error: ${err instanceof Error ? err.message : String(err)}`);
+      setIsParsing(false);
+    }
   }, [selectedFile, selectedBank, mercuryVentureId, existingEntries]);
 
   // ── Transaction updates ───────────────────────────────────────────────────
@@ -719,7 +980,7 @@ export function CSVImportModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept=".csv,.pdf"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
@@ -740,10 +1001,10 @@ export function CSVImportModal({
                 <div className="flex flex-col items-center gap-2">
                   <Upload size={28} style={{ color: 'var(--text-muted)' }} />
                   <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    Drag & drop your CSV here
+                    Drag & drop your CSV or PDF here
                   </p>
                   <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    or click to browse · .csv files only
+                    or click to browse · .csv or .pdf files
                   </p>
                 </div>
               )}
@@ -768,18 +1029,18 @@ export function CSVImportModal({
           <div className="flex justify-end">
             <button
               onClick={handleParse}
-              disabled={!selectedBank || !selectedFile}
+              disabled={!selectedBank || !selectedFile || isParsing}
               className="caesar-btn-primary"
               style={{
-                opacity: !selectedBank || !selectedFile ? 0.4 : 1,
-                cursor: !selectedBank || !selectedFile ? 'not-allowed' : 'pointer',
+                opacity: !selectedBank || !selectedFile || isParsing ? 0.4 : 1,
+                cursor: !selectedBank || !selectedFile || isParsing ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
               }}
             >
               <FileText size={14} />
-              Parse File
+              {isParsing ? 'Reading…' : 'Parse File'}
             </button>
           </div>
         </div>
@@ -1325,6 +1586,8 @@ export function CSVImportModal({
               </>
             )}
           </div>
+
+          <ImportSuggestions txs={transactions} />
 
           <button
             onClick={handleClose}

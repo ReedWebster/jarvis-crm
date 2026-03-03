@@ -282,6 +282,37 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
   }
 }
 
+// ─── NOMINATIM FORWARD GEOCODE ───────────────────────────────────────────────
+
+const ARCGIS_BASE = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer';
+
+/** Convert a free-text US address to lat/lng + a short "City, State" label.
+ *  Uses ArcGIS World Geocoding Service (USPS + county assessor data). */
+export async function forwardGeocode(
+  address: string
+): Promise<{ lat: number; lng: number; label: string } | null> {
+  try {
+    const params = new URLSearchParams({
+      singleLine: address,
+      outFields: 'City,RegionAbbr',
+      countryCode: 'USA',
+      maxLocations: '1',
+      f: 'json',
+    });
+    const res = await fetch(`${ARCGIS_BASE}/findAddressCandidates?${params}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data.candidates?.[0];
+    if (!c?.location) return null;
+    const city = (c.attributes?.City ?? '') as string;
+    const state = (c.attributes?.RegionAbbr ?? '') as string;
+    const label = [city, state].filter(Boolean).join(', ');
+    return { lat: c.location.y, lng: c.location.x, label };
+  } catch {
+    return null;
+  }
+}
+
 // ─── GENERATE CONNECTION ID ───────────────────────────────────────────────────
 
 export { generateId };

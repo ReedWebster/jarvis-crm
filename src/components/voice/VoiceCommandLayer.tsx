@@ -1270,69 +1270,6 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
         </div>
       )}
 
-      {/* ── Floating mic button cluster ───────────────────────────────────── */}
-      <div className="fixed bottom-6 right-6 z-[80] flex flex-col items-end gap-2">
-        {/* Settings + History buttons (small, above mic) */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setHistoryOpen(true); setSettingsOpen(false); }}
-            title="Command history"
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200"
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-muted)',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
-          >
-            <History size={14} />
-          </button>
-          <button
-            onClick={() => setSettingsOpen(true)}
-            title="Voice settings"
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200"
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              color: voiceSettings.ttsEnabled ? 'var(--text-muted)' : '#6b7280',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
-          >
-            {voiceSettings.ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-          </button>
-        </div>
-
-        {/* Main mic button */}
-        <button
-          onClick={toggleMic}
-          title={isListening ? 'Cancel (Esc)' : voiceSettings.pushToTalk ? 'Hold Space to talk' : 'Start voice command'}
-          className="relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200"
-          style={{
-            backgroundColor: isListening ? 'var(--text-primary)' : 'var(--bg-card)',
-            border: `2px solid ${isListening ? 'var(--text-primary)' : 'var(--border)'}`,
-            boxShadow: 'var(--shadow-card)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          {/* Pulse ring while listening */}
-          {isListening && (
-            <span
-              className="absolute inset-0 rounded-full animate-ping"
-              style={{ backgroundColor: 'var(--text-secondary)', opacity: 0.2 }}
-            />
-          )}
-          {isListening ? <MicOff size={22} /> : <Mic size={22} />}
-        </button>
-
-        {/* Push-to-talk hint */}
-        {voiceSettings.pushToTalk && !isListening && (
-          <span className="text-xs font-mono" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
-            hold space
-          </span>
-        )}
-      </div>
     </>
   );
 }

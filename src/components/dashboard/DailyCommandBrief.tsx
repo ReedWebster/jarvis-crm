@@ -2,21 +2,20 @@ import React, { useState, useMemo } from 'react';
 import {
   Sun,
   Calendar,
-  Target,
   CheckCircle2,
   Circle,
   Plus,
-  Trash2,
   BookOpen,
   FileText,
   ListTodo,
   Check,
+  ExternalLink,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type {
   Identity,
-  Goal,
-  DailyEvent,
+  TimeBlock,
+  TimeCategory,
   Habit,
   HabitTracker,
   Note,
@@ -29,13 +28,22 @@ import {
   generateId,
 } from '../../utils';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${m.toString().padStart(2, '0')} ${ampm}`;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   identity: Identity;
-  goals: Goal[];
-  dailyEvents: DailyEvent[];
-  setDailyEvents: (v: DailyEvent[] | ((p: DailyEvent[]) => DailyEvent[])) => void;
+  timeBlocks: TimeBlock[];
+  timeCategories: TimeCategory[];
+  onNavigateToCalendar?: () => void;
   habits: Habit[];
   habitTracker: HabitTracker[];
   setHabitTracker: (v: HabitTracker[] | ((p: HabitTracker[]) => HabitTracker[])) => void;
@@ -101,7 +109,7 @@ function QuickAddNotePanel({ onAddNote }: { onAddNote: (note: Note) => void }) {
         disabled={!content.trim() && !title.trim()}
         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
         style={{
-          backgroundColor: saved ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+          backgroundColor: 'var(--bg-elevated)',
           color: saved ? 'var(--text-secondary)' : 'var(--text-muted)',
           border: '1px solid var(--border)',
         }}
@@ -168,7 +176,6 @@ function TodoSummaryPanel({
         </div>
       </div>
 
-      {/* Quick-add form */}
       {showAdd && (
         <div className="rounded-lg p-3 space-y-2 border" style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
           <input
@@ -249,9 +256,9 @@ function TodoSummaryPanel({
 
 export default function DailyCommandBrief({
   identity,
-  goals,
-  dailyEvents,
-  setDailyEvents,
+  timeBlocks,
+  timeCategories,
+  onNavigateToCalendar,
   habits,
   habitTracker,
   setHabitTracker,
@@ -264,53 +271,24 @@ export default function DailyCommandBrief({
   const today = todayStr();
   const todayDate = new Date();
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-
   const greeting = getGreeting();
   const dailyQuote = getDailyQuote();
-
   const todayFormatted = format(todayDate, 'EEEE, MMMM d, yyyy');
 
-  const topGoals = useMemo(
-    () => goals.filter((g) => g.status === 'in-progress').slice(0, 3),
-    [goals]
-  );
+  // Current time as HH:MM for "now" indicator
+  const nowStr = useMemo(() => {
+    const now = new Date();
+    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  }, []);
 
-  const todayEvents = useMemo(
+  // Today's time blocks sorted by start time
+  const todayBlocks = useMemo(
     () =>
-      dailyEvents
-        .filter((e) => e.date === today)
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [dailyEvents, today]
+      timeBlocks
+        .filter((b) => b.date === today)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [timeBlocks, today]
   );
-
-  // ── Add Event form state ────────────────────────────────────────────────────
-
-  const [showAddEvent, setShowAddEvent] = useState(false);
-  const [newEventTitle, setNewEventTitle] = useState('');
-  const [newEventTime, setNewEventTime] = useState('');
-  const [newEventNotes, setNewEventNotes] = useState('');
-
-  function handleAddEvent() {
-    const title = newEventTitle.trim();
-    if (!title) return;
-    const event: DailyEvent = {
-      id: generateId(),
-      date: today,
-      title,
-      time: newEventTime,
-      notes: newEventNotes.trim(),
-    };
-    setDailyEvents((prev) => [...prev, event]);
-    setNewEventTitle('');
-    setNewEventTime('');
-    setNewEventNotes('');
-    setShowAddEvent(false);
-  }
-
-  function handleDeleteEvent(id: string) {
-    setDailyEvents((prev) => prev.filter((e) => e.id !== id));
-  }
 
   // ── Habit tracker ───────────────────────────────────────────────────────────
 
@@ -338,21 +316,7 @@ export default function DailyCommandBrief({
     });
   }
 
-  const completedHabits = habits.filter(
-    (h) => todayHabits.habits[h.id]
-  ).length;
-
-  // ── Area color mapping ──────────────────────────────────────────────────────
-
-  const areaColors: Record<string, string> = {
-    ventures: 'var(--text-muted)',
-    academic: 'var(--text-muted)',
-    health: 'var(--text-secondary)',
-    spiritual: 'var(--text-muted)',
-    financial: 'var(--text-secondary)',
-    relationships: 'var(--text-muted)',
-    personal: 'var(--text-muted)',
-  };
+  const completedHabits = habits.filter((h) => todayHabits.habits[h.id]).length;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -361,7 +325,7 @@ export default function DailyCommandBrief({
       {/* Page title */}
       <div className="flex items-center gap-3">
         <Sun className="w-6 h-6 text-[var(--text-muted)]" />
-        <h1 className="section-title ">Daily Command Brief</h1>
+        <h1 className="section-title">Daily Command Brief</h1>
       </div>
 
       {/* Main 2-column grid */}
@@ -370,11 +334,11 @@ export default function DailyCommandBrief({
         {/* ── LEFT COLUMN (2/3) ──────────────────────────────────────────────── */}
         <div className="col-span-1 md:col-span-2 space-y-5">
 
-          {/* Greeting + date + semester */}
+          {/* Greeting + date */}
           <div className="caesar-card space-y-2">
             <h2 className="text-2xl font-bold transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
               {greeting},{' '}
-              <span className="text-[var(--text-muted)] ">
+              <span className="text-[var(--text-muted)]">
                 {identity.name.split(' ')[0]}
               </span>
               .
@@ -387,182 +351,107 @@ export default function DailyCommandBrief({
             </div>
           </div>
 
-          {/* Top 3 Goals */}
-          <div className="caesar-card space-y-3">
-            <div className="flex items-center gap-2">
-              <Target className="w-5 h-5 text-[var(--text-muted)]" />
-              <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                Top Priorities in Progress
-              </h3>
-            </div>
-            {topGoals.length === 0 ? (
-              <p className="text-sm italic transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-                No in-progress goals. Head to Goals to add some.
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {topGoals.map((goal, idx) => (
-                  <li key={goal.id} className="flex items-start gap-3">
-                    <span
-                      className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                      style={{
-                        background: areaColors[goal.area] ?? 'var(--text-muted)',
-                        color: 'var(--bg)',
-                      }}
-                    >
-                      {idx + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-snug truncate transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
-                        {goal.title}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 rounded-full h-1.5 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                          <div
-                            className="h-1.5 rounded-full transition-all"
-                            style={{
-                              width: `${goal.progress}%`,
-                              background: areaColors[goal.area] ?? 'var(--text-muted)',
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-                          {goal.progress}%
-                        </span>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Today's Events */}
+          {/* Today's Schedule — interactive snapshot */}
           <div className="caesar-card space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-[var(--text-muted)]" />
                 <h3 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                  Today's Events
+                  Today's Schedule
                 </h3>
               </div>
-              <button
-                onClick={() => setShowAddEvent((v) => !v)}
-                className="caesar-btn-ghost flex items-center gap-1 text-xs py-1 px-2"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Event
-              </button>
+              {onNavigateToCalendar && (
+                <button
+                  onClick={onNavigateToCalendar}
+                  className="caesar-btn-ghost flex items-center gap-1.5 text-xs py-1 px-2"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open Calendar
+                </button>
+              )}
             </div>
 
-            {/* Inline add event form */}
-            {showAddEvent && (
-              <div
-                className="rounded-xl p-4 space-y-3 border border-[var(--text-muted)]/20 transition-colors duration-300"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <p className="text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider">
-                  New Event
+            {todayBlocks.length === 0 ? (
+              <div className="py-4 text-center space-y-2">
+                <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
+                  Nothing scheduled for today.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="col-span-1 sm:col-span-2">
-                    <label className="caesar-label block mb-1">Title</label>
-                    <input
-                      type="text"
-                      value={newEventTitle}
-                      onChange={(e) => setNewEventTitle(e.target.value)}
-                      placeholder="Event title..."
-                      className="caesar-input w-full"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddEvent();
-                        if (e.key === 'Escape') setShowAddEvent(false);
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="caesar-label block mb-1">Time</label>
-                    <input
-                      type="time"
-                      value={newEventTime}
-                      onChange={(e) => setNewEventTime(e.target.value)}
-                      className="caesar-input w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="caesar-label block mb-1">Notes</label>
-                    <input
-                      type="text"
-                      value={newEventNotes}
-                      onChange={(e) => setNewEventNotes(e.target.value)}
-                      placeholder="Optional notes..."
-                      className="caesar-input w-full"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2 justify-end">
+                {onNavigateToCalendar && (
                   <button
-                    onClick={() => setShowAddEvent(false)}
-                    className="caesar-btn-ghost text-xs py-1.5 px-3"
+                    onClick={onNavigateToCalendar}
+                    className="text-xs underline underline-offset-2"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    Cancel
+                    Add blocks in Calendar →
                   </button>
-                  <button
-                    onClick={handleAddEvent}
-                    className="caesar-btn-primary text-xs py-1.5 px-3"
-                    disabled={!newEventTitle.trim()}
-                  >
-                    Add
-                  </button>
-                </div>
+                )}
               </div>
-            )}
-
-            {/* Event list */}
-            {todayEvents.length === 0 ? (
-              <p className="text-sm italic transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-                No events scheduled for today.
-              </p>
             ) : (
-              <ul className="space-y-2">
-                {todayEvents.map((event) => (
-                  <li
-                    key={event.id}
-                    className="flex items-start gap-3 group rounded-lg px-3 py-2 transition-colors duration-300"
-                    style={{ backgroundColor: 'var(--bg-elevated)' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-elevated)')}
-                  >
-                    <div className="flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 rounded-full bg-[var(--text-muted)] mt-1" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
-                        {event.title}
-                      </p>
-                      <div className="flex items-center gap-2 text-xs mt-0.5 transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>
-                        {event.time && (
-                          <span className="text-[var(--text-muted)]/70">
-                            {event.time}
-                          </span>
-                        )}
-                        {event.notes && <span>{event.notes}</span>}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteEvent(event.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-secondary)] hover:text-[var(--text-secondary)] p-0.5"
-                      aria-label="Delete event"
+              <ul className="space-y-1.5">
+                {todayBlocks.map((block) => {
+                  const cat = timeCategories.find((c) => c.id === block.categoryId);
+                  const color = cat?.color ?? 'var(--text-muted)';
+                  const isNow = nowStr >= block.startTime && nowStr < block.endTime;
+                  const isPast = block.endTime <= nowStr;
+
+                  return (
+                    <li
+                      key={block.id}
+                      onClick={onNavigateToCalendar}
+                      className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-150"
+                      style={{
+                        backgroundColor: isNow ? `${color}18` : 'var(--bg-elevated)',
+                        border: `1px solid ${isNow ? color + '50' : 'transparent'}`,
+                        cursor: onNavigateToCalendar ? 'pointer' : 'default',
+                        opacity: isPast && !isNow ? 0.5 : 1,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!onNavigateToCalendar) return;
+                        e.currentTarget.style.backgroundColor = isNow ? `${color}28` : 'var(--bg-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = isNow ? `${color}18` : 'var(--bg-elevated)';
+                      }}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </li>
-                ))}
+                      {/* Category color bar */}
+                      <div
+                        className="w-1 rounded-full flex-shrink-0 self-stretch min-h-[2rem]"
+                        style={{ backgroundColor: color }}
+                      />
+
+                      {/* Block info */}
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {block.title || cat?.name || 'Untitled'}
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {formatTime(block.startTime)} – {formatTime(block.endTime)}
+                        </p>
+                      </div>
+
+                      {/* Now badge */}
+                      {isNow && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
+                          style={{
+                            backgroundColor: `${color}25`,
+                            color,
+                          }}
+                        >
+                          Now
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
 
-          {/* Habit Tracker */}
+          {/* Daily Habits */}
           <div className="caesar-card space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -591,7 +480,6 @@ export default function DailyCommandBrief({
               </span>
             </div>
 
-            {/* Progress bar */}
             {habits.length > 0 && (
               <div className="w-full rounded-full h-1.5 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-elevated)' }}>
                 <div
