@@ -506,6 +506,31 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
       .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
   }, [clients]);
 
+  // ── Payment category lists (all clients) ──────────────────────────────────
+
+  const paymentsByCategory = useMemo(() => {
+    const outstanding: Array<{ client: Client; payment: ClientPayment }> = [];
+    const upcoming:    Array<{ client: Client; payment: ClientPayment }> = [];
+    const paid:        Array<{ client: Client; payment: ClientPayment }> = [];
+
+    clients.forEach(client => {
+      client.payments.forEach(payment => {
+        const s = effectivePaymentStatus(payment);
+        if (s === 'overdue')  outstanding.push({ client, payment });
+        else if (s === 'pending') upcoming.push({ client, payment });
+        else paid.push({ client, payment });
+      });
+    });
+
+    outstanding.sort((a, b) => a.payment.dueDate.localeCompare(b.payment.dueDate));
+    upcoming.sort((a, b) => a.payment.dueDate.localeCompare(b.payment.dueDate));
+    paid.sort((a, b) =>
+      (b.payment.paidDate ?? b.payment.dueDate).localeCompare(a.payment.paidDate ?? a.payment.dueDate)
+    );
+
+    return { outstanding, upcoming, paid };
+  }, [clients]);
+
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return clients.filter(c => {
@@ -603,6 +628,18 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
 
   function deletePayment(pmtId: string) {
     setForm(f => ({ ...f, payments: f.payments.filter(p => p.id !== pmtId) }));
+  }
+
+  // Mark a payment paid directly from the payments overview (no modal required)
+  function markPaymentPaidDirect(clientId: string, pmtId: string) {
+    setClients(prev => prev.map(c =>
+      c.id !== clientId ? c : {
+        ...c,
+        payments: c.payments.map(p =>
+          p.id === pmtId ? { ...p, status: 'paid' as const, paidDate: todayStr() } : p
+        ),
+      }
+    ));
   }
 
   function toggleService(s: string) {
@@ -865,6 +902,156 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
           </div>
         ))}
       </div>
+
+      {/* ── Payments Overview ─────────────────────────────────────────── */}
+      {(paymentsByCategory.outstanding.length > 0 || paymentsByCategory.upcoming.length > 0 || paymentsByCategory.paid.length > 0) && (
+        <div className="space-y-3">
+
+          {/* Outstanding */}
+          {paymentsByCategory.outstanding.length > 0 && (
+            <div className="rounded-xl border p-4 space-y-2.5"
+              style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'rgba(239,68,68,0.3)' }}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={14} style={{ color: '#ef4444' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Outstanding</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                    style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                    {paymentsByCategory.outstanding.length}
+                  </span>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#ef4444' }}>
+                  {fmtUSD(paymentsByCategory.outstanding.reduce((s, { payment }) => s + payment.amount, 0))}
+                </span>
+              </div>
+              {paymentsByCategory.outstanding.map(({ client, payment }) => {
+                const days = differenceInDays(new Date(), new Date(payment.dueDate));
+                return (
+                  <div key={payment.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5"
+                    style={{ backgroundColor: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.12)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                        {client.company || client.name}
+                        {payment.description && (
+                          <span className="text-xs font-normal ml-2" style={{ color: 'var(--text-muted)' }}>{payment.description}</span>
+                        )}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>
+                        {days === 0 ? 'Due today' : `${days} day${days !== 1 ? 's' : ''} overdue`}
+                        {' · Due '}{formatDate(payment.dueDate)}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
+                      {fmtUSD(payment.amount)}
+                    </span>
+                    <button
+                      onClick={() => markPaymentPaidDirect(client.id, payment.id)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border flex-shrink-0 transition-all hover:border-[#10b981]"
+                      style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: '#10b981' }}
+                    >
+                      <CheckCircle2 size={11} /> Mark Paid
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Upcoming */}
+          {paymentsByCategory.upcoming.length > 0 && (
+            <div className="rounded-xl border p-4 space-y-2.5"
+              style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'rgba(217,119,6,0.25)' }}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Clock size={14} style={{ color: '#d97706' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Upcoming</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                    style={{ backgroundColor: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
+                    {paymentsByCategory.upcoming.length}
+                  </span>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#d97706' }}>
+                  {fmtUSD(paymentsByCategory.upcoming.reduce((s, { payment }) => s + payment.amount, 0))}
+                </span>
+              </div>
+              {paymentsByCategory.upcoming.map(({ client, payment }) => {
+                const days = differenceInDays(new Date(payment.dueDate), new Date());
+                return (
+                  <div key={payment.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5"
+                    style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                        {client.company || client.name}
+                        {payment.description && (
+                          <span className="text-xs font-normal ml-2" style={{ color: 'var(--text-muted)' }}>{payment.description}</span>
+                        )}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {days === 0 ? 'Due today' : `Due in ${days} day${days !== 1 ? 's' : ''}`}
+                        {' · '}{formatDate(payment.dueDate)}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
+                      {fmtUSD(payment.amount)}
+                    </span>
+                    <button
+                      onClick={() => markPaymentPaidDirect(client.id, payment.id)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border flex-shrink-0 transition-all hover:border-[#10b981]"
+                      style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: '#10b981' }}
+                    >
+                      <CheckCircle2 size={11} /> Mark Paid
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Paid */}
+          {paymentsByCategory.paid.length > 0 && (
+            <div className="rounded-xl border p-4 space-y-2.5"
+              style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'rgba(16,185,129,0.2)' }}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={14} style={{ color: '#10b981' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Paid</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                    style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
+                    {paymentsByCategory.paid.length}
+                  </span>
+                </div>
+                <span className="text-sm font-bold" style={{ color: '#10b981' }}>
+                  {fmtUSD(paymentsByCategory.paid.reduce((s, { payment }) => s + payment.amount, 0))}
+                </span>
+              </div>
+              {paymentsByCategory.paid.slice(0, 5).map(({ client, payment }) => (
+                <div key={payment.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5"
+                  style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                      {client.company || client.name}
+                      {payment.description && (
+                        <span className="text-xs font-normal ml-2" style={{ color: 'var(--text-muted)' }}>{payment.description}</span>
+                      )}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      Paid {payment.paidDate ? formatDate(payment.paidDate) : ''}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold flex-shrink-0" style={{ color: '#10b981' }}>
+                    {fmtUSD(payment.amount)}
+                  </span>
+                </div>
+              ))}
+              {paymentsByCategory.paid.length > 5 && (
+                <p className="text-xs text-center pt-1" style={{ color: 'var(--text-muted)' }}>
+                  +{paymentsByCategory.paid.length - 5} more paid
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Monthly billing reminders */}
       {billingReminders.length > 0 && (
