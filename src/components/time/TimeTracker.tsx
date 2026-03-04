@@ -823,7 +823,7 @@ export function TimeTracker({
     date: today,
     categoryId: smartCategoryId,
     title: '', startTime: '09:00', endTime: '10:00', notes: '', energy: 3,
-    repeat: 'none', repeatUntil: format(addDays(new Date(), 28), 'yyyy-MM-dd'),
+    repeat: 'none', repeatUntil: `${new Date().getFullYear()}-12-31`,
   });
   const [catForm, setCatForm] = useState({ name: '', color: '#3b82f6' });
 
@@ -853,7 +853,7 @@ export function TimeTracker({
       endTime: endTime ?? '10:00',
       notes: '', energy: 3,
       repeat: 'none',
-      repeatUntil: format(addDays(parseISO(baseDate), 28), 'yyyy-MM-dd'),
+      repeatUntil: `${new Date().getFullYear()}-12-31`,
     });
     setLogModalOpen(true);
   }, [selectedDay, smartCategoryId]);
@@ -863,7 +863,7 @@ export function TimeTracker({
       date: block.date, categoryId: block.categoryId,
       title: block.title ?? '', startTime: block.startTime, endTime: block.endTime,
       notes: block.notes, energy: block.energy, editingId: block.id,
-      repeat: 'none', repeatUntil: format(addDays(parseISO(block.date), 28), 'yyyy-MM-dd'),
+      repeat: 'none', repeatUntil: `${new Date().getFullYear()}-12-31`,
     });
     setLogModalOpen(true);
   }, []);

@@ -11,7 +11,7 @@ import {
   startOfMonth, endOfMonth, eachDayOfInterval,
   isSameMonth, getDay, addMonths, isBefore,
 } from 'date-fns';
-import type { TimeBlock, TimeCategory } from '../../types';
+import type { TimeBlock, TimeCategory, Client } from '../../types';
 import {
   generateId, todayStr, calcDurationHours,
   getCategoryColor, getCategoryName, formatTime,
@@ -48,6 +48,7 @@ interface LogFormState {
   startTime: string;
   endTime: string;
   notes: string;
+  clientId: string;
   repeat: RepeatOption;
   repeatUntil: string;
   editingId?: string;
@@ -111,9 +112,9 @@ function getMinutesAtClientY(el: HTMLElement, _scroll: HTMLElement | null, clien
 
 // ─── EVENT BLOCK ──────────────────────────────────────────────────────────────
 
-function EventBlock({ block, categories, top, height, colPct, widthPct, onClick }: {
+function EventBlock({ block, categories, top, height, colPct, widthPct, onClick, clientName }: {
   block: TimeBlock; categories: TimeCategory[]; top: number; height: number;
-  colPct: number; widthPct: number; onClick: () => void;
+  colPct: number; widthPct: number; onClick: () => void; clientName?: string;
 }) {
   const color = getCategoryColor(block.categoryId, categories);
   const displayName = block.title?.trim() || getCategoryName(block.categoryId, categories);
@@ -122,7 +123,7 @@ function EventBlock({ block, categories, top, height, colPct, widthPct, onClick 
     <div
       onMouseDown={e => e.stopPropagation()}
       onClick={e => { e.stopPropagation(); onClick(); }}
-      title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
+      title={`${displayName}${clientName ? ` · ${clientName}` : ''}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
       style={{
         position: 'absolute', top: top + 1, height: height - 2,
         left: `calc(${colPct}% + 2px)`, width: `calc(${widthPct}% - 4px)`,
@@ -140,6 +141,7 @@ function EventBlock({ block, categories, top, height, colPct, widthPct, onClick 
         {displayName}
       </span>
       {!isShort && <span style={{ fontSize: 10, color: `${color}bb`, lineHeight: 1.2 }}>{formatTime(block.startTime)} – {formatTime(block.endTime)}</span>}
+      {!isShort && clientName && <span style={{ fontSize: 9, color: `${color}99`, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>● {clientName}</span>}
     </div>
   );
 }
@@ -242,9 +244,9 @@ function useDragCreate(scrollRef: React.RefObject<HTMLDivElement>, onComplete: (
 
 // ─── DAY VIEW ─────────────────────────────────────────────────────────────────
 
-function AppleDayView({ date, blocks, categories, currentTimePx, isToday, onCreateBlock, onClickBlock, scrollRef }: {
+function AppleDayView({ date, blocks, categories, currentTimePx, isToday, onCreateBlock, onClickBlock, scrollRef, clientsMap }: {
   date: string; blocks: TimeBlock[]; categories: TimeCategory[];
-  currentTimePx: number | null; isToday: boolean;
+  currentTimePx: number | null; isToday: boolean; clientsMap: Map<string, string>;
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
@@ -269,7 +271,7 @@ function AppleDayView({ date, blocks, categories, currentTimePx, isToday, onCrea
             {blocks.map(block => {
               const info = layout.get(block.id);
               if (!info) return null;
-              return <EventBlock key={block.id} block={block} categories={categories} top={eventTopPx(block.startTime)} height={eventHeightPx(block.startTime, block.endTime)} colPct={(100 / info.totalCols) * info.col} widthPct={100 / info.totalCols} onClick={() => onClickBlock(block)} />;
+              return <EventBlock key={block.id} block={block} categories={categories} top={eventTopPx(block.startTime)} height={eventHeightPx(block.startTime, block.endTime)} colPct={(100 / info.totalCols) * info.col} widthPct={100 / info.totalCols} onClick={() => onClickBlock(block)} clientName={block.clientId ? clientsMap.get(block.clientId) : undefined} />;
             })}
             {ghost?.date === date && <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />}
             {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
@@ -282,9 +284,9 @@ function AppleDayView({ date, blocks, categories, currentTimePx, isToday, onCrea
 
 // ─── WEEK VIEW ────────────────────────────────────────────────────────────────
 
-function AppleWeekView({ weekDays, timeBlocks, categories, currentTimePx, today, onCreateBlock, onClickBlock, scrollRef }: {
+function AppleWeekView({ weekDays, timeBlocks, categories, currentTimePx, today, onCreateBlock, onClickBlock, scrollRef, clientsMap }: {
   weekDays: Date[]; timeBlocks: TimeBlock[]; categories: TimeCategory[];
-  currentTimePx: number | null; today: string;
+  currentTimePx: number | null; today: string; clientsMap: Map<string, string>;
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
@@ -319,7 +321,7 @@ function AppleWeekView({ weekDays, timeBlocks, categories, currentTimePx, today,
                 {dayBlocks.map(block => {
                   const info = layout.get(block.id);
                   if (!info) return null;
-                  return <EventBlock key={block.id} block={block} categories={categories} top={eventTopPx(block.startTime)} height={eventHeightPx(block.startTime, block.endTime)} colPct={(100 / info.totalCols) * info.col} widthPct={100 / info.totalCols} onClick={() => onClickBlock(block)} />;
+                  return <EventBlock key={block.id} block={block} categories={categories} top={eventTopPx(block.startTime)} height={eventHeightPx(block.startTime, block.endTime)} colPct={(100 / info.totalCols) * info.col} widthPct={100 / info.totalCols} onClick={() => onClickBlock(block)} clientName={block.clientId ? clientsMap.get(block.clientId) : undefined} />;
                 })}
                 {ghost?.date === dayStr && <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />}
                 {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
@@ -471,6 +473,8 @@ export function TeamCalendarView() {
   const today = todayStr();
   const [teamBlocks, setTeamBlocks] = useWorkspaceStorage<TimeBlock[]>('teamBlocks', []);
   const [teamCategories, setTeamCategories] = useWorkspaceStorage<TimeCategory[]>('teamCategories', DEFAULT_TEAM_CATEGORIES);
+  const [teamClients] = useWorkspaceStorage<Client[]>('clients', []);
+  const clientsMap = useMemo(() => new Map(teamClients.map(c => [c.id, c.name])), [teamClients]);
 
   const [calView, setCalView] = useState<CalView>('week');
   const [selectedDay, setSelectedDay] = useState(today);
@@ -502,8 +506,8 @@ export function TeamCalendarView() {
 
   const [logForm, setLogForm] = useState<LogFormState>({
     date: today, categoryId: teamCategories[0]?.id ?? '',
-    title: '', startTime: '09:00', endTime: '10:00', notes: '',
-    repeat: 'none', repeatUntil: format(addDays(new Date(), 28), 'yyyy-MM-dd'),
+    title: '', startTime: '09:00', endTime: '10:00', notes: '', clientId: '',
+    repeat: 'none', repeatUntil: `${new Date().getFullYear()}-12-31`,
   });
 
   const weekDays = useMemo(() => getWeekDays(addDays(new Date(), weekOffset * 7)), [weekOffset]);
@@ -523,18 +527,18 @@ export function TeamCalendarView() {
 
   const openLogModal = useCallback((date?: string, startTime?: string, endTime?: string) => {
     const baseDate = date ?? selectedDay;
-    setLogForm({ date: baseDate, categoryId: teamCategories[0]?.id ?? '', title: '', startTime: startTime ?? '09:00', endTime: endTime ?? '10:00', notes: '', repeat: 'none', repeatUntil: format(addDays(parseISO(baseDate), 28), 'yyyy-MM-dd') });
+    setLogForm({ date: baseDate, categoryId: teamCategories[0]?.id ?? '', title: '', startTime: startTime ?? '09:00', endTime: endTime ?? '10:00', notes: '', clientId: '', repeat: 'none', repeatUntil: `${new Date().getFullYear()}-12-31` });
     setLogModalOpen(true);
   }, [selectedDay, teamCategories]);
 
   const openEditModal = useCallback((block: TimeBlock) => {
-    setLogForm({ date: block.date, categoryId: block.categoryId, title: block.title ?? '', startTime: block.startTime, endTime: block.endTime, notes: block.notes, repeat: 'none', repeatUntil: format(addDays(parseISO(block.date), 28), 'yyyy-MM-dd'), editingId: block.id });
+    setLogForm({ date: block.date, categoryId: block.categoryId, title: block.title ?? '', startTime: block.startTime, endTime: block.endTime, notes: block.notes, clientId: block.clientId ?? '', repeat: 'none', repeatUntil: `${new Date().getFullYear()}-12-31`, editingId: block.id });
     setLogModalOpen(true);
   }, []);
 
   const handleLogSubmit = () => {
     if (!logForm.categoryId || calcDurationHours(logForm.startTime, logForm.endTime) <= 0) return;
-    const fields = { categoryId: logForm.categoryId, title: logForm.title.trim() || undefined, startTime: logForm.startTime, endTime: logForm.endTime, notes: logForm.notes.trim(), energy: 3 as const };
+    const fields = { categoryId: logForm.categoryId, title: logForm.title.trim() || undefined, startTime: logForm.startTime, endTime: logForm.endTime, notes: logForm.notes.trim(), energy: 3 as const, ...(logForm.clientId ? { clientId: logForm.clientId } : { clientId: undefined }) };
     if (logForm.editingId) {
       setTeamBlocks(prev => prev.map(b => b.id === logForm.editingId ? { ...b, date: logForm.date, ...fields } : b));
     } else if (logForm.repeat !== 'none' && logForm.repeatUntil >= logForm.date) {
@@ -636,8 +640,8 @@ export function TeamCalendarView() {
             onAddEvent={() => openLogModal()}
           />
         </div>
-        {calView === 'day' && <AppleDayView date={selectedDay} blocks={getDayBlocks(filteredBlocks, selectedDay)} categories={teamCategories} currentTimePx={currentTimePx} isToday={selectedDay === today} onCreateBlock={openLogModal} onClickBlock={openEditModal} scrollRef={scrollRef} />}
-        {calView === 'week' && <AppleWeekView weekDays={weekDays} timeBlocks={filteredBlocks} categories={teamCategories} currentTimePx={currentTimePx} today={today} onCreateBlock={openLogModal} onClickBlock={openEditModal} scrollRef={scrollRef} />}
+        {calView === 'day' && <AppleDayView date={selectedDay} blocks={getDayBlocks(filteredBlocks, selectedDay)} categories={teamCategories} currentTimePx={currentTimePx} isToday={selectedDay === today} onCreateBlock={openLogModal} onClickBlock={openEditModal} scrollRef={scrollRef} clientsMap={clientsMap} />}
+        {calView === 'week' && <AppleWeekView weekDays={weekDays} timeBlocks={filteredBlocks} categories={teamCategories} currentTimePx={currentTimePx} today={today} onCreateBlock={openLogModal} onClickBlock={openEditModal} scrollRef={scrollRef} clientsMap={clientsMap} />}
         {calView === 'month' && <AppleMonthView timeBlocks={filteredBlocks} timeCategories={teamCategories} selectedDay={selectedDay} onSelectDay={(d, sw) => { setSelectedDay(d); if (sw) setCalView('day'); }} monthOffset={monthOffset} />}
       </div>
 
@@ -699,6 +703,15 @@ export function TeamCalendarView() {
                   <input type="date" className="caesar-input w-full" value={logForm.repeatUntil} min={logForm.date} onChange={e => setLogForm(f => ({ ...f, repeatUntil: e.target.value }))} />
                 </div>
               )}
+            </div>
+          )}
+          {teamClients.length > 0 && (
+            <div>
+              <label className="caesar-label">Linked Client <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+              <select className="caesar-input w-full" value={logForm.clientId} onChange={e => setLogForm(f => ({ ...f, clientId: e.target.value }))}>
+                <option value="">No client linked</option>
+                {teamClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
           )}
           <div>

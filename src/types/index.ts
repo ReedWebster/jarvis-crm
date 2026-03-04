@@ -48,6 +48,7 @@ export interface TimeBlock {
   notes: string;
   energy: 1 | 2 | 3 | 4 | 5;
   recurrenceId?: string; // groups repeating events for bulk delete
+  clientId?: string;     // team calendar: linked client
 }
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
