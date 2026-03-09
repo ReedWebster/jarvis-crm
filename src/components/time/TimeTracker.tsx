@@ -383,22 +383,16 @@ function useDragCreate(
       Math.max(getMinutesAtClientY(containerEl, scrollRef.current, clientY), 0),
       23 * 60
     );
+    // On touch: tap-to-create at that time (no drag — drag conflicts with vertical scroll)
+    if ('touches' in e) {
+      onComplete(date, minutesToTimeStr(startMin), minutesToTimeStr(Math.min(startMin + 60, 23 * 60 + 45)));
+      return;
+    }
+
     dragRef.current = { date, startMin, containerEl };
     setGhost({ date, startMin, endMin: startMin + 60 });
 
-    if ('touches' in e) {
-      const onTouchMove = (te: TouchEvent) => {
-        te.preventDefault();
-        updateGhost(te.touches[0].clientY);
-      };
-      const onTouchEnd = () => {
-        document.removeEventListener('touchmove', onTouchMove);
-        document.removeEventListener('touchend', onTouchEnd);
-        completeDrag();
-      };
-      document.addEventListener('touchmove', onTouchMove, { passive: false });
-      document.addEventListener('touchend', onTouchEnd);
-    } else {
+    {
       const onMouseMove = (me: MouseEvent) => updateGhost(me.clientY);
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove);

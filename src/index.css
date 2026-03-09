@@ -223,9 +223,9 @@
   .tab-bar::-webkit-scrollbar { display: none; }
   .tab-bar > * { flex-shrink: 0; }
 
-  /* Calendar grid drag area — disable default touch actions so our drag works */
+  /* Calendar grid — allow normal vertical scroll on touch; drag-to-create is mouse-only */
   .cal-grid-col {
-    touch-action: none;
+    touch-action: pan-y;
   }
 }
 
