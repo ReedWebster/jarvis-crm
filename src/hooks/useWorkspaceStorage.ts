@@ -63,7 +63,9 @@ export function useWorkspaceStorage<T>(
   const [userId, setUserId] = useState<string | null>(_wsUserId);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef<T>(storedValue);
+  const isAuthRef = useRef<boolean>(false);
   latestRef.current = storedValue;
+  isAuthRef.current = !!userId;
 
   // Persist to localStorage on every change
   useEffect(() => {
@@ -114,6 +116,23 @@ export function useWorkspaceStorage<T>(
     return () => { cancelled = true; };
   }, [userId, key]);
 
+  // Flush pending save immediately (used on visibility change / unload)
+  const flushToWorkspace = useCallback(
+    (value: T) => {
+      if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+      supabase
+        .from('workspace_data')
+        .upsert(
+          { key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        )
+        .then(({ error }) => {
+          if (error) console.warn(`[WORKSPACE] Flush failed for "${key}":`, error.message);
+        });
+    },
+    [key],
+  );
+
   // Debounced save to workspace_data
   const syncToWorkspace = useCallback(
     (value: T) => {
@@ -128,10 +147,30 @@ export function useWorkspaceStorage<T>(
           .then(({ error }) => {
             if (error) console.warn(`[WORKSPACE] Save failed for "${key}":`, error.message);
           });
-      }, 1500);
+      }, 500);
     },
     [key],
   );
+
+  // Flush on tab hide / mobile app switch / page close
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && saveTimerRef.current && isAuthRef.current) {
+        flushToWorkspace(latestRef.current);
+      }
+    };
+    const handleBeforeUnload = () => {
+      if (saveTimerRef.current && isAuthRef.current) {
+        flushToWorkspace(latestRef.current);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [flushToWorkspace]);
 
   const setValue = useCallback(
     (value: T | ((prev: T) => T)) => {

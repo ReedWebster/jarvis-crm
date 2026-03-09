@@ -61,7 +61,9 @@ export function useSupabaseStorage<T>(
   const [userId, setUserId] = useState<string | null>(_userId);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef<T>(storedValue);
+  const userIdRef = useRef<string | null>(userId);
   latestRef.current = storedValue;
+  userIdRef.current = userId;
 
   // ── Persist every change to localStorage ──
   useEffect(() => {
@@ -121,6 +123,23 @@ export function useSupabaseStorage<T>(
     return () => { cancelled = true; };
   }, [userId, key]);
 
+  // ── Flush pending save immediately (used on visibility change / unload) ──
+  const flushToSupabase = useCallback(
+    (value: T, uid: string) => {
+      if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+      supabase
+        .from('user_data')
+        .upsert(
+          { user_id: uid, key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,key' }
+        )
+        .then(({ error }) => {
+          if (error) console.warn(`[LITEHOUSE] Flush failed for "${key}":`, error.message);
+        });
+    },
+    [key]
+  );
+
   // ── Debounced save to Supabase ──
   const syncToSupabase = useCallback(
     (value: T, uid: string) => {
@@ -135,10 +154,30 @@ export function useSupabaseStorage<T>(
           .then(({ error }) => {
             if (error) console.warn(`[LITEHOUSE] Save failed for "${key}":`, error.message);
           });
-      }, 1500);
+      }, 500);
     },
     [key]
   );
+
+  // ── Flush on tab hide / mobile app switch / page close ──
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && saveTimerRef.current && userIdRef.current) {
+        flushToSupabase(latestRef.current, userIdRef.current);
+      }
+    };
+    const handleBeforeUnload = () => {
+      if (saveTimerRef.current && userIdRef.current) {
+        flushToSupabase(latestRef.current, userIdRef.current);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [flushToSupabase]);
 
   const setValue = useCallback(
     (value: T | ((prev: T) => T)) => {

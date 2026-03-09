@@ -402,12 +402,15 @@ function MainApp() {
         {/* Main Content */}
         <main
           className="ml-0 md:ml-56 min-h-screen overflow-x-hidden"
-          style={{ paddingTop: 'calc(56px + env(safe-area-inset-top))' }}
+          style={{
+            paddingTop: 'calc(56px + env(safe-area-inset-top))',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
         >
           <div
             className={activeSection === 'networking'
               ? 'animate-fade-in'
-              : 'p-4 md:p-6 max-w-[1600px] animate-fade-in'}
+              : 'p-3 sm:p-4 md:p-6 max-w-[1600px] animate-fade-in'}
             style={activeSection === 'networking'
               ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top))' }
               : undefined}

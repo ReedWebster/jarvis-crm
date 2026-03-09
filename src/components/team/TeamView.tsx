@@ -796,8 +796,8 @@ function TeamContent({ session }: { session: Session }) {
           </div>
         </div>
 
-        {/* Tab bar */}
-        <div className="flex px-5 gap-1 pb-0" style={{ borderTop: '1px solid var(--border)' }}>
+        {/* Tab bar — scrollable on mobile */}
+        <div className="tab-bar px-5 gap-1 pb-0" style={{ borderTop: '1px solid var(--border)' }}>
           {([
             { id: 'clients',  label: 'Clients' },
             { id: 'calendar', label: 'Calendar' },

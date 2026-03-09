@@ -199,10 +199,12 @@ function EventBlock({
   const catName = getCategoryName(block.categoryId, categories);
   const displayName = block.title?.trim() || catName;
   const isShort = height < 38;
+  const [active, setActive] = useState(false);
 
   return (
     <div
-      onMouseDown={(e) => e.stopPropagation()} // prevent triggering drag
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
       style={{
@@ -221,12 +223,16 @@ function EventBlock({
         flexDirection: isShort ? 'row' : 'column',
         alignItems: isShort ? 'center' : 'flex-start',
         gap: isShort ? 4 : 1,
-        zIndex: 1,
+        /* Bring event to front on hover/focus so overlapping events are clickable */
+        zIndex: active ? 10 : 1,
         boxSizing: 'border-box',
-        transition: 'filter 0.1s',
+        transition: 'filter 0.1s, z-index 0s',
+        filter: active ? 'brightness(0.92)' : 'none',
       }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(0.92)'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = 'none'; }}
+      onMouseEnter={() => setActive(true)}
+      onMouseLeave={() => setActive(false)}
+      onFocus={() => setActive(true)}
+      onBlur={() => setActive(false)}
     >
       <span style={{
         fontSize: 11, fontWeight: 600, color,
@@ -334,50 +340,75 @@ function useDragCreate(
 ) {
   const [ghost, setGhost] = useState<GhostBlock | null>(null);
   const dragRef = useRef<{ date: string; startMin: number; containerEl: HTMLElement } | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-  const startDrag = useCallback((
-    e: React.MouseEvent,
-    date: string,
-  ) => {
-    // Only left button, not on an event block
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const containerEl = e.currentTarget as HTMLElement;
-    const startMin = Math.min(
-      Math.max(getMinutesAtClientY(containerEl, scrollRef.current, e.clientY), 0),
-      23 * 60
-    );
-    dragRef.current = { date, startMin, containerEl };
-    setGhost({ date, startMin, endMin: startMin + 60 });
-
-    const onMove = (me: MouseEvent) => {
+  const updateGhost = useCallback((clientY: number) => {
+    if (!dragRef.current) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
       if (!dragRef.current) return;
       const endMin = Math.min(
         Math.max(
-          getMinutesAtClientY(dragRef.current.containerEl, scrollRef.current, me.clientY),
+          getMinutesAtClientY(dragRef.current.containerEl, scrollRef.current, clientY),
           dragRef.current.startMin + 15
         ),
         24 * 60
       );
       setGhost({ date: dragRef.current.date, startMin: dragRef.current.startMin, endMin });
-    };
+    });
+  }, [scrollRef]);
 
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (!dragRef.current) return;
-      const { date: d, startMin } = dragRef.current;
-      dragRef.current = null;
-      setGhost((prev) => {
-        const endMin = prev ? prev.endMin : startMin + 60;
-        onComplete(d, minutesToTimeStr(startMin), minutesToTimeStr(Math.min(endMin, 23 * 60 + 45)));
-        return null;
-      });
-    };
+  const completeDrag = useCallback(() => {
+    if (!dragRef.current) return;
+    const { date: d, startMin } = dragRef.current;
+    dragRef.current = null;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    setGhost((prev) => {
+      const endMin = prev ? prev.endMin : startMin + 60;
+      onComplete(d, minutesToTimeStr(startMin), minutesToTimeStr(Math.min(endMin, 23 * 60 + 45)));
+      return null;
+    });
+  }, [onComplete]);
 
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [scrollRef, onComplete]);
+  const startDrag = useCallback((
+    e: React.MouseEvent | React.TouchEvent,
+    date: string,
+  ) => {
+    // Mouse: only left button
+    if ('button' in e && e.button !== 0) return;
+    e.preventDefault();
+    const containerEl = e.currentTarget as HTMLElement;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const startMin = Math.min(
+      Math.max(getMinutesAtClientY(containerEl, scrollRef.current, clientY), 0),
+      23 * 60
+    );
+    dragRef.current = { date, startMin, containerEl };
+    setGhost({ date, startMin, endMin: startMin + 60 });
+
+    if ('touches' in e) {
+      const onTouchMove = (te: TouchEvent) => {
+        te.preventDefault();
+        updateGhost(te.touches[0].clientY);
+      };
+      const onTouchEnd = () => {
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('touchend', onTouchEnd);
+        completeDrag();
+      };
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      document.addEventListener('touchend', onTouchEnd);
+    } else {
+      const onMouseMove = (me: MouseEvent) => updateGhost(me.clientY);
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        completeDrag();
+      };
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    }
+  }, [scrollRef, updateGhost, completeDrag]);
 
   return { ghost, startDrag };
 }
@@ -429,10 +460,11 @@ function AppleDayView({
       </div>
 
       {/* Scrollable grid */}
-      <div ref={scrollRef} style={{ overflowY: 'auto', flex: 1, maxHeight: 'calc(100vh - 280px)' }}>
+      <div ref={scrollRef} style={{ overflowY: 'auto', flex: 1, maxHeight: 'calc(100dvh - 200px)' }}>
         <div style={{ display: 'flex' }}>
           <TimeLabels />
           <div
+            className="cal-grid-col"
             style={{
               flex: 1, position: 'relative',
               height: 24 * HOUR_HEIGHT,
@@ -441,6 +473,7 @@ function AppleDayView({
               userSelect: 'none',
             }}
             onMouseDown={(e) => startDrag(e, date)}
+            onTouchStart={(e) => startDrag(e, date)}
           >
             <HourLines />
             {blocks.map((block) => {
@@ -489,7 +522,7 @@ function AppleWeekView({
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
       style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', minWidth: 0 }}>
       {/* Day headers */}
-      <div className="flex border-b" style={{ borderColor: 'var(--border)', flexShrink: 0 }}>
+      <div className="flex border-b" style={{ borderColor: 'var(--border)', flexShrink: 0, overflowX: 'hidden', minWidth: 'calc(52px + 7 * 90px)' }}>
         <div style={{ width: 52, flexShrink: 0 }} />
         {weekDays.map((day) => {
           const dayStr = format(day, 'yyyy-MM-dd');
@@ -510,9 +543,9 @@ function AppleWeekView({
         })}
       </div>
 
-      {/* Scrollable time grid */}
-      <div ref={scrollRef} style={{ overflowY: 'auto', flex: 1, maxHeight: 'calc(100vh - 280px)' }}>
-        <div style={{ display: 'flex', height: 24 * HOUR_HEIGHT }}>
+      {/* Scrollable time grid — horizontal scroll on mobile so all 7 days remain accessible */}
+      <div ref={scrollRef} style={{ overflowY: 'auto', overflowX: 'auto', flex: 1, maxHeight: 'calc(100dvh - 200px)' }}>
+        <div style={{ display: 'flex', height: 24 * HOUR_HEIGHT, minWidth: 'calc(52px + 7 * 90px)' }}>
           <TimeLabels />
           {weekDays.map((day) => {
             const dayStr = format(day, 'yyyy-MM-dd');
@@ -522,8 +555,9 @@ function AppleWeekView({
             return (
               <div
                 key={dayStr}
+                className="cal-grid-col"
                 style={{
-                  flex: 1, position: 'relative',
+                  flex: '1 0 90px', position: 'relative',
                   borderLeft: '1px solid var(--border)',
                   height: 24 * HOUR_HEIGHT,
                   backgroundColor: isToday ? 'rgba(59,130,246,0.04)' : 'transparent',
@@ -531,6 +565,7 @@ function AppleWeekView({
                   userSelect: 'none',
                 }}
                 onMouseDown={(e) => startDrag(e, dayStr)}
+                onTouchStart={(e) => startDrag(e, dayStr)}
               >
                 <HourLines />
                 {dayBlocks.map((block) => {
@@ -780,7 +815,9 @@ export function TimeTracker({
   const [calView, setCalView] = useState<CalView>(() => {
     try {
       const v = localStorage.getItem('jarvis:calView') as CalView | null;
-      return (v === 'day' || v === 'week' || v === 'month') ? v : 'week';
+      if (v === 'day' || v === 'week' || v === 'month') return v;
+      // Default to day view on mobile (screens narrower than 640px)
+      return window.innerWidth < 640 ? 'day' : 'week';
     } catch { return 'week'; }
   });
   const [selectedDay, setSelectedDay] = useState<string>(today);
@@ -949,10 +986,11 @@ export function TimeTracker({
   const handleToday = () => { setSelectedDay(today); setWeekOffset(0); setMonthOffset(0); };
 
   return (
-    <div className="flex flex-col gap-4 animate-fade-in">
-      {/* Navigation Bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5">
+    <div className="flex flex-col gap-3 animate-fade-in">
+      {/* Navigation Bar — single row, doesn't wrap on mobile */}
+      <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+        {/* Prev / Next / Today */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           {[handleNavPrev, handleNavNext].map((fn, i) => {
             const Icon = i === 0 ? ChevronLeft : ChevronRight;
             return (
@@ -965,22 +1003,25 @@ export function TimeTracker({
             );
           })}
           <button onClick={handleToday}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+            className="px-2 py-1 rounded-lg text-xs font-medium border transition-colors flex-shrink-0"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-elevated)'}
             onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'}>
             Today
           </button>
-          <span className="text-sm font-semibold ml-1 hidden sm:block" style={{ color: 'var(--text-primary)' }}>
-            {navTitle}
-          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Date title — truncates instead of wrapping */}
+        <span className="text-sm font-semibold flex-1 truncate hidden sm:block" style={{ color: 'var(--text-primary)' }}>
+          {navTitle}
+        </span>
+
+        {/* View toggle + settings */}
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
           <div className="flex rounded-full p-0.5" style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
             {(['day', 'week', 'month'] as CalView[]).map((v) => (
               <button key={v} onClick={() => setCalView(v)}
-                className="px-3 py-1 text-xs font-medium rounded-full transition-all capitalize"
+                className="px-2.5 py-1 text-xs font-medium rounded-full transition-all capitalize"
                 style={{
                   backgroundColor: calView === v ? 'var(--bg-card)' : 'transparent',
                   color: calView === v ? 'var(--text-primary)' : 'var(--text-muted)',
@@ -990,8 +1031,8 @@ export function TimeTracker({
               </button>
             ))}
           </div>
-          <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-2" title="Manage calendars">
-            <Settings size={16} />
+          <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-1.5" title="Manage calendars">
+            <Settings size={15} />
           </button>
         </div>
       </div>

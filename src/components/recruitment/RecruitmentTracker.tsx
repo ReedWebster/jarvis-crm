@@ -1153,7 +1153,7 @@ export function RecruitmentTracker({ clients: rawClients, setClients }: Props) {
         size="lg"
       >
         {/* Tabs */}
-        <div className="flex gap-1 mb-5 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="tab-bar mb-5 border-b" style={{ borderColor: 'var(--border)' }}>
           {([
             { key: 'details',  label: 'Details',  icon: <Users size={13} /> },
             { key: 'payments', label: 'Payments', icon: <CreditCard size={13} /> },

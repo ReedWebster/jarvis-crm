@@ -72,12 +72,26 @@
   html {
     scroll-behavior: smooth;
     transition: background-color 0.3s, color 0.3s;
+    /* Prevent horizontal overflow on mobile */
+    overflow-x: hidden;
   }
   body {
     background-color: var(--bg);
     color: var(--text-primary);
     font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* Prevent horizontal overflow on mobile */
+    overflow-x: hidden;
+  }
+  /* Prevent iOS auto-zoom on input focus (triggered when font-size < 16px) */
+  input, select, textarea {
+    font-size: 16px;
+  }
+  /* Override font-size back for non-mobile — keep design consistent on desktop */
+  @media (min-width: 640px) {
+    input, select, textarea {
+      font-size: inherit;
+    }
   }
 }
 
@@ -195,6 +209,24 @@
 
   /* Dividers */
   .caesar-divider { border-color: var(--border); }
+
+  /* Scrollable tab bar — use this on any horizontal tab row that might overflow on mobile */
+  .tab-bar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0.25rem;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-bar > * { flex-shrink: 0; }
+
+  /* Calendar grid drag area — disable default touch actions so our drag works */
+  .cal-grid-col {
+    touch-action: none;
+  }
 }
 
 /* ─── Keyframes ─────────────────────────────────────────────────────────────── */

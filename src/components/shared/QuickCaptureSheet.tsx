@@ -219,7 +219,7 @@ export function QuickCaptureSheet({
 
         {/* Tab bar */}
         <div
-          className="flex border-b flex-shrink-0 px-2"
+          className="tab-bar border-b flex-shrink-0 px-2"
           style={{ borderColor: 'var(--border)' }}
         >
           {TABS.map(({ id, label, Icon }) => (
