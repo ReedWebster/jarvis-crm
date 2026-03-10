@@ -16,7 +16,9 @@ import {
   Star,
   Filter,
   ChevronDown,
+  Upload,
 } from 'lucide-react';
+import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
 import type { Contact, ContactTag, ContactInteraction } from '../../types';
 import { generateId, todayStr, calcRelationshipHealth, getHealthColor, formatDate } from '../../utils';
@@ -1039,6 +1041,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
   const [filterFollowUp, setFilterFollowUp] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -1114,6 +1117,77 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     toast.success('Interaction logged');
   };
 
+  const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be re-imported if needed
+    e.target.value = '';
+
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data;
+        if (!rows.length) { toast.error('CSV appears to be empty'); return; }
+
+        const normalizeKey = (obj: Record<string, string>, ...keys: string[]) => {
+          for (const k of keys) {
+            const found = Object.keys(obj).find(ok => ok.trim().toLowerCase() === k.toLowerCase());
+            if (found) return obj[found]?.trim() ?? '';
+          }
+          return '';
+        };
+
+        const today = todayStr();
+        const existing = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
+        let added = 0;
+        let skipped = 0;
+
+        const newContacts: Contact[] = [];
+        for (const row of rows) {
+          const name = normalizeKey(row, 'name', 'full name', 'fullname', 'contact name');
+          if (!name) { skipped++; continue; }
+
+          const email = normalizeKey(row, 'email', 'email address');
+          if (email && existing.has(email.toLowerCase())) { skipped++; continue; }
+          if (email) existing.add(email.toLowerCase());
+
+          const rawTag = normalizeKey(row, 'tag', 'type', 'category', 'relationship type');
+          const tag = (ALL_TAGS.includes(rawTag as ContactTag) ? rawTag : 'Other') as ContactTag;
+
+          newContacts.push({
+            id: generateId(),
+            name,
+            email: email || undefined,
+            phone: normalizeKey(row, 'phone', 'phone number', 'mobile') || undefined,
+            company: normalizeKey(row, 'company', 'organization', 'employer') || undefined,
+            relationship: normalizeKey(row, 'relationship', 'role', 'title'),
+            tags: [tag],
+            lastContacted: today,
+            followUpNeeded: false,
+            notes: normalizeKey(row, 'notes', 'note', 'comments') || '',
+            interactions: [],
+            linkedProjects: [],
+          });
+          added++;
+        }
+
+        if (newContacts.length) {
+          setContacts(prev => [...newContacts, ...(Array.isArray(prev) ? prev : [])]);
+        }
+
+        if (added > 0 && skipped > 0) {
+          toast.success(`Imported ${added} contacts (${skipped} skipped — duplicates or missing name)`);
+        } else if (added > 0) {
+          toast.success(`Imported ${added} contact${added !== 1 ? 's' : ''}`);
+        } else {
+          toast.error(`No contacts imported — ${skipped} row${skipped !== 1 ? 's' : ''} skipped`);
+        }
+      },
+      error: () => toast.error('Failed to parse CSV'),
+    });
+  };
+
   const openEdit = (contact: Contact) => {
     setSelectedContact(contact);
     setEditModalOpen(true);
@@ -1139,13 +1213,30 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             Manage your network and relationships
           </p>
         </div>
-        <button
-          onClick={() => setAddModalOpen(true)}
-          className="caesar-btn-primary flex items-center gap-2"
-        >
-          <Plus size={16} />
-          Add Contact
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleCSVImport}
+          />
+          <button
+            onClick={() => csvInputRef.current?.click()}
+            className="caesar-btn-ghost flex items-center gap-2"
+            title="Import contacts from a CSV file"
+          >
+            <Upload size={15} />
+            Import CSV
+          </button>
+          <button
+            onClick={() => setAddModalOpen(true)}
+            className="caesar-btn-primary flex items-center gap-2"
+          >
+            <Plus size={16} />
+            Add Contact
+          </button>
+        </div>
       </div>
 
       {/* Stats Row */}

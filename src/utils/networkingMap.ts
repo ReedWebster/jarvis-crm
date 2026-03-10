@@ -263,6 +263,108 @@ export function autoLayoutNodes(
   return updated;
 }
 
+// ─── FORCE-DIRECTED LAYOUT ────────────────────────────────────────────────────
+
+/** Run a simple force simulation (repulsion + spring + gravity) and return
+ *  updated ContactMapData with new nodeX/nodeY positions. */
+export function forceLayoutNodes(
+  contacts: Contact[],
+  currentData: Record<string, ContactMapData>,
+  edges: { source: string; target: string }[],
+  iterations = 120,
+): Record<string, ContactMapData> {
+  if (contacts.length === 0) return currentData;
+
+  const W = 1200;
+  const H = 800;
+  const REPULSION = 6000;
+  const SPRING_LENGTH = 220;
+  const SPRING_K = 0.04;
+  const GRAVITY = 0.012;
+  const DAMPING = 0.82;
+
+  // Initialize positions — use saved positions or spread randomly
+  const pos: Record<string, { x: number; y: number; vx: number; vy: number }> = {};
+  contacts.forEach((c, i) => {
+    const d = currentData[c.id];
+    const angle = (i / contacts.length) * 2 * Math.PI;
+    const r = Math.min(W, H) * 0.35;
+    pos[c.id] = {
+      x: d?.nodeX ?? W / 2 + Math.cos(angle) * r,
+      y: d?.nodeY ?? H / 2 + Math.sin(angle) * r,
+      vx: 0,
+      vy: 0,
+    };
+  });
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const forces: Record<string, { fx: number; fy: number }> = {};
+    contacts.forEach(c => { forces[c.id] = { fx: 0, fy: 0 }; });
+
+    // Repulsion between every pair of nodes
+    for (let i = 0; i < contacts.length; i++) {
+      for (let j = i + 1; j < contacts.length; j++) {
+        const a = contacts[i].id;
+        const b = contacts[j].id;
+        const dx = pos[a].x - pos[b].x;
+        const dy = pos[a].y - pos[b].y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1);
+        const force = REPULSION / (dist * dist);
+        const nx = (dx / dist) * force;
+        const ny = (dy / dist) * force;
+        forces[a].fx += nx;
+        forces[a].fy += ny;
+        forces[b].fx -= nx;
+        forces[b].fy -= ny;
+      }
+    }
+
+    // Spring attraction along edges
+    for (const e of edges) {
+      const a = pos[e.source];
+      const b = pos[e.target];
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.1);
+      const stretch = dist - SPRING_LENGTH;
+      const force = SPRING_K * stretch;
+      const nx = (dx / dist) * force;
+      const ny = (dy / dist) * force;
+      forces[e.source].fx += nx;
+      forces[e.source].fy += ny;
+      forces[e.target].fx -= nx;
+      forces[e.target].fy -= ny;
+    }
+
+    // Gravity toward center
+    for (const c of contacts) {
+      forces[c.id].fx += (W / 2 - pos[c.id].x) * GRAVITY;
+      forces[c.id].fy += (H / 2 - pos[c.id].y) * GRAVITY;
+    }
+
+    // Integrate velocity + position
+    for (const c of contacts) {
+      const p = pos[c.id];
+      const f = forces[c.id];
+      p.vx = (p.vx + f.fx) * DAMPING;
+      p.vy = (p.vy + f.fy) * DAMPING;
+      p.x = Math.max(40, Math.min(W - 40, p.x + p.vx));
+      p.y = Math.max(40, Math.min(H - 40, p.y + p.vy));
+    }
+  }
+
+  const updated = { ...currentData };
+  for (const c of contacts) {
+    updated[c.id] = {
+      ...(updated[c.id] ?? defaultContactMapData(c.id)),
+      nodeX: Math.round(pos[c.id].x),
+      nodeY: Math.round(pos[c.id].y),
+    };
+  }
+  return updated;
+}
+
 // ─── NOMINATIM REVERSE GEOCODE ───────────────────────────────────────────────
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

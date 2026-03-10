@@ -18,7 +18,7 @@ import {
   Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { X, LayoutGrid, Zap, ZapOff, UserPlus, Building2 } from 'lucide-react';
+import { X, LayoutGrid, Zap, ZapOff, UserPlus, Building2, Atom, Search } from 'lucide-react';
 import type { Contact, Project, ContactMapData, NetworkingMapState, NetworkManualConnection, MapFilters, ContactTag } from '../../types';
 import { generateId } from '../../utils';
 import {
@@ -26,6 +26,7 @@ import {
   getContactInitials,
   buildAutoEdges,
   autoLayoutNodes,
+  forceLayoutNodes,
   defaultContactMapData,
   isFollowUpPending,
 } from '../../utils/networkingMap';
@@ -322,6 +323,7 @@ export function NetworkView({
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [pendingConnection, setPendingConnection] = useState<{ sourceId: string; targetId: string } | null>(null);
+  const [graphSearch, setGraphSearch] = useState('');
 
   // Build contact name lookup
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
@@ -346,13 +348,20 @@ export function NetworkView({
     return ids;
   }, [highlightedId, contacts, mapState.showAutoConnections, mapState.manualConnections]);
 
+  const graphSearchLower = graphSearch.trim().toLowerCase();
+
   const buildNodes = useCallback((): Node[] => {
     const contactNodes: Node[] = contacts.map((c, i) => {
       const d = mapState.contactData[c.id] ?? defaultContactMapData(c.id);
       const x = d.nodeX ?? (i % 5) * 180 + 80;
       const y = d.nodeY ?? Math.floor(i / 5) * 160 + 80;
+      const matchesSearch = !graphSearchLower
+        || c.name.toLowerCase().includes(graphSearchLower)
+        || (c.company ?? '').toLowerCase().includes(graphSearchLower)
+        || c.tags.some(t => t.toLowerCase().includes(graphSearchLower));
       const dimmed = (filteredIds.size > 0 && !filteredIds.has(c.id))
-        || (connectedIds !== null && !connectedIds.has(c.id));
+        || (connectedIds !== null && !connectedIds.has(c.id))
+        || (graphSearchLower.length > 0 && !matchesSearch);
 
       return {
         id: c.id,
@@ -417,7 +426,7 @@ export function NetworkView({
 
     // Org nodes go first so they render behind contact nodes
     return [...orgNodes, ...contactNodes];
-  }, [contacts, mapState.contactData, filteredIds, connectedIds, showOrgBubbles]);
+  }, [contacts, mapState.contactData, filteredIds, connectedIds, showOrgBubbles, graphSearchLower]);
 
   const buildEdges = useCallback((): Edge[] => {
     const autoEdges: Edge[] = mapState.showAutoConnections ? buildAutoEdges(contacts) : [];
@@ -490,6 +499,16 @@ export function NetworkView({
     onUpdateNodePositions(updated);
   };
 
+  const handleForceLayout = () => {
+    const allEdges = buildAutoEdges(contacts);
+    const manualEdges = mapState.manualConnections.map(c => ({
+      source: c.sourceContactId,
+      target: c.targetContactId,
+    }));
+    const updated = forceLayoutNodes(contacts, mapState.contactData, [...allEdges, ...manualEdges]);
+    onUpdateNodePositions(updated);
+  };
+
   const selectedContact = selectedContactId ? contactMap.get(selectedContactId) ?? null : null;
   const selectedMapData = selectedContactId
     ? (mapState.contactData[selectedContactId] ?? defaultContactMapData(selectedContactId))
@@ -541,6 +560,31 @@ export function NetworkView({
           maskColor="rgba(0,0,0,0.1)"
         />
 
+        {/* Graph search panel */}
+        <Panel position="top-left">
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+          >
+            <Search size={12} style={{ color: 'var(--text-muted)' }} />
+            <input
+              className="bg-transparent outline-none text-xs w-40"
+              style={{ color: 'var(--text-primary)' }}
+              placeholder="Search nodes…"
+              value={graphSearch}
+              onChange={e => setGraphSearch(e.target.value)}
+            />
+            {graphSearch && (
+              <button
+                onClick={() => setGraphSearch('')}
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </Panel>
+
         {/* Toolbar panel */}
         <Panel position="top-right">
           <div className="flex items-center gap-2">
@@ -559,6 +603,14 @@ export function NetworkView({
               title="Auto-layout nodes by group"
             >
               <LayoutGrid size={12} /> Auto Layout
+            </button>
+            <button
+              onClick={handleForceLayout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+              title="Physics-based force layout — connected nodes cluster together"
+            >
+              <Atom size={12} /> Force Layout
             </button>
             <button
               onClick={onToggleAutoConnections}
