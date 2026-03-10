@@ -1343,6 +1343,8 @@ export function NetworkView3D({
             }}
             onUpdateContact={updated => { onUpdateContact(updated); setSelectedContact(updated); }}
             onEditInCRM={onNavigateToCRM}
+            orgs={mapState.orgs ?? []}
+            onUpdateOrgs={onUpdateOrgs}
           />
         </div>
       )}

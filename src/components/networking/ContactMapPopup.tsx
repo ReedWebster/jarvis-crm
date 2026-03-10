@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { X, Mic, MicOff, Play, Pause, Trash2, Camera, MessageSquare, Edit3, CheckCircle, AlertTriangle } from 'lucide-react';
-import type { Contact, ContactMapData, RelationshipStrength } from '../../types';
+import type { Contact, ContactMapData, RelationshipStrength, NetworkOrg } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import {
   getContactStrengthColor,
@@ -21,6 +21,8 @@ interface Props {
   onUpdateMapData: (data: Partial<ContactMapData>) => void;
   onUpdateContact: (updated: Contact) => void;
   onEditInCRM: () => void;
+  orgs?: NetworkOrg[];
+  onUpdateOrgs?: (orgs: NetworkOrg[]) => void;
 }
 
 // ─── VOICE NOTE RECORDER ─────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ function VoiceNoteSection({
 
 // ─── MAIN POPUP ──────────────────────────────────────────────────────────────
 
-export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, onUpdateContact, onEditInCRM }: Props) {
+export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, onUpdateContact, onEditInCRM, orgs = [], onUpdateOrgs }: Props) {
   const [tab, setTab] = useState<'info' | 'log'>('info');
   const [logType, setLogType] = useState('Call');
   const [logNotes, setLogNotes] = useState('');
@@ -145,6 +147,7 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
   const [reminderDate, setReminderDate] = useState(contact.followUpDate ?? '');
   const [mapNotes, setMapNotes] = useState(mapData.mapNotes);
   const [strength, setStrength] = useState<RelationshipStrength>(mapData.strength);
+  const [metAt, setMetAt] = useState((contact as any).metAt ?? '');
 
   const strengthColor = getContactStrengthColor(strength);
   const daysSince = contact.lastContacted
@@ -156,6 +159,28 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
   const handleMapNotesChange = (value: string) => {
     setMapNotes(value);
     onUpdateMapData({ mapNotes: value });
+  };
+
+  const handleMetAtChange = (value: string) => {
+    setMetAt(value);
+    onUpdateContact({ ...contact, metAt: value } as any);
+  };
+
+  const toggleOrg = (org: NetworkOrg) => {
+    if (!onUpdateOrgs) return;
+    const isMember = org.memberContactIds.includes(contact.id);
+    const updatedOrg: NetworkOrg = {
+      ...org,
+      memberContactIds: isMember
+        ? org.memberContactIds.filter(id => id !== contact.id)
+        : [...org.memberContactIds, contact.id],
+    };
+    const updatedOrgs = orgs.map(o => o.id === org.id ? updatedOrg : o);
+    onUpdateOrgs(updatedOrgs);
+    // Auto-tag when joining an org with autoTag
+    if (!isMember && org.autoTag && !contact.tags.includes(org.autoTag)) {
+      onUpdateContact({ ...contact, tags: [...contact.tags, org.autoTag] });
+    }
   };
 
   const logInteraction = () => {
@@ -277,6 +302,47 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
                     {tag}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* Where / How You Met */}
+            <div>
+              <div className="caesar-label">Where / How You Met</div>
+              <input
+                className="caesar-input text-xs w-full"
+                list="metat-suggestions"
+                placeholder="e.g. Harvard, YC S24, Conference…"
+                value={metAt}
+                onChange={e => handleMetAtChange(e.target.value)}
+              />
+            </div>
+
+            {/* Org Bubbles */}
+            {orgs.length > 0 && (
+              <div>
+                <div className="caesar-label">Organizations</div>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {orgs.map(org => {
+                    const isMember = org.memberContactIds.includes(contact.id);
+                    return (
+                      <button
+                        key={org.id}
+                        onClick={() => toggleOrg(org)}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs transition-all"
+                        style={{
+                          borderColor: isMember ? org.color : 'var(--border)',
+                          backgroundColor: isMember ? `${org.color}22` : 'transparent',
+                          color: isMember ? org.color : 'var(--text-muted)',
+                          fontWeight: isMember ? 600 : 400,
+                        }}
+                        title={isMember ? `Remove from ${org.name}` : `Add to ${org.name}`}
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: org.color }} />
+                        {org.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
