@@ -72,6 +72,7 @@ export interface Contact {
   mapLat?: number;     // geocoded lat from address autocomplete selection
   mapLng?: number;     // geocoded lng from address autocomplete selection
   mapLabel?: string;   // short "City, State" label derived from geocoding
+  metAt?: string;      // where/how you met this person (e.g. "Harvard", "YC S24", "Conference")
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
@@ -366,6 +367,14 @@ export interface TodoItem {
 
 export type RelationshipStrength = 'hot' | 'warm' | 'cold' | 'personal';
 
+export interface NetworkOrg {
+  id: string;
+  name: string;
+  color: string;
+  autoTag?: ContactTag;
+  memberContactIds: string[];
+}
+
 export interface ContactMapData {
   contactId: string;
   lat?: number;
@@ -392,6 +401,7 @@ export interface NetworkingMapState {
   manualConnections: NetworkManualConnection[];
   showAutoConnections: boolean;
   activeView: 'geographic' | 'network';
+  orgs: NetworkOrg[];
 }
 
 export interface MapFilters {

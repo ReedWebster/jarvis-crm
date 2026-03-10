@@ -220,6 +220,24 @@ function MainApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user.id]);
 
+  // One-time migration: tag any contact with last name "Webster" as Family
+  useEffect(() => {
+    if (contacts.length === 0) return;
+    const needsUpdate = contacts.some(c => {
+      const lastName = c.name.trim().split(/\s+/).pop() ?? '';
+      return lastName.toLowerCase() === 'webster' && !c.tags.includes('Family');
+    });
+    if (!needsUpdate) return;
+    setContacts(prev => prev.map(c => {
+      const lastName = c.name.trim().split(/\s+/).pop() ?? '';
+      if (lastName.toLowerCase() === 'webster' && !c.tags.includes('Family')) {
+        return { ...c, tags: [...c.tags.filter(t => t !== 'Family'), 'Family'] as import('./types').ContactTag[] };
+      }
+      return c;
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts.length]);
+
   const handleStatusChange = (status: StatusMode) => {
     setIdentity(prev => ({ ...prev, status }));
   };

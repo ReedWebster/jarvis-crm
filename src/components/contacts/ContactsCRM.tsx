@@ -17,6 +17,7 @@ import {
   Filter,
   ChevronDown,
   Upload,
+  Layers,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
@@ -453,6 +454,7 @@ interface ContactFormData {
   mapLat?: number;
   mapLng?: number;
   mapLabel?: string;
+  metAt: string;
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
@@ -481,6 +483,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
     mapLat: initial?.mapLat,
     mapLng: initial?.mapLng,
     mapLabel: initial?.mapLabel,
+    metAt: (initial as any)?.metAt ?? '',
     relationship: initial?.relationship ?? '',
     tags: initial?.tags ?? [],
     lastContacted: initial?.lastContacted ?? todayStr(),
@@ -564,14 +567,26 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
         </div>
-        <div>
-          <label className="caesar-label">Company / Organization</label>
-          <input
-            className="caesar-input w-full"
-            placeholder="Company name"
-            value={form.company}
-            onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="caesar-label">Company / Organization</label>
+            <input
+              className="caesar-input w-full"
+              placeholder="Company name"
+              value={form.company}
+              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="caesar-label">Where / How You Met</label>
+            <input
+              className="caesar-input w-full"
+              list="metat-suggestions"
+              placeholder="e.g. Harvard, YC S24, Conference"
+              value={form.metAt}
+              onChange={(e) => setForm((f) => ({ ...f, metAt: e.target.value }))}
+            />
+          </div>
         </div>
         <div>
           <label className="caesar-label">
@@ -703,6 +718,20 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Datalist component — rendered once at the page level for metAt autocomplete
+function MetAtDatalist({ contacts }: { contacts: Contact[] }) {
+  const suggestions = useMemo(() => {
+    const vals = new Set<string>();
+    contacts.forEach(c => { if ((c as any).metAt?.trim()) vals.add((c as any).metAt.trim()); });
+    return [...vals].sort();
+  }, [contacts]);
+  return (
+    <datalist id="metat-suggestions">
+      {suggestions.map(s => <option key={s} value={s} />)}
+    </datalist>
   );
 }
 
@@ -1041,6 +1070,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
   const [filterFollowUp, setFilterFollowUp] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [groupBy, setGroupBy] = useState<'none' | 'metAt' | 'tag' | 'company'>('none');
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Modal state
@@ -1435,6 +1465,23 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
           <Calendar size={13} />
           Follow Up
         </button>
+
+        {/* Group By */}
+        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm transition-colors duration-150"
+          style={{ backgroundColor: groupBy !== 'none' ? 'var(--bg-elevated)' : 'transparent', borderColor: groupBy !== 'none' ? 'var(--border-strong)' : 'var(--border)', color: groupBy !== 'none' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <Layers size={13} />
+          <select
+            value={groupBy}
+            onChange={e => setGroupBy(e.target.value as typeof groupBy)}
+            className="bg-transparent outline-none text-sm cursor-pointer"
+            style={{ color: 'inherit' }}
+          >
+            <option value="none">No Grouping</option>
+            <option value="metAt">By Where Met</option>
+            <option value="tag">By Tag</option>
+            <option value="company">By Company</option>
+          </select>
+        </div>
       </div>
 
       {/* Results count */}
@@ -1443,6 +1490,9 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
           Showing {filtered.length} of {contacts.length} contacts
         </p>
       )}
+
+      {/* MetAt datalist for form autocomplete */}
+      <MetAtDatalist contacts={contacts} />
 
       {/* Contact Grid */}
       {filtered.length === 0 ? (
@@ -1457,7 +1507,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
               : 'Try adjusting your search or filters'}
           </p>
         </div>
-      ) : (
+      ) : groupBy === 'none' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filtered.map((contact) => (
             <ContactCard
@@ -1470,6 +1520,53 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             />
           ))}
         </div>
+      ) : (
+        (() => {
+          const getKey = (c: Contact) => {
+            if (groupBy === 'metAt') return (c as any).metAt?.trim() || 'Unknown';
+            if (groupBy === 'tag') return c.tags[0] ?? 'Untagged';
+            if (groupBy === 'company') return c.company?.trim() || 'No Company';
+            return 'Other';
+          };
+          const groups: Record<string, Contact[]> = {};
+          filtered.forEach(c => {
+            const key = getKey(c);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(c);
+          });
+          const sorted = Object.entries(groups).sort(([a], [b]) =>
+            a === 'Unknown' || a === 'Untagged' || a === 'No Company' ? 1 : a.localeCompare(b)
+          );
+          return (
+            <div className="flex flex-col gap-6">
+              {sorted.map(([groupName, groupContacts]) => (
+                <div key={groupName}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                      {groupName}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+                      {groupContacts.length}
+                    </span>
+                    <hr className="flex-1" style={{ borderColor: 'var(--border)' }} />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {groupContacts.map(contact => (
+                      <ContactCard
+                        key={contact.id}
+                        contact={contact}
+                        onEdit={() => openEdit(contact)}
+                        onDelete={() => handleDelete(contact.id)}
+                        onDetail={() => openDetail(contact)}
+                        onLogInteraction={() => openLog(contact)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()
       )}
 
       {/* Add Contact Modal */}
@@ -1503,7 +1600,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             birthday: selectedContact.birthday ?? '',
             anniversary: selectedContact.anniversary ?? '',
             notes: selectedContact.notes,
-          }}
+            metAt: (selectedContact as any).metAt ?? '',
+          } as any}
           title={`Edit — ${selectedContact.name}`}
         />
       )}

@@ -11,6 +11,7 @@ export function defaultMapState(): NetworkingMapState {
     manualConnections: [],
     showAutoConnections: true,
     activeView: 'network',
+    orgs: [],
   };
 }
 

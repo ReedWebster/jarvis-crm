@@ -189,6 +189,10 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
     setMapState(prev => ({ ...prev, contactData: { ...prev.contactData, ...updates } }));
   };
 
+  const updateOrgs = (orgs: import('../../types').NetworkOrg[]) => {
+    setMapState(prev => ({ ...prev, orgs }));
+  };
+
   const clearFilter = (key: keyof MapFilters) => {
     if (key === 'followUpOnly') setFilters(f => ({ ...f, followUpOnly: false }));
     else if (key === 'ventureId') setFilters(f => ({ ...f, ventureId: 'all' }));
@@ -407,6 +411,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onUpdateNodePositions={updateNodePositions}
               onNavigateToCRM={onNavigateToCRM}
               onAddContact={(contact) => setContacts(prev => [...prev, contact])}
+              onUpdateOrgs={updateOrgs}
             />
           )}
 

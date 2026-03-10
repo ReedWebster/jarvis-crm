@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import * as THREE from 'three';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers, AlertCircle } from 'lucide-react';
+import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers, AlertCircle, Building2, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -10,6 +10,7 @@ import type {
   NetworkingMapState,
   NetworkManualConnection,
   ContactTag,
+  NetworkOrg,
 } from '../../types';
 import { generateId } from '../../utils';
 import {
@@ -31,8 +32,10 @@ interface GraphNode {
   dimmed: boolean;
   hasPending: boolean;
   urgency: 'overdue' | 'today' | 'upcoming' | null;
-  contact: Contact;
-  mapData: ContactMapData;
+  contact?: Contact;
+  mapData?: ContactMapData;
+  isOrg?: boolean;
+  orgData?: NetworkOrg;
 }
 
 interface GraphLink {
@@ -58,6 +61,7 @@ interface Props {
   onUpdateNodePositions: (updates: Record<string, ContactMapData>) => void;
   onNavigateToCRM: () => void;
   onAddContact: (contact: Contact) => void;
+  onUpdateOrgs: (orgs: NetworkOrg[]) => void;
 }
 
 // ─── ALL TAGS ─────────────────────────────────────────────────────────────────
@@ -284,6 +288,7 @@ export function NetworkView3D({
   onDeleteManualConnection,
   onNavigateToCRM,
   onAddContact,
+  onUpdateOrgs,
 }: Props) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -316,8 +321,13 @@ export function NetworkView3D({
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
-  type GroupBy = 'none' | 'tag' | 'strength' | 'company' | 'followup';
+  type GroupBy = 'none' | 'tag' | 'strength' | 'company' | 'followup' | 'metat';
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
+  const [showOrgsPanel, setShowOrgsPanel] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgColor, setNewOrgColor] = useState('#6366f1');
+  const [newOrgTag, setNewOrgTag] = useState<ContactTag | ''>('');
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const clusterLabelsRef = useRef<SpriteText[]>([]);
   const graphDataNodesRef = useRef<any[]>([]);
   // Map from node id → pulse ring mesh, for animation
@@ -501,6 +511,7 @@ export function NetworkView3D({
         const urgency = getFollowUpUrgency(c);
         return urgency ?? 'ok';
       }
+      if (groupBy === 'metat') return (c as any).metAt?.trim() || 'Unknown';
       return 'All';
     };
 
@@ -605,7 +616,30 @@ export function NetworkView3D({
         label: conn.label ?? '', isAuto: false, connId: conn.id,
       }));
 
-    return { nodes, links: [...autoLinks, ...manualLinks] };
+    // Add org nodes and links
+    const orgs = mapState.orgs ?? [];
+    const orgNodes: GraphNode[] = orgs.map(org => ({
+      id: `org:${org.id}`,
+      name: org.name,
+      color: org.color,
+      val: 28,
+      dimmed: false,
+      hasPending: false,
+      urgency: null,
+      isOrg: true,
+      orgData: org,
+    }));
+
+    const orgLinks: GraphLink[] = [];
+    orgs.forEach(org => {
+      org.memberContactIds.forEach(cId => {
+        if (contactMap.has(cId)) {
+          orgLinks.push({ source: cId, target: `org:${org.id}`, label: '', isAuto: true });
+        }
+      });
+    });
+
+    return { nodes: [...nodes, ...orgNodes], links: [...autoLinks, ...manualLinks, ...orgLinks] };
   }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo, focusConnectedIds]);
 
   // Keep nodes ref in sync
@@ -702,6 +736,51 @@ export function NetworkView3D({
 
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
+
+    // ── Org bubble node ───────────────────────────────────────────────────
+    if (node.isOrg) {
+      const group = new THREE.Group();
+      const hexColor = node.color.startsWith('#') ? node.color : '#6366f1';
+      const orgColor = new THREE.Color(hexColor);
+      const r = 22;
+
+      // Outer wireframe sphere
+      const wireMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 18, 14),
+        new THREE.MeshBasicMaterial({ color: orgColor, wireframe: true, transparent: true, opacity: 0.25 }),
+      );
+      group.add(wireMesh);
+
+      // Inner translucent fill
+      const fillMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 0.96, 18, 14),
+        new THREE.MeshBasicMaterial({ color: orgColor, transparent: true, opacity: 0.06, depthWrite: false }),
+      );
+      group.add(fillMesh);
+
+      // Equator ring
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(r, 0.7, 8, 48),
+        new THREE.MeshBasicMaterial({ color: orgColor, transparent: true, opacity: 0.55 }),
+      );
+      group.add(ring);
+
+      // Label
+      const label = new SpriteText(node.name);
+      label.color = hexColor;
+      label.textHeight = 5.5;
+      label.fontFace = 'Inter, sans-serif';
+      label.fontWeight = '600';
+      (label as any).backgroundColor = false;
+      (label as any).position.set(0, r + 5, 0);
+      group.add(label);
+
+      // Autorotate the ring slowly via userData
+      (group as any).__isOrgBubble = true;
+
+      return group;
+    }
+
     const group = new THREE.Group();
     const radius = Math.cbrt(node.val) * 2.8;
     const hexColor = node.color.startsWith('#') ? node.color : '#60a5fa';
@@ -716,7 +795,7 @@ export function NetworkView3D({
           transparent: true,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
-          opacity: node.mapData.strength === 'hot' ? 1.0 : 0.7,
+          opacity: node.mapData?.strength === 'hot' ? 1.0 : 0.7,
         }),
       );
       const gs = radius * 8.5;
@@ -763,9 +842,9 @@ export function NetworkView3D({
     group.add(label as unknown as THREE.Object3D);
 
     // ── Pulse ring for hot/warm/overdue nodes ─────────────────────────────
-    if (!node.dimmed && (node.mapData.strength === 'hot' || node.mapData.strength === 'warm' || node.hasPending)) {
+    if (!node.dimmed && (node.mapData?.strength === 'hot' || node.mapData?.strength === 'warm' || node.hasPending)) {
       const ringColor = node.hasPending ? '#ef4444'
-        : node.mapData.strength === 'hot' ? '#dc2626' : '#d97706';
+        : node.mapData?.strength === 'hot' ? '#dc2626' : '#d97706';
       const inner = radius * 1.45, outer = radius * 1.85;
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(inner, outer, 36),
@@ -813,8 +892,15 @@ export function NetworkView3D({
     }
     lastClickRef.current = { id: node.id, time: now };
 
-    setSelectedContact(node.contact);
-    setSelectedMapData(node.mapData);
+    // Org node click → open orgs panel
+    if (node.isOrg) {
+      setShowOrgsPanel(true);
+      setExpandedOrgId(node.orgData?.id ?? null);
+      return;
+    }
+
+    setSelectedContact(node.contact ?? null);
+    setSelectedMapData(node.mapData ?? null);
   }, [connectMode, connectSource]);
 
   const handleNodeHover = useCallback((nodeRaw: object | null) => {
@@ -912,25 +998,36 @@ export function NetworkView3D({
           }}
         >
           <div className="font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.95)' }}>{hoveredNode.name}</div>
-          {hoveredNode.contact.company && (
-            <div className="mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>{hoveredNode.contact.company}</div>
-          )}
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            {hoveredNode.contact.tags.map(tag => (
-              <span key={tag} className="px-1.5 py-0.5 rounded-full text-xs"
-                style={{ backgroundColor: `${TAG_COLORS[tag] ?? '#6b7280'}22`, color: TAG_COLORS[tag] ?? '#6b7280' }}>
-                {tag}
-              </span>
-            ))}
-            <span className="px-1.5 py-0.5 rounded-full text-xs"
-              style={{ backgroundColor: `${STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold']}22`, color: STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold'] }}>
-              {hoveredNode.mapData.strength ?? 'cold'}
-            </span>
-          </div>
-          {hoveredNode.contact.lastContacted && (
-            <div className="mt-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Last contact: {hoveredNode.contact.lastContacted}
+          {hoveredNode.isOrg ? (
+            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              Org · {hoveredNode.orgData?.memberContactIds.length ?? 0} members
+              {hoveredNode.orgData?.autoTag && <span className="ml-1">→ {hoveredNode.orgData.autoTag}</span>}
             </div>
+          ) : (
+            <>
+              {hoveredNode.contact?.company && (
+                <div className="mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>{hoveredNode.contact.company}</div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                {hoveredNode.contact?.tags.map(tag => (
+                  <span key={tag} className="px-1.5 py-0.5 rounded-full text-xs"
+                    style={{ backgroundColor: `${TAG_COLORS[tag] ?? '#6b7280'}22`, color: TAG_COLORS[tag] ?? '#6b7280' }}>
+                    {tag}
+                  </span>
+                ))}
+                {hoveredNode.mapData && (
+                  <span className="px-1.5 py-0.5 rounded-full text-xs"
+                    style={{ backgroundColor: `${STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold']}22`, color: STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold'] }}>
+                    {hoveredNode.mapData.strength ?? 'cold'}
+                  </span>
+                )}
+              </div>
+              {hoveredNode.contact?.lastContacted && (
+                <div className="mt-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  Last contact: {hoveredNode.contact.lastContacted}
+                </div>
+              )}
+            </>
           )}
           {hoveredNode.hasPending && (
             <div className="mt-1 flex items-center gap-1 text-xs" style={{ color: '#ef4444' }}>
@@ -976,6 +1073,26 @@ export function NetworkView3D({
       {/* ── Toolbar (top-right) ─────────────────────────────────────────── */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-2 flex-wrap justify-end">
 
+        {/* Orgs button */}
+        <button onClick={() => setShowOrgsPanel(v => !v)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
+          style={{
+            backgroundColor: showOrgsPanel ? 'rgba(99,102,241,0.2)' : 'rgba(10,10,24,0.85)',
+            borderColor: showOrgsPanel ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.1)',
+            color: showOrgsPanel ? '#a5b4fc' : 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(8px)',
+          }}
+          title="Manage org bubbles">
+          <Building2 size={12} />
+          <span className="hidden sm:inline">Orgs</span>
+          {(mapState.orgs ?? []).length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-bold"
+              style={{ backgroundColor: 'rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+              {(mapState.orgs ?? []).length}
+            </span>
+          )}
+        </button>
+
         {/* Group By selector */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
           style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: groupBy !== 'none' ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)' }}>
@@ -990,6 +1107,7 @@ export function NetworkView3D({
             <option value="tag">By Tag</option>
             <option value="strength">By Strength</option>
             <option value="company">By Company</option>
+            <option value="metat">By Where Met</option>
             <option value="followup">Follow-up Heat</option>
           </select>
         </div>
@@ -1040,6 +1158,153 @@ export function NetworkView3D({
           <button onClick={() => setFocusedNodeId(null)} style={{ color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
             <X size={12} />
           </button>
+        </div>
+      )}
+
+      {/* ── Orgs panel ───────────────────────────────────────────────────── */}
+      {showOrgsPanel && (
+        <div
+          className="absolute top-14 right-3 z-20 flex flex-col rounded-xl shadow-2xl overflow-hidden"
+          style={{ width: 280, maxHeight: 'calc(100% - 80px)', backgroundColor: 'rgba(10,10,24,0.92)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(12px)' }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+            <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.85)' }}>Org Bubbles</span>
+            <button onClick={() => setShowOrgsPanel(false)} style={{ color: 'rgba(255,255,255,0.4)' }}><X size={13} /></button>
+          </div>
+
+          {/* Create new org */}
+          <div className="p-3 border-b flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <input
+              className="w-full rounded-lg px-3 py-1.5 text-xs outline-none"
+              style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.12)' }}
+              placeholder="New org name…"
+              value={newOrgName}
+              onChange={e => setNewOrgName(e.target.value)}
+            />
+            <div className="flex items-center gap-2">
+              <input type="color" value={newOrgColor} onChange={e => setNewOrgColor(e.target.value)}
+                className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent flex-shrink-0" title="Org color" />
+              <select
+                value={newOrgTag}
+                onChange={e => setNewOrgTag(e.target.value as ContactTag | '')}
+                className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.12)' }}
+              >
+                <option value="">No auto-tag</option>
+                {ALL_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <button
+                onClick={() => {
+                  if (!newOrgName.trim()) return;
+                  const newOrg: NetworkOrg = {
+                    id: generateId(),
+                    name: newOrgName.trim(),
+                    color: newOrgColor,
+                    autoTag: newOrgTag || undefined,
+                    memberContactIds: [],
+                  };
+                  onUpdateOrgs([...(mapState.orgs ?? []), newOrg]);
+                  setNewOrgName('');
+                  setExpandedOrgId(newOrg.id);
+                }}
+                className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg transition-colors"
+                style={{ backgroundColor: 'rgba(99,102,241,0.3)', color: '#a5b4fc' }}
+                title="Create org"
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Auto-tag adds the tag to all members automatically
+            </p>
+          </div>
+
+          {/* Org list */}
+          <div className="overflow-y-auto flex-1">
+            {(mapState.orgs ?? []).length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                No orgs yet — create one above
+              </div>
+            ) : (
+              (mapState.orgs ?? []).map(org => {
+                const isExpanded = expandedOrgId === org.id;
+                const members = contacts.filter(c => org.memberContactIds.includes(c.id));
+                const nonMembers = contacts.filter(c => !org.memberContactIds.includes(c.id));
+                return (
+                  <div key={org.id} className="border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: org.color }} />
+                      <button className="flex-1 text-left text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.8)' }}
+                        onClick={() => setExpandedOrgId(isExpanded ? null : org.id)}>
+                        {org.name}
+                        {org.autoTag && <span className="ml-1.5 text-xs opacity-50">→ {org.autoTag}</span>}
+                      </button>
+                      <span className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{members.length}</span>
+                      <button onClick={() => setExpandedOrgId(isExpanded ? null : org.id)}
+                        style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      <button onClick={() => {
+                        if (!confirm(`Delete org "${org.name}"?`)) return;
+                        onUpdateOrgs((mapState.orgs ?? []).filter(o => o.id !== org.id));
+                        if (expandedOrgId === org.id) setExpandedOrgId(null);
+                      }} style={{ color: 'rgba(255,255,255,0.25)' }} title="Delete org">
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="px-3 pb-3 flex flex-col gap-1">
+                        {members.map(c => (
+                          <div key={c.id} className="flex items-center gap-2 py-1 px-2 rounded-lg"
+                            style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                            <span className="flex-1 text-xs truncate" style={{ color: 'rgba(255,255,255,0.65)' }}>{c.name}</span>
+                            <button
+                              onClick={() => {
+                                const updated = (mapState.orgs ?? []).map(o =>
+                                  o.id === org.id ? { ...o, memberContactIds: o.memberContactIds.filter(id => id !== c.id) } : o
+                                );
+                                onUpdateOrgs(updated);
+                              }}
+                              style={{ color: 'rgba(255,255,255,0.3)' }} title="Remove from org">
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ))}
+                        {/* Add member */}
+                        {nonMembers.length > 0 && (
+                          <select
+                            className="w-full mt-1 rounded-lg px-2 py-1.5 text-xs outline-none cursor-pointer"
+                            style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.1)' }}
+                            value=""
+                            onChange={e => {
+                              const contactId = e.target.value;
+                              if (!contactId) return;
+                              const updatedOrgs = (mapState.orgs ?? []).map(o =>
+                                o.id === org.id
+                                  ? { ...o, memberContactIds: [...o.memberContactIds, contactId] }
+                                  : o
+                              );
+                              onUpdateOrgs(updatedOrgs);
+                              // Auto-tag the contact
+                              if (org.autoTag) {
+                                const contact = contacts.find(c => c.id === contactId);
+                                if (contact && !contact.tags.includes(org.autoTag!)) {
+                                  onUpdateContact({ ...contact, tags: [...contact.tags, org.autoTag!] });
+                                }
+                              }
+                            }}
+                          >
+                            <option value="">+ Add member…</option>
+                            {nonMembers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 
