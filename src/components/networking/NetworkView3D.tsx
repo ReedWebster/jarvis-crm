@@ -375,21 +375,25 @@ export function NetworkView3D({
   // ─── PULSE + STARFIELD ANIMATION ─────────────────────────────────────────
 
   useEffect(() => {
-    const animate = () => {
-      const t = Date.now() / 1000;
+    let lastFrame = 0;
+    const animate = (now: number) => {
+      pulseRAFRef.current = requestAnimationFrame(animate);
+      // Throttle to ~24fps — enough for smooth pulses, half the GPU cost
+      if (now - lastFrame < 42) return;
+      lastFrame = now;
+      const t = now / 1000;
       // Pulse rings
       pulseRingsRef.current.forEach(ring => {
-        const scale = 1 + 0.3 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0));
-        ring.scale.setScalar(scale);
+        const s = 1 + 0.28 * Math.sin(t * 2.0 + (ring.userData.phase ?? 0));
+        ring.scale.setScalar(s);
         (ring.material as THREE.MeshBasicMaterial).opacity =
-          0.2 + 0.3 * (0.5 + 0.5 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0)));
+          0.18 + 0.28 * (0.5 + 0.5 * Math.sin(t * 2.0 + (ring.userData.phase ?? 0)));
       });
       // Slowly rotate starfield
       if (starfieldRef.current) {
-        starfieldRef.current.rotation.y += 0.00008;
-        starfieldRef.current.rotation.x += 0.00003;
+        starfieldRef.current.rotation.y += 0.0003;
+        starfieldRef.current.rotation.x += 0.00012;
       }
-      pulseRAFRef.current = requestAnimationFrame(animate);
     };
     pulseRAFRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(pulseRAFRef.current);
@@ -409,7 +413,7 @@ export function NetworkView3D({
         const scene = fg.scene();
         if (!scene) return;
 
-        const COUNT = 2200;
+        const COUNT = 900;
         const positions = new Float32Array(COUNT * 3);
         const opacities = new Float32Array(COUNT);
 
@@ -787,24 +791,17 @@ export function NetworkView3D({
       const orgColor = new THREE.Color(hexColor);
       const r = 22;
 
-      // Outer wireframe sphere
+      // Outer wireframe sphere (low-poly for perf)
       const wireMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(r, 18, 14),
-        new THREE.MeshBasicMaterial({ color: orgColor, wireframe: true, transparent: true, opacity: 0.25 }),
+        new THREE.SphereGeometry(r, 10, 8),
+        new THREE.MeshBasicMaterial({ color: orgColor, wireframe: true, transparent: true, opacity: 0.28 }),
       );
       group.add(wireMesh);
 
-      // Inner translucent fill
-      const fillMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(r * 0.96, 18, 14),
-        new THREE.MeshBasicMaterial({ color: orgColor, transparent: true, opacity: 0.06, depthWrite: false }),
-      );
-      group.add(fillMesh);
-
       // Equator ring
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(r, 0.7, 8, 48),
-        new THREE.MeshBasicMaterial({ color: orgColor, transparent: true, opacity: 0.55 }),
+        new THREE.TorusGeometry(r, 0.8, 6, 36),
+        new THREE.MeshBasicMaterial({ color: orgColor, transparent: true, opacity: 0.6 }),
       );
       group.add(ring);
 
@@ -840,27 +837,19 @@ export function NetworkView3D({
       glow.scale.set(r * 7, r * 7, 1);
       group.add(glow);
 
-      // Outer translucent sphere (solid fill, like a water bubble)
+      // Outer translucent sphere
       const outerMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(r, 24, 18),
-        new THREE.MeshPhongMaterial({ color: c, emissive: c, emissiveIntensity: 0.25, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.FrontSide }),
+        new THREE.SphereGeometry(r, 14, 10),
+        new THREE.MeshPhongMaterial({ color: c, emissive: c, emissiveIntensity: 0.2, transparent: true, opacity: 0.1, depthWrite: false }),
       );
       group.add(outerMesh);
 
-      // Inner bright edge ring
+      // Edge ring
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(r, 1.0, 8, 52),
-        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.7 }),
+        new THREE.TorusGeometry(r, 1.0, 6, 36),
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.72 }),
       );
       group.add(ring);
-
-      // Second tilted ring for depth
-      const ring2 = new THREE.Mesh(
-        new THREE.TorusGeometry(r * 0.7, 0.5, 8, 40),
-        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35 }),
-      );
-      ring2.rotation.x = Math.PI / 3;
-      group.add(ring2);
 
       // Name label
       const label = new SpriteText(`${node.name}  (${count})`);
@@ -899,7 +888,7 @@ export function NetworkView3D({
 
     // ── Main sphere — smooth emissive orb ────────────────────────────────
     const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(radius, 28, 20),
+      new THREE.SphereGeometry(radius, 18, 14),
       new THREE.MeshPhongMaterial({
         color: threeColor,
         emissive: threeColor,
@@ -915,7 +904,7 @@ export function NetworkView3D({
     // ── Bright inner core (specular sparkle) ─────────────────────────────
     if (!node.dimmed) {
       const core = new THREE.Mesh(
-        new THREE.SphereGeometry(radius * 0.38, 14, 10),
+        new THREE.SphereGeometry(radius * 0.38, 10, 8),
         new THREE.MeshBasicMaterial({
           color: 0xffffff,
           transparent: true,
@@ -1081,6 +1070,9 @@ export function NetworkView3D({
         showNavInfo={false}
         enableNodeDrag
         enableNavigationControls
+        cooldownTicks={180}
+        d3AlphaDecay={0.025}
+        d3VelocityDecay={0.35}
       />
 
       {/* ── Hover tooltip ───────────────────────────────────────────────── */}
