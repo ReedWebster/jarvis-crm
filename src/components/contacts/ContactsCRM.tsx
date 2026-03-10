@@ -261,6 +261,16 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
         className="flex items-center gap-1.5 pt-1 border-t transition-colors duration-300"
         style={{ borderColor: 'var(--border)' }}
       >
+        {contact.email && (
+          <a
+            href={`mailto:${contact.email}`}
+            className="caesar-btn-ghost flex-1 text-xs flex items-center justify-center gap-1 py-1.5"
+            title={`Email ${contact.name}`}
+          >
+            <Mail size={11} />
+            Email
+          </a>
+        )}
         <button
           onClick={onLogInteraction}
           className="caesar-btn-ghost flex-1 text-xs flex items-center justify-center gap-1 py-1.5"
