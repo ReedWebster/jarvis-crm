@@ -687,9 +687,9 @@ export function NetworkView3D({
     const ctx = canvas.getContext('2d')!;
     const cx = size / 2, cy = size / 2, r = size / 2;
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0,   hex + 'cc'); // centre ~80%
-    grad.addColorStop(0.25, hex + '88');
-    grad.addColorStop(0.6,  hex + '33');
+    grad.addColorStop(0,    hex + 'dd');
+    grad.addColorStop(0.2,  hex + 'aa');
+    grad.addColorStop(0.55, hex + '44');
     grad.addColorStop(1,    hex + '00');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
@@ -703,49 +703,76 @@ export function NetworkView3D({
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
     const group = new THREE.Group();
+    const radius = Math.cbrt(node.val) * 2.8;
+    const hexColor = node.color.startsWith('#') ? node.color : '#60a5fa';
+    const threeColor = new THREE.Color(node.dimmed ? '#0d0d22' : hexColor);
 
-    // ── Glow sprite (behind node sphere) ──────────────────────────────────
+    // ── Outer glow bloom sprite ───────────────────────────────────────────
     if (!node.dimmed) {
-      // Convert node.color (could be "rgba(...)" or "#rrggbb") to a hex for the texture key
-      const hexColor = node.color.startsWith('#') ? node.color : '#ffffff';
       const glowTex = makeGlowTexture(hexColor);
-      const glowSprite = new THREE.Sprite(
+      const glow = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: glowTex,
           transparent: true,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
-          opacity: node.mapData.strength === 'hot' ? 0.9 : 0.65,
+          opacity: node.mapData.strength === 'hot' ? 1.0 : 0.7,
         }),
       );
-      const glowSize = node.val * 7;
-      glowSprite.scale.set(glowSize, glowSize, 1);
-      (glowSprite as any).position.set(0, 0, -0.5); // slightly behind
-      group.add(glowSprite);
+      const gs = radius * 8.5;
+      glow.scale.set(gs, gs, 1);
+      group.add(glow);
     }
 
-    // ── Text label ────────────────────────────────────────────────────────
-    const sprite = new SpriteText(node.name);
-    sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
-    sprite.textHeight = Math.max(2.5, node.val * 0.55);
-    sprite.fontWeight = '600';
-    sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
-    sprite.padding = 1.5;
-    sprite.borderRadius = 2;
-    group.add(sprite as unknown as THREE.Object3D);
+    // ── Main sphere — smooth emissive orb ────────────────────────────────
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 28, 20),
+      new THREE.MeshPhongMaterial({
+        color: threeColor,
+        emissive: threeColor,
+        emissiveIntensity: node.dimmed ? 0 : 0.45,
+        shininess: 120,
+        transparent: true,
+        opacity: node.dimmed ? 0.08 : 0.88,
+        depthWrite: !node.dimmed,
+      }),
+    );
+    group.add(sphere);
+
+    // ── Bright inner core (specular sparkle) ─────────────────────────────
+    if (!node.dimmed) {
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 0.38, 14, 10),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.18,
+          depthWrite: false,
+        }),
+      );
+      group.add(core);
+    }
+
+    // ── Floating label — no background box ───────────────────────────────
+    const label = new SpriteText(node.name);
+    label.color = node.dimmed ? 'rgba(80,80,120,0.5)' : 'rgba(255,255,255,0.95)';
+    label.textHeight = Math.max(1.8, radius * 0.85);
+    label.fontWeight = '700';
+    (label as any).backgroundColor = false;
+    (label as any).position.set(0, radius + 2.5, 0);
+    group.add(label as unknown as THREE.Object3D);
 
     // ── Pulse ring for hot/warm/overdue nodes ─────────────────────────────
     if (!node.dimmed && (node.mapData.strength === 'hot' || node.mapData.strength === 'warm' || node.hasPending)) {
-      const ringColor = node.hasPending
-        ? '#ef4444'
+      const ringColor = node.hasPending ? '#ef4444'
         : node.mapData.strength === 'hot' ? '#dc2626' : '#d97706';
-      const size = node.val * 2.2;
+      const inner = radius * 1.45, outer = radius * 1.85;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(size * 0.85, size, 32),
+        new THREE.RingGeometry(inner, outer, 36),
         new THREE.MeshBasicMaterial({
           color: new THREE.Color(ringColor),
           transparent: true,
-          opacity: 0.4,
+          opacity: 0.45,
           side: THREE.DoubleSide,
           depthWrite: false,
         }),
@@ -855,10 +882,7 @@ export function NetworkView3D({
         nodeId="id"
         nodeColor={(n: object) => (n as GraphNode).color}
         nodeVal={(n: object) => (n as GraphNode).val}
-        nodeResolution={8}
-        nodeOpacity={0.95}
         nodeThreeObject={nodeThreeObject}
-        nodeThreeObjectExtend
         linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.4)' : 'rgba(251,191,36,0.6)'}
         linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.5 : 1.5}
         linkDirectionalParticles={0}
