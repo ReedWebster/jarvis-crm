@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search } from 'lucide-react';
+import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2 } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -210,6 +210,28 @@ export function NetworkView3D({
   const [connectSource, setConnectSource] = useState<string | null>(null);
   const [pendingConn, setPendingConn] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Escape key closes fullscreen
+  useEffect(() => {
+    if (!fullscreen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [fullscreen]);
+
+  // Keep dims in sync when fullscreen toggles
+  useEffect(() => {
+    if (fullscreen) {
+      setDims({ w: window.innerWidth, h: window.innerHeight });
+    } else {
+      const el = containerRef.current;
+      if (el) {
+        const { width, height } = el.getBoundingClientRect();
+        if (width > 0 && height > 0) setDims({ w: Math.floor(width), h: Math.floor(height) });
+      }
+    }
+  }, [fullscreen]);
 
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
@@ -322,7 +344,20 @@ export function NetworkView3D({
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="w-full h-full relative" style={{ background: '#050510' }}>
+    <div
+      ref={containerRef}
+      className="w-full h-full relative"
+      style={{
+        background: '#050510',
+        ...(fullscreen ? {
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9000,
+          width: '100vw',
+          height: '100vh',
+        } : {}),
+      }}
+    >
       <ForceGraph3D
         ref={fgRef}
         width={dims.w}
@@ -371,6 +406,15 @@ export function NetworkView3D({
 
       {/* ── Toolbar (top-right) ─────────────────────────────────────────── */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-2 flex-wrap justify-end">
+        <button
+          onClick={() => setFullscreen(f => !f)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
+          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        >
+          {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+          {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+        </button>
         <button
           onClick={() => setShowAddContact(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
