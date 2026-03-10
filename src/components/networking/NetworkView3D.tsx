@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import * as THREE from 'three';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers } from 'lucide-react';
+import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers, AlertCircle } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -16,6 +17,7 @@ import {
   buildAutoEdges,
   defaultContactMapData,
   isFollowUpPending,
+  getFollowUpUrgency,
 } from '../../utils/networkingMap';
 import { ContactMapPopup } from './ContactMapPopup';
 
@@ -28,6 +30,7 @@ interface GraphNode {
   val: number;
   dimmed: boolean;
   hasPending: boolean;
+  urgency: 'overdue' | 'today' | 'upcoming' | null;
   contact: Contact;
   mapData: ContactMapData;
 }
@@ -75,6 +78,9 @@ const TAG_COLORS: Record<string, string> = {
 const STRENGTH_COLORS: Record<string, string> = {
   hot: '#dc2626', warm: '#d97706', cold: '#3b82f6', personal: '#8b5cf6',
 };
+const FOLLOWUP_COLORS: Record<string, string> = {
+  overdue: '#ef4444', today: '#f97316', upcoming: '#fbbf24', ok: '#3b82f6',
+};
 const AUTO_PALETTE = [
   '#06b6d4','#10b981','#f59e0b','#ec4899','#8b5cf6','#f97316',
   '#a78bfa','#34d399','#60a5fa','#fb7185','#fbbf24','#4ade80',
@@ -85,16 +91,8 @@ const AUTO_PALETTE = [
 // ─── CONNECTION LABEL MODAL ───────────────────────────────────────────────────
 
 function ConnectionModal({
-  sourceName,
-  targetName,
-  onSave,
-  onClose,
-}: {
-  sourceName: string;
-  targetName: string;
-  onSave: (label: string) => void;
-  onClose: () => void;
-}) {
+  sourceName, targetName, onSave, onClose,
+}: { sourceName: string; targetName: string; onSave: (label: string) => void; onClose: () => void }) {
   const [label, setLabel] = useState('');
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
@@ -107,14 +105,9 @@ function ConnectionModal({
         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{sourceName} → {targetName}</div>
         <div>
           <div className="caesar-label">Connection Type</div>
-          <input
-            className="caesar-input"
-            value={label}
-            onChange={e => setLabel(e.target.value)}
-            placeholder="e.g. Introduced by, Co-founder, Classmate..."
-            autoFocus
-            onKeyDown={e => { if (e.key === 'Enter') onSave(label); }}
-          />
+          <input className="caesar-input" value={label} onChange={e => setLabel(e.target.value)}
+            placeholder="e.g. Introduced by, Co-founder, Classmate..." autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') onSave(label); }} />
         </div>
         <div className="flex gap-2">
           <button onClick={() => onSave(label)} className="caesar-btn-primary flex-1">Save Connection</button>
@@ -136,16 +129,10 @@ function AddContactModal({ onSave, onClose }: { onSave: (c: Contact) => void; on
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
-      id: generateId(),
-      name: name.trim(),
-      email: email.trim() || undefined,
-      relationship: relationship.trim(),
-      tags: [tag],
+      id: generateId(), name: name.trim(), email: email.trim() || undefined,
+      relationship: relationship.trim(), tags: [tag],
       lastContacted: new Date().toISOString().slice(0, 10),
-      followUpNeeded: false,
-      notes: '',
-      interactions: [],
-      linkedProjects: [],
+      followUpNeeded: false, notes: '', interactions: [], linkedProjects: [],
     });
   };
 
@@ -187,6 +174,102 @@ function AddContactModal({ onSave, onClose }: { onSave: (c: Contact) => void; on
   );
 }
 
+// ─── CMD+K MODAL ──────────────────────────────────────────────────────────────
+
+function CmdKModal({
+  contacts,
+  onSelect,
+  onClose,
+}: { contacts: Contact[]; onSelect: (id: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const results = useMemo(() => {
+    if (!q.trim()) return contacts.slice(0, 8);
+    const lower = q.toLowerCase();
+    return contacts
+      .filter(c =>
+        c.name.toLowerCase().includes(lower) ||
+        (c.company ?? '').toLowerCase().includes(lower) ||
+        c.tags.some(t => t.toLowerCase().includes(lower))
+      )
+      .slice(0, 8);
+  }, [q, contacts]);
+
+  useEffect(() => { setActiveIdx(0); }, [results]);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, results.length - 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+    if (e.key === 'Enter' && results[activeIdx]) onSelect(results[activeIdx].id);
+    if (e.key === 'Escape') onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh]"
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="w-[480px] rounded-xl border shadow-2xl overflow-hidden"
+        style={{ backgroundColor: '#0a0a18', borderColor: 'rgba(255,255,255,0.12)' }}
+        onClick={e => e.stopPropagation()}>
+        {/* Search input */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+          <Search size={14} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: 'rgba(255,255,255,0.9)' }}
+            placeholder="Fly to contact…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={handleKey}
+          />
+          <kbd className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}>ESC</kbd>
+        </div>
+        {/* Results */}
+        <div className="max-h-72 overflow-y-auto">
+          {results.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>No contacts found</div>
+          ) : results.map((c, i) => (
+            <button
+              key={c.id}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+              style={{
+                backgroundColor: i === activeIdx ? 'rgba(139,92,246,0.15)' : 'transparent',
+                borderLeft: i === activeIdx ? '2px solid #8b5cf6' : '2px solid transparent',
+              }}
+              onMouseEnter={() => setActiveIdx(i)}
+              onClick={() => onSelect(c.id)}
+            >
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                style={{ backgroundColor: TAG_COLORS[c.tags[0]] ?? '#6b7280' }}>
+                {c.name[0]?.toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{c.name}</div>
+                {c.company && <div className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{c.company}</div>}
+              </div>
+              <div className="ml-auto flex-shrink-0">
+                {c.tags[0] && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full"
+                    style={{ backgroundColor: `${TAG_COLORS[c.tags[0]] ?? '#6b7280'}22`, color: TAG_COLORS[c.tags[0]] ?? '#6b7280' }}>
+                    {c.tags[0]}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="px-4 py-2 border-t flex items-center gap-4 text-xs" style={{ borderColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.25)' }}>
+          <span>↑↓ navigate</span><span>↵ fly to</span><span>ESC close</span>
+          <span className="ml-auto">⌘K</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function NetworkView3D({
@@ -215,7 +298,6 @@ export function NetworkView3D({
       if (width > 0 && height > 0) setDims({ w: Math.floor(width), h: Math.floor(height) });
     });
     obs.observe(el);
-    // Set initial size
     const { width, height } = el.getBoundingClientRect();
     if (width > 0 && height > 0) setDims({ w: Math.floor(width), h: Math.floor(height) });
     return () => obs.disconnect();
@@ -229,19 +311,63 @@ export function NetworkView3D({
   const [pendingConn, setPendingConn] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
-  type GroupBy = 'none' | 'tag' | 'strength' | 'company';
+  type GroupBy = 'none' | 'tag' | 'strength' | 'company' | 'followup';
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
   const clusterLabelsRef = useRef<SpriteText[]>([]);
   const graphDataNodesRef = useRef<any[]>([]);
+  // Map from node id → pulse ring mesh, for animation
+  const pulseRingsRef = useRef<Map<string, THREE.Mesh>>(new Map());
+  const pulseRAFRef = useRef<number>(0);
+  // Double-click detection
+  const lastClickRef = useRef<{ id: string; time: number } | null>(null);
 
-  // Escape key closes fullscreen
+  // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!fullscreen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdkOpen(o => !o);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (cmdkOpen) { setCmdkOpen(false); return; }
+        if (focusedNodeId) { setFocusedNodeId(null); return; }
+        if (fullscreen) setFullscreen(false);
+      }
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [fullscreen]);
+  }, [cmdkOpen, focusedNodeId, fullscreen]);
+
+  // Track mouse for tooltip positioning
+  useEffect(() => {
+    const handler = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
+    window.addEventListener('mousemove', handler);
+    return () => window.removeEventListener('mousemove', handler);
+  }, []);
+
+  // ─── PULSE ANIMATION ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const animate = () => {
+      const t = Date.now() / 1000;
+      pulseRingsRef.current.forEach(ring => {
+        const scale = 1 + 0.3 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0));
+        ring.scale.setScalar(scale);
+        (ring.material as THREE.MeshBasicMaterial).opacity =
+          0.2 + 0.3 * (0.5 + 0.5 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0)));
+      });
+      pulseRAFRef.current = requestAnimationFrame(animate);
+    };
+    pulseRAFRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(pulseRAFRef.current);
+  }, []);
 
   // Keep dims in sync when fullscreen toggles
   useEffect(() => {
@@ -256,19 +382,28 @@ export function NetworkView3D({
     }
   }, [fullscreen]);
 
-  // Fit camera after engine settles, with a backup timer
-  const hasFitted = useRef(false);
+  // Fit camera after engine settles
   const doZoomToFit = useCallback(() => {
-    if (fgRef.current) {
-      fgRef.current.zoomToFit(800, 80);
-      hasFitted.current = true;
-    }
+    fgRef.current?.zoomToFit(800, 80);
   }, []);
 
   useEffect(() => {
     const t = setTimeout(doZoomToFit, 2000);
     return () => clearTimeout(t);
   }, [doZoomToFit]);
+
+  // Fly camera to a contact node
+  const flyToContact = useCallback((contactId: string) => {
+    const node = graphDataNodesRef.current.find(n => n.id === contactId);
+    if (!node || !fgRef.current) return;
+    const x = node.x ?? 0, y = node.y ?? 0, z = node.z ?? 0;
+    fgRef.current.cameraPosition(
+      { x: x + 80, y: y + 40, z: z + 80 },
+      { x, y, z },
+      1200,
+    );
+    setCmdkOpen(false);
+  }, []);
 
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
@@ -293,13 +428,16 @@ export function NetworkView3D({
         return md.strength ?? 'cold';
       }
       if (groupBy === 'company') return c.company?.trim() || 'Unknown';
+      if (groupBy === 'followup') {
+        const urgency = getFollowUpUrgency(c);
+        return urgency ?? 'ok';
+      }
       return 'All';
     };
 
     const rawGroups: Record<string, string> = {};
     contacts.forEach(c => { rawGroups[c.id] = getGroupName(c); });
 
-    // For company, cap at top 15 by count, rest → 'Other'
     let nodeGroups = rawGroups;
     if (groupBy === 'company') {
       const counts: Record<string, number> = {};
@@ -319,6 +457,7 @@ export function NetworkView3D({
     groupList.forEach((g, i) => {
       if (groupBy === 'tag') groupColors[g] = TAG_COLORS[g] ?? AUTO_PALETTE[i % AUTO_PALETTE.length];
       else if (groupBy === 'strength') groupColors[g] = STRENGTH_COLORS[g] ?? AUTO_PALETTE[i % AUTO_PALETTE.length];
+      else if (groupBy === 'followup') groupColors[g] = FOLLOWUP_COLORS[g] ?? AUTO_PALETTE[i % AUTO_PALETTE.length];
       else groupColors[g] = AUTO_PALETTE[i % AUTO_PALETTE.length];
     });
 
@@ -335,6 +474,24 @@ export function NetworkView3D({
     return { nodeGroups, nodeColors, centroids, groupColors, groupList };
   }, [groupBy, contacts, mapState]);
 
+  // ─── FOCUS MODE — compute 1st-degree connected set ───────────────────────
+
+  const focusConnectedIds = useMemo((): Set<string> | null => {
+    if (!focusedNodeId) return null;
+    const ids = new Set<string>([focusedNodeId]);
+    if (mapState.showAutoConnections) {
+      buildAutoEdges(contacts).forEach(e => {
+        if (e.source === focusedNodeId) ids.add(String(e.target));
+        if (e.target === focusedNodeId) ids.add(String(e.source));
+      });
+    }
+    mapState.manualConnections.forEach(conn => {
+      if (conn.sourceContactId === focusedNodeId) ids.add(conn.targetContactId);
+      if (conn.targetContactId === focusedNodeId) ids.add(conn.sourceContactId);
+    });
+    return ids;
+  }, [focusedNodeId, contacts, mapState]);
+
   // ─── GRAPH DATA ─────────────────────────────────────────────────────────────
 
   const graphData = useMemo(() => {
@@ -344,16 +501,23 @@ export function NetworkView3D({
         || c.name.toLowerCase().includes(graphSearchLower)
         || (c.company ?? '').toLowerCase().includes(graphSearchLower)
         || c.tags.some(t => t.toLowerCase().includes(graphSearchLower));
-      const dimmed = (filteredIds.size > 0 && !filteredIds.has(c.id))
-        || (graphSearchLower.length > 0 && !matchesSearch);
+
+      const dimmed = focusConnectedIds
+        ? !focusConnectedIds.has(c.id)
+        : (filteredIds.size > 0 && !filteredIds.has(c.id))
+          || (graphSearchLower.length > 0 && !matchesSearch);
+
+      const baseColor = clusterInfo?.nodeColors[c.id] ?? getContactStrengthColor(md.strength ?? 'cold');
+      const urgency = getFollowUpUrgency(c);
 
       return {
         id: c.id,
         name: c.name,
-        color: dimmed ? '#151525' : (clusterInfo?.nodeColors[c.id] ?? getContactStrengthColor(md.strength ?? 'cold')),
+        color: dimmed ? '#151525' : baseColor,
         val: Math.max(4, 3 + c.interactions.length * 0.5),
         dimmed,
         hasPending: isFollowUpPending(c),
+        urgency,
         contact: c,
         mapData: md,
       };
@@ -361,36 +525,26 @@ export function NetworkView3D({
 
     const autoLinks: GraphLink[] = mapState.showAutoConnections
       ? buildAutoEdges(contacts).map(e => ({
-          source: e.source,
-          target: e.target,
-          label: String(e.label ?? ''),
-          isAuto: true,
+          source: e.source, target: e.target, label: String(e.label ?? ''), isAuto: true,
         }))
       : [];
 
     const manualLinks: GraphLink[] = mapState.manualConnections
       .filter(c => contactMap.has(c.sourceContactId) && contactMap.has(c.targetContactId))
       .map(conn => ({
-        source: conn.sourceContactId,
-        target: conn.targetContactId,
-        label: conn.label ?? '',
-        isAuto: false,
-        connId: conn.id,
+        source: conn.sourceContactId, target: conn.targetContactId,
+        label: conn.label ?? '', isAuto: false, connId: conn.id,
       }));
 
     return { nodes, links: [...autoLinks, ...manualLinks] };
-  }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo]);
+  }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo, focusConnectedIds]);
 
-  // Keep nodes ref in sync for the animation loop (avoids calling fgRef.graphData() in RAF)
+  // Keep nodes ref in sync
   useEffect(() => { graphDataNodesRef.current = graphData.nodes as any[]; }, [graphData]);
 
   // ─── CLUSTER FORCE ───────────────────────────────────────────────────────────
 
-  const clusterInfoRef = useRef(clusterInfo);
-  clusterInfoRef.current = clusterInfo;
-
   useEffect(() => {
-    // Wait for ForceGraph3D to fully initialize before touching D3 forces
     const timer = setTimeout(() => {
       const fg = fgRef.current;
       if (!fg) return;
@@ -457,6 +611,8 @@ export function NetworkView3D({
 
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
+
+    // Text label
     const sprite = new SpriteText(node.name);
     sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
     sprite.textHeight = Math.max(2.5, node.val * 0.55);
@@ -464,6 +620,34 @@ export function NetworkView3D({
     sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
     sprite.padding = 1.5;
     sprite.borderRadius = 2;
+
+    // Pulse ring for hot/warm/overdue nodes
+    if (!node.dimmed && (node.mapData.strength === 'hot' || node.mapData.strength === 'warm' || node.hasPending)) {
+      const ringColor = node.hasPending
+        ? '#ef4444'
+        : node.mapData.strength === 'hot' ? '#dc2626' : '#d97706';
+      const size = node.val * 2.2;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(size * 0.85, size, 32),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(ringColor),
+          transparent: true,
+          opacity: 0.4,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      ring.userData.phase = Math.random() * Math.PI * 2; // stagger phases
+      pulseRingsRef.current.set(node.id, ring);
+      // Return a group with both the sprite and the ring
+      const group = new THREE.Group();
+      group.add(sprite as unknown as THREE.Object3D);
+      group.add(ring);
+      return group;
+    }
+
+    // Remove any old ring for this node if it's now dimmed
+    pulseRingsRef.current.delete(node.id);
     return sprite;
   }, []);
 
@@ -483,9 +667,23 @@ export function NetworkView3D({
       return;
     }
 
+    // Double-click detection → toggle focus mode
+    const now = Date.now();
+    const last = lastClickRef.current;
+    if (last && last.id === node.id && now - last.time < 350) {
+      lastClickRef.current = null;
+      setFocusedNodeId(prev => prev === node.id ? null : node.id);
+      return;
+    }
+    lastClickRef.current = { id: node.id, time: now };
+
     setSelectedContact(node.contact);
     setSelectedMapData(node.mapData);
   }, [connectMode, connectSource]);
+
+  const handleNodeHover = useCallback((nodeRaw: object | null) => {
+    setHoveredNode(nodeRaw ? (nodeRaw as GraphNode) : null);
+  }, []);
 
   const handleSaveConnection = (label: string) => {
     if (!pendingConn) return;
@@ -501,16 +699,33 @@ export function NetworkView3D({
   const handleLinkClick = useCallback((linkRaw: object) => {
     const link = linkRaw as GraphLink;
     if (!link.isAuto && link.connId) {
-      if (confirm('Delete this connection?')) {
-        onDeleteManualConnection(link.connId);
-      }
+      if (confirm('Delete this connection?')) onDeleteManualConnection(link.connId);
     }
   }, [onDeleteManualConnection]);
 
-  const cancelConnect = () => {
-    setConnectMode(false);
-    setConnectSource(null);
-  };
+  const cancelConnect = () => { setConnectMode(false); setConnectSource(null); };
+
+  // ─── LEGEND ITEMS ────────────────────────────────────────────────────────────
+
+  const legendItems = useMemo(() => {
+    if (clusterInfo) {
+      return clusterInfo.groupList.map(g => ({ color: clusterInfo.groupColors[g], label: g }));
+    }
+    if (groupBy === 'followup') {
+      return [
+        { color: FOLLOWUP_COLORS.overdue, label: 'Overdue' },
+        { color: FOLLOWUP_COLORS.today, label: 'Due Today' },
+        { color: FOLLOWUP_COLORS.upcoming, label: 'Upcoming' },
+        { color: FOLLOWUP_COLORS.ok, label: 'No Follow-up' },
+      ];
+    }
+    return [
+      { color: '#dc2626', label: 'Hot' },
+      { color: '#d97706', label: 'Warm' },
+      { color: '#3b82f6', label: 'Cold' },
+      { color: '#8b5cf6', label: 'Personal' },
+    ];
+  }, [clusterInfo, groupBy]);
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
@@ -520,13 +735,7 @@ export function NetworkView3D({
       className="w-full h-full relative"
       style={{
         background: '#050510',
-        ...(fullscreen ? {
-          position: 'fixed',
-          inset: 0,
-          zIndex: 9000,
-          width: '100vw',
-          height: '100vh',
-        } : {}),
+        ...(fullscreen ? { position: 'fixed', inset: 0, zIndex: 9000, width: '100vw', height: '100vh' } : {}),
       }}
     >
       <ForceGraph3D
@@ -546,6 +755,7 @@ export function NetworkView3D({
         linkDirectionalParticles={0}
         linkCurvature={0.1}
         onNodeClick={handleNodeClick}
+        onNodeHover={handleNodeHover}
         onLinkClick={handleLinkClick}
         onEngineStop={doZoomToFit}
         backgroundColor="#050510"
@@ -553,6 +763,52 @@ export function NetworkView3D({
         enableNodeDrag
         enableNavigationControls
       />
+
+      {/* ── Hover tooltip ───────────────────────────────────────────────── */}
+      {hoveredNode && !hoveredNode.dimmed && (
+        <div
+          className="fixed z-50 pointer-events-none rounded-lg border shadow-xl px-3 py-2.5 text-xs"
+          style={{
+            left: mousePos.x + 14,
+            top: mousePos.y - 10,
+            backgroundColor: 'rgba(8,8,22,0.95)',
+            borderColor: 'rgba(255,255,255,0.12)',
+            backdropFilter: 'blur(12px)',
+            maxWidth: 220,
+            transform: mousePos.x > window.innerWidth - 240 ? 'translateX(-110%)' : undefined,
+          }}
+        >
+          <div className="font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.95)' }}>{hoveredNode.name}</div>
+          {hoveredNode.contact.company && (
+            <div className="mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>{hoveredNode.contact.company}</div>
+          )}
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {hoveredNode.contact.tags.map(tag => (
+              <span key={tag} className="px-1.5 py-0.5 rounded-full text-xs"
+                style={{ backgroundColor: `${TAG_COLORS[tag] ?? '#6b7280'}22`, color: TAG_COLORS[tag] ?? '#6b7280' }}>
+                {tag}
+              </span>
+            ))}
+            <span className="px-1.5 py-0.5 rounded-full text-xs"
+              style={{ backgroundColor: `${STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold']}22`, color: STRENGTH_COLORS[hoveredNode.mapData.strength ?? 'cold'] }}>
+              {hoveredNode.mapData.strength ?? 'cold'}
+            </span>
+          </div>
+          {hoveredNode.contact.lastContacted && (
+            <div className="mt-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              Last contact: {hoveredNode.contact.lastContacted}
+            </div>
+          )}
+          {hoveredNode.hasPending && (
+            <div className="mt-1 flex items-center gap-1 text-xs" style={{ color: '#ef4444' }}>
+              <AlertCircle size={10} /> Follow-up needed
+            </div>
+          )}
+          <div className="mt-1.5 text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            Double-click to focus · Click to open
+          </div>
+        </div>
+      )}
 
       {/* ── Search box (top-left) ───────────────────────────────────────── */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg"
@@ -572,6 +828,17 @@ export function NetworkView3D({
         )}
       </div>
 
+      {/* ── Cmd+K hint (top-left, below search) ─────────────────────────── */}
+      <button
+        onClick={() => setCmdkOpen(true)}
+        className="absolute top-12 left-3 z-10 flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs"
+        style={{ backgroundColor: 'rgba(10,10,24,0.7)', borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(8px)' }}
+      >
+        <Search size={10} />
+        Fly to contact
+        <kbd className="ml-1 px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>⌘K</kbd>
+      </button>
+
       {/* ── Toolbar (top-right) ─────────────────────────────────────────── */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-2 flex-wrap justify-end">
 
@@ -589,27 +856,21 @@ export function NetworkView3D({
             <option value="tag">Group by Tag</option>
             <option value="strength">Group by Strength</option>
             <option value="company">Group by Company</option>
+            <option value="followup">Follow-up Heatmap</option>
           </select>
         </div>
 
-        <button
-          onClick={() => setFullscreen(f => !f)}
+        <button onClick={() => setFullscreen(f => !f)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
-          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        >
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
           {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
         </button>
-        <button
-          onClick={() => setShowAddContact(true)}
+        <button onClick={() => setShowAddContact(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
-          title="Add a new contact"
-        >
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
           <UserPlus size={12} /> Add Contact
         </button>
-
         <button
           onClick={connectMode ? cancelConnect : () => setConnectMode(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
@@ -618,25 +879,28 @@ export function NetworkView3D({
             borderColor: connectMode ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.1)',
             color: connectMode ? 'rgba(251,191,36,0.9)' : 'rgba(255,255,255,0.7)',
             backdropFilter: 'blur(8px)',
-          }}
-          title={connectMode ? 'Cancel — click two nodes to connect them' : 'Connect two nodes'}
-        >
+          }}>
           {connectMode ? <Link2Off size={12} /> : <Link2 size={12} />}
-          {connectMode
-            ? (connectSource ? 'Now click target…' : 'Click source node…')
-            : 'Connect'}
+          {connectMode ? (connectSource ? 'Now click target…' : 'Click source node…') : 'Connect'}
         </button>
-
-        <button
-          onClick={onToggleAutoConnections}
+        <button onClick={onToggleAutoConnections}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
-          title="Toggle auto-connections from shared projects"
-        >
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
           {mapState.showAutoConnections ? <Zap size={12} /> : <ZapOff size={12} />}
           {mapState.showAutoConnections ? 'Auto-Links On' : 'Auto-Links Off'}
         </button>
       </div>
+
+      {/* ── Focus mode banner ────────────────────────────────────────────── */}
+      {focusedNodeId && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium"
+          style={{ backgroundColor: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.4)', color: 'rgba(167,139,250,0.9)', backdropFilter: 'blur(8px)' }}>
+          <span>Focused: <strong>{contactMap.get(focusedNodeId)?.name}</strong></span>
+          <button onClick={() => setFocusedNodeId(null)} style={{ color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {/* ── Connect mode source indicator ───────────────────────────────── */}
       {connectMode && connectSource && (
@@ -649,27 +913,14 @@ export function NetworkView3D({
       {/* ── Legend (bottom-left) ────────────────────────────────────────── */}
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-2 rounded-lg text-xs"
         style={{ backgroundColor: 'rgba(10,10,24,0.75)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)', color: 'rgba(255,255,255,0.45)', maxWidth: 'calc(100vw - 24px)', flexWrap: 'wrap' }}>
-        {clusterInfo
-          ? clusterInfo.groupList.map(g => (
-              <span key={g} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: clusterInfo.groupColors[g] }} />
-                {g}
-              </span>
-            ))
-          : [
-              { color: '#dc2626', label: 'Hot' },
-              { color: '#d97706', label: 'Warm' },
-              { color: '#3b82f6', label: 'Cold' },
-              { color: '#8b5cf6', label: 'Personal' },
-            ].map(({ color, label }) => (
-              <span key={label} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                {label}
-              </span>
-            ))
-        }
+        {legendItems.map(({ color, label }) => (
+          <span key={label} className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+            {label}
+          </span>
+        ))}
         <span className="ml-1" style={{ borderLeft: '1px solid rgba(255,255,255,0.12)', paddingLeft: 8 }}>
-          Drag to orbit · Scroll to zoom · Click node to view
+          Drag to orbit · Scroll to zoom · Double-click to focus
         </span>
       </div>
 
@@ -684,10 +935,7 @@ export function NetworkView3D({
               onUpdateMapData(selectedContact.id, data);
               setSelectedMapData(prev => prev ? { ...prev, ...data } : prev);
             }}
-            onUpdateContact={updated => {
-              onUpdateContact(updated);
-              setSelectedContact(updated);
-            }}
+            onUpdateContact={updated => { onUpdateContact(updated); setSelectedContact(updated); }}
             onEditInCRM={onNavigateToCRM}
           />
         </div>
@@ -708,6 +956,15 @@ export function NetworkView3D({
         <AddContactModal
           onSave={contact => { onAddContact(contact); setShowAddContact(false); }}
           onClose={() => setShowAddContact(false)}
+        />
+      )}
+
+      {/* ── Cmd+K modal ──────────────────────────────────────────────────── */}
+      {cmdkOpen && (
+        <CmdKModal
+          contacts={contacts}
+          onSelect={flyToContact}
+          onClose={() => setCmdkOpen(false)}
         />
       )}
     </div>
