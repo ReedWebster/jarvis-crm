@@ -256,6 +256,15 @@ export function NetworkView3D({
     }
   }, [fullscreen]);
 
+  // Fit camera progressively as nodes settle (1s, 3s, 7s)
+  useEffect(() => {
+    const fit = () => fgRef.current?.zoomToFit(600, 50);
+    const t1 = setTimeout(fit, 1000);
+    const t2 = setTimeout(fit, 3000);
+    const t3 = setTimeout(fit, 7000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
 
@@ -308,7 +317,7 @@ export function NetworkView3D({
       else groupColors[g] = AUTO_PALETTE[i % AUTO_PALETTE.length];
     });
 
-    const RADIUS = Math.max(280, groupList.length * 40);
+    const RADIUS = Math.max(120, groupList.length * 18);
     const centroids: Record<string, { x: number; y: number; z: number }> = {};
     groupList.forEach((g, i) => {
       const angle = (i / groupList.length) * Math.PI * 2;
@@ -386,7 +395,7 @@ export function NetworkView3D({
         const group = nodeGroups[node.id];
         const centroid = centroids[group];
         if (!centroid) return;
-        const k = alpha * 0.22;
+        const k = alpha * 0.08;
         node.vx = (node.vx || 0) + (centroid.x - (node.x || 0)) * k;
         node.vy = (node.vy || 0) + (centroid.y - (node.y || 0)) * k;
         node.vz = (node.vz || 0) + (centroid.z - (node.z || 0)) * k;
@@ -532,9 +541,6 @@ export function NetworkView3D({
         enableNodeDrag
         enableNavigationControls
         dagMode={undefined}
-        warmupTicks={60}
-        cooldownTime={4000}
-        onEngineStop={() => fgRef.current?.zoomToFit(800, 80)}
       />
 
       {/* ── Search box (top-left) ───────────────────────────────────────── */}
