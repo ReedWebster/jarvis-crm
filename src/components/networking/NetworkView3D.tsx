@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2 } from 'lucide-react';
+import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -62,6 +62,24 @@ interface Props {
 const ALL_TAGS: ContactTag[] = [
   'Investor', 'Professor', 'Resident', 'Partner', 'Friend',
   'Recruit', 'Mentor', 'Client', 'Colleague', 'Family', 'Other',
+];
+
+// ─── GROUP COLORS ─────────────────────────────────────────────────────────────
+
+const TAG_COLORS: Record<string, string> = {
+  Investor: '#10b981', Professor: '#8b5cf6', Resident: '#f59e0b',
+  Partner: '#ec4899', Friend: '#06b6d4', Recruit: '#f97316',
+  Mentor: '#a78bfa', Client: '#34d399', Colleague: '#60a5fa',
+  Family: '#fb7185', Other: '#6b7280',
+};
+const STRENGTH_COLORS: Record<string, string> = {
+  hot: '#dc2626', warm: '#d97706', cold: '#3b82f6', personal: '#8b5cf6',
+};
+const AUTO_PALETTE = [
+  '#06b6d4','#10b981','#f59e0b','#ec4899','#8b5cf6','#f97316',
+  '#a78bfa','#34d399','#60a5fa','#fb7185','#fbbf24','#4ade80',
+  '#38bdf8','#c084fc','#f472b6','#fb923c','#a3e635','#2dd4bf',
+  '#818cf8','#e879f9',
 ];
 
 // ─── CONNECTION LABEL MODAL ───────────────────────────────────────────────────
@@ -212,6 +230,10 @@ export function NetworkView3D({
   const [showAddContact, setShowAddContact] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
+  type GroupBy = 'none' | 'tag' | 'strength' | 'company';
+  const [groupBy, setGroupBy] = useState<GroupBy>('tag');
+  const clusterLabelsRef = useRef<SpriteText[]>([]);
+
   // Escape key closes fullscreen
   useEffect(() => {
     if (!fullscreen) return;
@@ -236,6 +258,68 @@ export function NetworkView3D({
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
 
+  // ─── CLUSTER INFO ───────────────────────────────────────────────────────────
+
+  interface ClusterInfo {
+    nodeGroups: Record<string, string>;
+    nodeColors: Record<string, string>;
+    centroids: Record<string, { x: number; y: number; z: number }>;
+    groupColors: Record<string, string>;
+    groupList: string[];
+  }
+
+  const clusterInfo = useMemo((): ClusterInfo | null => {
+    if (groupBy === 'none') return null;
+
+    const getGroupName = (c: Contact): string => {
+      if (groupBy === 'tag') return c.tags[0] ?? 'Other';
+      if (groupBy === 'strength') {
+        const md = mapState.contactData[c.id] ?? defaultContactMapData(c.id);
+        return md.strength ?? 'cold';
+      }
+      if (groupBy === 'company') return c.company?.trim() || 'Unknown';
+      return 'All';
+    };
+
+    const rawGroups: Record<string, string> = {};
+    contacts.forEach(c => { rawGroups[c.id] = getGroupName(c); });
+
+    // For company, cap at top 15 by count, rest → 'Other'
+    let nodeGroups = rawGroups;
+    if (groupBy === 'company') {
+      const counts: Record<string, number> = {};
+      Object.values(rawGroups).forEach(g => { counts[g] = (counts[g] || 0) + 1; });
+      const topSet = new Set(
+        Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 15).map(e => e[0])
+      );
+      nodeGroups = {};
+      Object.entries(rawGroups).forEach(([id, g]) => {
+        nodeGroups[id] = topSet.has(g) ? g : 'Other';
+      });
+    }
+
+    const groupList = Array.from(new Set(Object.values(nodeGroups))).sort();
+
+    const groupColors: Record<string, string> = {};
+    groupList.forEach((g, i) => {
+      if (groupBy === 'tag') groupColors[g] = TAG_COLORS[g] ?? AUTO_PALETTE[i % AUTO_PALETTE.length];
+      else if (groupBy === 'strength') groupColors[g] = STRENGTH_COLORS[g] ?? AUTO_PALETTE[i % AUTO_PALETTE.length];
+      else groupColors[g] = AUTO_PALETTE[i % AUTO_PALETTE.length];
+    });
+
+    const RADIUS = Math.max(280, groupList.length * 40);
+    const centroids: Record<string, { x: number; y: number; z: number }> = {};
+    groupList.forEach((g, i) => {
+      const angle = (i / groupList.length) * Math.PI * 2;
+      centroids[g] = { x: Math.cos(angle) * RADIUS, y: Math.sin(angle) * RADIUS, z: 0 };
+    });
+
+    const nodeColors: Record<string, string> = {};
+    Object.entries(nodeGroups).forEach(([id, g]) => { nodeColors[id] = groupColors[g]; });
+
+    return { nodeGroups, nodeColors, centroids, groupColors, groupList };
+  }, [groupBy, contacts, mapState]);
+
   // ─── GRAPH DATA ─────────────────────────────────────────────────────────────
 
   const graphData = useMemo(() => {
@@ -251,7 +335,7 @@ export function NetworkView3D({
       return {
         id: c.id,
         name: c.name,
-        color: dimmed ? '#151525' : getContactStrengthColor(md.strength ?? 'cold'),
+        color: dimmed ? '#151525' : (clusterInfo?.nodeColors[c.id] ?? getContactStrengthColor(md.strength ?? 'cold')),
         val: Math.max(4, 3 + c.interactions.length * 0.5),
         dimmed,
         hasPending: isFollowUpPending(c),
@@ -280,7 +364,70 @@ export function NetworkView3D({
       }));
 
     return { nodes, links: [...autoLinks, ...manualLinks] };
-  }, [contacts, mapState, filteredIds, graphSearchLower, contactMap]);
+  }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo]);
+
+  // ─── CLUSTER FORCE ───────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    if (!clusterInfo) {
+      fg.d3Force('cluster', null);
+      fg.d3ReheatSimulation();
+      return;
+    }
+    const { nodeGroups, centroids } = clusterInfo;
+    const clusterForce = (alpha: number) => {
+      const nodes = fg.graphData().nodes as any[];
+      nodes.forEach(node => {
+        const group = nodeGroups[node.id];
+        const centroid = centroids[group];
+        if (!centroid) return;
+        const k = alpha * 0.22;
+        node.vx = (node.vx || 0) + (centroid.x - (node.x || 0)) * k;
+        node.vy = (node.vy || 0) + (centroid.y - (node.y || 0)) * k;
+        node.vz = (node.vz || 0) + (centroid.z - (node.z || 0)) * k;
+      });
+    };
+    fg.d3Force('cluster', clusterForce);
+    fg.d3ReheatSimulation();
+  }, [clusterInfo]);
+
+  // ─── CLUSTER SCENE LABELS ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const fg = fgRef.current;
+    const cleanupLabels = () => {
+      if (!fg) return;
+      try {
+        const scene = fg.scene();
+        clusterLabelsRef.current.forEach(s => scene.remove(s));
+      } catch { /* scene may not be ready */ }
+      clusterLabelsRef.current = [];
+    };
+    cleanupLabels();
+    if (!clusterInfo || !fg) return;
+    const addLabels = () => {
+      try {
+        const scene = fg.scene();
+        if (!scene) return;
+        Object.entries(clusterInfo.centroids).forEach(([groupName, pos]) => {
+          const sprite = new SpriteText(groupName.toUpperCase());
+          sprite.color = clusterInfo.groupColors[groupName] ?? 'rgba(255,255,255,0.9)';
+          sprite.textHeight = 9;
+          sprite.fontWeight = 'bold';
+          sprite.backgroundColor = 'rgba(5,5,18,0.75)';
+          sprite.padding = 4;
+          sprite.borderRadius = 4;
+          (sprite as any).position.set(pos.x, pos.y + 60, pos.z);
+          scene.add(sprite);
+          clusterLabelsRef.current.push(sprite);
+        });
+      } catch { /* scene may not be ready */ }
+    };
+    const timer = setTimeout(addLabels, 250);
+    return () => { clearTimeout(timer); cleanupLabels(); };
+  }, [clusterInfo]);
 
   // ─── NODE RENDERING ──────────────────────────────────────────────────────────
 
@@ -367,15 +514,13 @@ export function NetworkView3D({
         nodeLabel="name"
         nodeColor={(n: object) => (n as GraphNode).color}
         nodeVal={(n: object) => (n as GraphNode).val}
-        nodeResolution={20}
+        nodeResolution={8}
         nodeOpacity={0.92}
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend
         linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.35)' : 'rgba(251,191,36,0.55)'}
         linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.4 : 1.2}
-        linkDirectionalParticles={(l: object) => (l as GraphLink).isAuto ? 2 : 0}
-        linkDirectionalParticleWidth={0.8}
-        linkDirectionalParticleColor={() => 'rgba(59,130,246,0.8)'}
+        linkDirectionalParticles={0}
         linkCurvature={0.1}
         onNodeClick={handleNodeClick}
         onLinkClick={handleLinkClick}
@@ -406,6 +551,24 @@ export function NetworkView3D({
 
       {/* ── Toolbar (top-right) ─────────────────────────────────────────── */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-2 flex-wrap justify-end">
+
+        {/* Group By selector */}
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: groupBy !== 'none' ? 'rgba(139,92,246,0.5)' : 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)' }}>
+          <Layers size={12} style={{ color: groupBy !== 'none' ? '#a78bfa' : 'rgba(255,255,255,0.55)' }} />
+          <select
+            value={groupBy}
+            onChange={e => setGroupBy(e.target.value as GroupBy)}
+            className="bg-transparent outline-none text-xs cursor-pointer"
+            style={{ color: groupBy !== 'none' ? '#a78bfa' : 'rgba(255,255,255,0.7)' }}
+          >
+            <option value="none">No Grouping</option>
+            <option value="tag">Group by Tag</option>
+            <option value="strength">Group by Strength</option>
+            <option value="company">Group by Company</option>
+          </select>
+        </div>
+
         <button
           onClick={() => setFullscreen(f => !f)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
@@ -462,18 +625,26 @@ export function NetworkView3D({
 
       {/* ── Legend (bottom-left) ────────────────────────────────────────── */}
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-2 rounded-lg text-xs"
-        style={{ backgroundColor: 'rgba(10,10,24,0.75)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)', color: 'rgba(255,255,255,0.45)' }}>
-        {[
-          { color: '#dc2626', label: 'Hot' },
-          { color: '#d97706', label: 'Warm' },
-          { color: '#3b82f6', label: 'Cold' },
-          { color: '#8b5cf6', label: 'Personal' },
-        ].map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-            {label}
-          </span>
-        ))}
+        style={{ backgroundColor: 'rgba(10,10,24,0.75)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(8px)', color: 'rgba(255,255,255,0.45)', maxWidth: 'calc(100vw - 24px)', flexWrap: 'wrap' }}>
+        {clusterInfo
+          ? clusterInfo.groupList.map(g => (
+              <span key={g} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: clusterInfo.groupColors[g] }} />
+                {g}
+              </span>
+            ))
+          : [
+              { color: '#dc2626', label: 'Hot' },
+              { color: '#d97706', label: 'Warm' },
+              { color: '#3b82f6', label: 'Cold' },
+              { color: '#8b5cf6', label: 'Personal' },
+            ].map(({ color, label }) => (
+              <span key={label} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                {label}
+              </span>
+            ))
+        }
         <span className="ml-1" style={{ borderLeft: '1px solid rgba(255,255,255,0.12)', paddingLeft: 8 }}>
           Drag to orbit · Scroll to zoom · Click node to view
         </span>
