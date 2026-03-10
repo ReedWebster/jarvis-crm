@@ -406,8 +406,7 @@ export function NetworkView3D({
     }
     const { nodeGroups, centroids } = clusterInfo;
     const clusterForce = (alpha: number) => {
-      const nodes = fg.graphData().nodes as any[];
-      nodes.forEach(node => {
+      graphDataNodesRef.current.forEach(node => {
         const group = nodeGroups[node.id];
         const centroid = centroids[group];
         if (!centroid) return;
@@ -465,20 +464,12 @@ export function NetworkView3D({
     const node = nodeRaw as GraphNode;
     const group = new THREE.Group();
     const r = Math.max(2, node.val * 0.6);
-    const colorInt = parseInt((node.color || '#3b82f6').replace('#', ''), 16);
 
-    // Core sphere
-    const coreMat = new THREE.MeshBasicMaterial({
-      color: node.dimmed ? 0x151525 : colorInt,
-      transparent: true,
-      opacity: node.dimmed ? 0.3 : 0.92,
-    });
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), coreMat));
-
-    // Pulsing halo for active nodes
+    // Pulsing halo (library renders the core sphere via nodeThreeObjectExtend)
     if (!node.dimmed) {
+      const colorInt = parseInt((node.color || '#3b82f6').replace('#', ''), 16);
       const haloMat = new THREE.MeshBasicMaterial({ color: colorInt, transparent: true, opacity: 0.12 });
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(r * 1.65, 10, 10), haloMat);
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(r * 2.2, 8, 8), haloMat);
       group.add(halo);
       (nodeRaw as any)._halo = halo;
       (nodeRaw as any)._haloOffset = Math.random() * Math.PI * 2;
@@ -488,7 +479,7 @@ export function NetworkView3D({
 
     // Label above sphere
     const sprite = new SpriteText(node.name);
-    sprite.color = node.dimmed ? '#1a1a3a' : 'rgba(255,255,255,0.92)';
+    sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
     sprite.textHeight = Math.max(2.5, node.val * 0.55);
     sprite.fontWeight = '600';
     sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
@@ -574,6 +565,7 @@ export function NetworkView3D({
         nodeResolution={8}
         nodeOpacity={0.92}
         nodeThreeObject={nodeThreeObject}
+        nodeThreeObjectExtend
         linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.35)' : 'rgba(251,191,36,0.55)'}
         linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.4 : 1.2}
         linkDirectionalParticles={0}
