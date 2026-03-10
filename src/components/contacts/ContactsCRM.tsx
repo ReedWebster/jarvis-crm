@@ -1117,6 +1117,20 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     toast.success('Interaction logged');
   };
 
+  // ── Auto-tag inference from job title + company text ────────────────────
+  const inferTag = (title: string, company: string): ContactTag => {
+    const t = `${title} ${company}`.toLowerCase();
+    if (/\b(professor|prof\b|ph\.?d|phd|faculty|lecturer|academic|researcher|postdoc)\b/.test(t)) return 'Professor';
+    if (/\b(investor|vc\b|venture|angel\b|fund\b|capital|general partner|managing partner|limited partner)\b/.test(t)) return 'Investor';
+    if (/\b(mentor|advisor|board member|counsel|coach|executive coach)\b/.test(t)) return 'Mentor';
+    if (/\b(co-?founder|cofounder|founding partner)\b/.test(t)) return 'Partner';
+    if (/\b(recruit|recruiter|talent|hiring|hr\b|human resources|headhunter)\b/.test(t)) return 'Recruit';
+    if (/\b(client|customer|account)\b/.test(t)) return 'Client';
+    if (/\b(colleague|coworker|co-?worker|teammate|staff|associate)\b/.test(t)) return 'Colleague';
+    if (/\b(resident|tenant|renter|lessee)\b/.test(t)) return 'Resident';
+    return 'Other';
+  };
+
   // ── vCard parser (Apple Contacts .vcf export) ────────────────────────────
   const parseVCardText = (text: string): Contact[] => {
     const today = todayStr();
@@ -1183,7 +1197,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
         phone: phone || undefined,
         company: company || undefined,
         relationship: title,
-        tags: ['Other'],
+        tags: [inferTag(title, company)],
         lastContacted: today,
         followUpNeeded: false,
         birthday,

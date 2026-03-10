@@ -15,7 +15,7 @@ import {
   forwardGeocode,
 } from '../../utils/networkingMap';
 import { GeographicView } from './GeographicView';
-import { NetworkView } from './NetworkView';
+import { NetworkView3D } from './NetworkView3D';
 import { FollowUpQueue } from './FollowUpQueue';
 import { UnplacedContacts } from './UnplacedContacts';
 
@@ -395,7 +395,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onNavigateToCRM={onNavigateToCRM}
             />
           ) : (
-            <NetworkView
+            <NetworkView3D
               contacts={contacts}
               projects={projects}
               mapState={mapState}
