@@ -256,14 +256,19 @@ export function NetworkView3D({
     }
   }, [fullscreen]);
 
-  // Fit camera progressively as nodes settle (1s, 3s, 7s)
-  useEffect(() => {
-    const fit = () => fgRef.current?.zoomToFit(600, 50);
-    const t1 = setTimeout(fit, 1000);
-    const t2 = setTimeout(fit, 3000);
-    const t3 = setTimeout(fit, 7000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  // Fit camera after engine settles, with a backup timer
+  const hasFitted = useRef(false);
+  const doZoomToFit = useCallback(() => {
+    if (fgRef.current) {
+      fgRef.current.zoomToFit(800, 80);
+      hasFitted.current = true;
+    }
   }, []);
+
+  useEffect(() => {
+    const t = setTimeout(doZoomToFit, 2000);
+    return () => clearTimeout(t);
+  }, [doZoomToFit]);
 
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
@@ -381,28 +386,35 @@ export function NetworkView3D({
 
   // ─── CLUSTER FORCE ───────────────────────────────────────────────────────────
 
+  const clusterInfoRef = useRef(clusterInfo);
+  clusterInfoRef.current = clusterInfo;
+
   useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    if (!clusterInfo) {
-      fg.d3Force('cluster', null);
+    // Wait for ForceGraph3D to fully initialize before touching D3 forces
+    const timer = setTimeout(() => {
+      const fg = fgRef.current;
+      if (!fg) return;
+      if (!clusterInfo) {
+        fg.d3Force('cluster', null);
+        fg.d3ReheatSimulation();
+        return;
+      }
+      const { nodeGroups, centroids } = clusterInfo;
+      const clusterForce = (alpha: number) => {
+        graphDataNodesRef.current.forEach(node => {
+          const group = nodeGroups[node.id];
+          const centroid = centroids[group];
+          if (!centroid) return;
+          const k = alpha * 0.06;
+          node.vx = (node.vx || 0) + (centroid.x - (node.x || 0)) * k;
+          node.vy = (node.vy || 0) + (centroid.y - (node.y || 0)) * k;
+          node.vz = (node.vz || 0) + (centroid.z - (node.z || 0)) * k;
+        });
+      };
+      fg.d3Force('cluster', clusterForce);
       fg.d3ReheatSimulation();
-      return;
-    }
-    const { nodeGroups, centroids } = clusterInfo;
-    const clusterForce = (alpha: number) => {
-      graphDataNodesRef.current.forEach(node => {
-        const group = nodeGroups[node.id];
-        const centroid = centroids[group];
-        if (!centroid) return;
-        const k = alpha * 0.08;
-        node.vx = (node.vx || 0) + (centroid.x - (node.x || 0)) * k;
-        node.vy = (node.vy || 0) + (centroid.y - (node.y || 0)) * k;
-        node.vz = (node.vz || 0) + (centroid.z - (node.z || 0)) * k;
-      });
-    };
-    fg.d3Force('cluster', clusterForce);
-    fg.d3ReheatSimulation();
+    }, 500);
+    return () => clearTimeout(timer);
   }, [clusterInfo]);
 
   // ─── CLUSTER SCENE LABELS ────────────────────────────────────────────────────
@@ -523,24 +535,23 @@ export function NetworkView3D({
         height={dims.h}
         graphData={graphData}
         nodeId="id"
-        nodeLabel="name"
         nodeColor={(n: object) => (n as GraphNode).color}
         nodeVal={(n: object) => (n as GraphNode).val}
         nodeResolution={8}
-        nodeOpacity={0.92}
+        nodeOpacity={0.95}
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend
-        linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.35)' : 'rgba(251,191,36,0.55)'}
-        linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.4 : 1.2}
+        linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.4)' : 'rgba(251,191,36,0.6)'}
+        linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.5 : 1.5}
         linkDirectionalParticles={0}
         linkCurvature={0.1}
         onNodeClick={handleNodeClick}
         onLinkClick={handleLinkClick}
+        onEngineStop={doZoomToFit}
         backgroundColor="#050510"
         showNavInfo={false}
         enableNodeDrag
         enableNavigationControls
-        dagMode={undefined}
       />
 
       {/* ── Search box (top-left) ───────────────────────────────────────── */}
