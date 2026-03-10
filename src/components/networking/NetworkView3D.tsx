@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import * as THREE from 'three';
 import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers } from 'lucide-react';
 import type {
   Contact,
@@ -234,7 +233,6 @@ export function NetworkView3D({
   type GroupBy = 'none' | 'tag' | 'strength' | 'company';
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
   const clusterLabelsRef = useRef<SpriteText[]>([]);
-  const animFrameRef = useRef<number | null>(null);
   const graphDataNodesRef = useRef<any[]>([]);
 
   // Escape key closes fullscreen
@@ -257,28 +255,6 @@ export function NetworkView3D({
       }
     }
   }, [fullscreen]);
-
-  // Auto-fit camera on first load
-  useEffect(() => {
-    const t = setTimeout(() => fgRef.current?.zoomToFit(1200, 100), 1800);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Pulse animation loop — runs every frame, updates halo opacity/scale
-  useEffect(() => {
-    const animate = () => {
-      animFrameRef.current = requestAnimationFrame(animate);
-      const t = Date.now() * 0.001;
-      graphDataNodesRef.current.forEach(node => {
-        if (!node._halo) return;
-        const pulse = (Math.sin(t * 1.8 + (node._haloOffset ?? 0)) + 1) * 0.5;
-        node._halo.scale.setScalar(1 + pulse * 0.3);
-        (node._halo.material as THREE.MeshBasicMaterial).opacity = 0.04 + pulse * 0.18;
-      });
-    };
-    animate();
-    return () => { if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current); };
-  }, []);
 
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
@@ -418,8 +394,6 @@ export function NetworkView3D({
     };
     fg.d3Force('cluster', clusterForce);
     fg.d3ReheatSimulation();
-    const fitTimer = setTimeout(() => fgRef.current?.zoomToFit(1200, 80), 2500);
-    return () => clearTimeout(fitTimer);
   }, [clusterInfo]);
 
   // ─── CLUSTER SCENE LABELS ────────────────────────────────────────────────────
@@ -462,22 +436,6 @@ export function NetworkView3D({
 
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
-    const group = new THREE.Group();
-    const r = Math.max(2, node.val * 0.6);
-
-    // Pulsing halo (library renders the core sphere via nodeThreeObjectExtend)
-    if (!node.dimmed) {
-      const colorInt = parseInt((node.color || '#3b82f6').replace('#', ''), 16);
-      const haloMat = new THREE.MeshBasicMaterial({ color: colorInt, transparent: true, opacity: 0.12 });
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(r * 2.2, 8, 8), haloMat);
-      group.add(halo);
-      (nodeRaw as any)._halo = halo;
-      (nodeRaw as any)._haloOffset = Math.random() * Math.PI * 2;
-    } else {
-      (nodeRaw as any)._halo = null;
-    }
-
-    // Label above sphere
     const sprite = new SpriteText(node.name);
     sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
     sprite.textHeight = Math.max(2.5, node.val * 0.55);
@@ -485,10 +443,7 @@ export function NetworkView3D({
     sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
     sprite.padding = 1.5;
     sprite.borderRadius = 2;
-    (sprite as any).position.set(0, r + 3, 0);
-    group.add(sprite);
-
-    return group;
+    return sprite;
   }, []);
 
   // ─── INTERACTIONS ────────────────────────────────────────────────────────────
@@ -577,6 +532,9 @@ export function NetworkView3D({
         enableNodeDrag
         enableNavigationControls
         dagMode={undefined}
+        warmupTicks={60}
+        cooldownTime={4000}
+        onEngineStop={() => fgRef.current?.zoomToFit(800, 80)}
       />
 
       {/* ── Search box (top-left) ───────────────────────────────────────── */}
