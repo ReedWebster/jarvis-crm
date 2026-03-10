@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
+import * as THREE from 'three';
 import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search, Maximize2, Minimize2, Layers } from 'lucide-react';
 import type {
   Contact,
@@ -233,6 +234,7 @@ export function NetworkView3D({
   type GroupBy = 'none' | 'tag' | 'strength' | 'company';
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
   const clusterLabelsRef = useRef<SpriteText[]>([]);
+  const animFrameRef = useRef<number | null>(null);
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -254,6 +256,29 @@ export function NetworkView3D({
       }
     }
   }, [fullscreen]);
+
+  // Auto-fit camera on first load
+  useEffect(() => {
+    const t = setTimeout(() => fgRef.current?.zoomToFit(1200, 100), 1800);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Pulse animation loop — runs every frame, updates halo opacity/scale
+  useEffect(() => {
+    const animate = () => {
+      animFrameRef.current = requestAnimationFrame(animate);
+      if (!fgRef.current) return;
+      const t = Date.now() * 0.001;
+      (fgRef.current.graphData().nodes as any[]).forEach(node => {
+        if (!node._halo) return;
+        const pulse = (Math.sin(t * 1.8 + (node._haloOffset ?? 0)) + 1) * 0.5;
+        node._halo.scale.setScalar(1 + pulse * 0.3);
+        (node._halo.material as THREE.MeshBasicMaterial).opacity = 0.04 + pulse * 0.18;
+      });
+    };
+    animate();
+    return () => { if (animFrameRef.current !== null) cancelAnimationFrame(animFrameRef.current); };
+  }, []);
 
   const contactMap = useMemo(() => new Map(contacts.map(c => [c.id, c])), [contacts]);
   const graphSearchLower = graphSearch.trim().toLowerCase();
@@ -391,6 +416,8 @@ export function NetworkView3D({
     };
     fg.d3Force('cluster', clusterForce);
     fg.d3ReheatSimulation();
+    const fitTimer = setTimeout(() => fgRef.current?.zoomToFit(1200, 80), 2500);
+    return () => clearTimeout(fitTimer);
   }, [clusterInfo]);
 
   // ─── CLUSTER SCENE LABELS ────────────────────────────────────────────────────
@@ -433,14 +460,41 @@ export function NetworkView3D({
 
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
+    const group = new THREE.Group();
+    const r = Math.max(2, node.val * 0.6);
+    const colorInt = parseInt((node.color || '#3b82f6').replace('#', ''), 16);
+
+    // Core sphere
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: node.dimmed ? 0x151525 : colorInt,
+      transparent: true,
+      opacity: node.dimmed ? 0.3 : 0.92,
+    });
+    group.add(new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), coreMat));
+
+    // Pulsing halo for active nodes
+    if (!node.dimmed) {
+      const haloMat = new THREE.MeshBasicMaterial({ color: colorInt, transparent: true, opacity: 0.12 });
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(r * 1.65, 10, 10), haloMat);
+      group.add(halo);
+      (nodeRaw as any)._halo = halo;
+      (nodeRaw as any)._haloOffset = Math.random() * Math.PI * 2;
+    } else {
+      (nodeRaw as any)._halo = null;
+    }
+
+    // Label above sphere
     const sprite = new SpriteText(node.name);
-    sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
+    sprite.color = node.dimmed ? '#1a1a3a' : 'rgba(255,255,255,0.92)';
     sprite.textHeight = Math.max(2.5, node.val * 0.55);
     sprite.fontWeight = '600';
     sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
     sprite.padding = 1.5;
     sprite.borderRadius = 2;
-    return sprite;
+    (sprite as any).position.set(0, r + 3, 0);
+    group.add(sprite);
+
+    return group;
   }, []);
 
   // ─── INTERACTIONS ────────────────────────────────────────────────────────────
@@ -517,7 +571,6 @@ export function NetworkView3D({
         nodeResolution={8}
         nodeOpacity={0.92}
         nodeThreeObject={nodeThreeObject}
-        nodeThreeObjectExtend
         linkColor={(l: object) => (l as GraphLink).isAuto ? 'rgba(59,130,246,0.35)' : 'rgba(251,191,36,0.55)'}
         linkWidth={(l: object) => (l as GraphLink).isAuto ? 0.4 : 1.2}
         linkDirectionalParticles={0}
