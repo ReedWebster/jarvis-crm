@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Globe, Network, X, Filter, Search } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Globe, Network, X, Filter, Search, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -205,6 +205,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
   });
 
   const followUpContacts = contacts.filter(c => c.followUpNeeded && c.followUpDate);
+  const [mobileFollowUpOpen, setMobileFollowUpOpen] = useState(false);
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
@@ -369,20 +370,18 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
       )}
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden gap-3 p-3">
-        {/* Follow-up queue (left side, collapsible) */}
+      <div className="flex flex-1 overflow-hidden gap-3 p-3 relative">
+        {/* Follow-up queue (left side — desktop only) */}
         <div className="flex-shrink-0 w-56 flex flex-col gap-3 overflow-y-auto hidden md:flex">
           <FollowUpQueue
             contacts={followUpContacts}
             onUpdateContact={updateContact}
-            onSelectContact={(id) => {
-              // Focus the contact in the current view
-            }}
+            onSelectContact={() => {}}
           />
         </div>
 
         {/* Main map/graph area */}
-        <div className="flex-1 min-w-0 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex-1 min-w-0 rounded-xl overflow-hidden border relative" style={{ borderColor: 'var(--border)' }}>
           {mapState.activeView === 'geographic' ? (
             <GeographicView
               contacts={contacts}
@@ -410,17 +409,57 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onAddContact={(contact) => setContacts(prev => [...prev, contact])}
             />
           )}
+
+          {/* Mobile follow-up drawer */}
+          <div
+            className="md:hidden absolute left-0 right-0 bottom-0 z-20 rounded-t-xl border-t border-x shadow-2xl transition-transform duration-300"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              borderColor: 'var(--border)',
+              maxHeight: '60%',
+              transform: mobileFollowUpOpen ? 'translateY(0)' : 'translateY(calc(100% - 48px))',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Drawer handle / toggle */}
+            <button
+              onClick={() => setMobileFollowUpOpen(o => !o)}
+              className="flex items-center justify-between px-4 h-12 flex-shrink-0 w-full"
+              style={{ borderBottom: mobileFollowUpOpen ? '1px solid var(--border)' : 'none' }}
+            >
+              <div className="flex items-center gap-2">
+                <Clock size={14} style={{ color: 'var(--text-muted)' }} />
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Follow-Up Queue
+                </span>
+                {followUpContacts.length > 0 && (
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+                    style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+                    {followUpContacts.length}
+                  </span>
+                )}
+              </div>
+              {mobileFollowUpOpen ? <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} /> : <ChevronUp size={14} style={{ color: 'var(--text-muted)' }} />}
+            </button>
+
+            {/* Drawer content */}
+            <div className="flex-1 overflow-y-auto p-3">
+              <FollowUpQueue
+                contacts={followUpContacts}
+                onUpdateContact={updateContact}
+                onSelectContact={() => { setMobileFollowUpOpen(false); }}
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Unplaced contacts (right side, geo view only) */}
+        {/* Unplaced contacts (right side — desktop geo view only) */}
         {mapState.activeView === 'geographic' && (
           <div className="flex-shrink-0 w-56 flex flex-col gap-3 overflow-y-auto hidden md:flex">
             <UnplacedContacts
               contacts={unplacedContacts}
-              onPlaceContact={(id) => {
-                // Handled within GeographicView search bar — here we could
-                // emit an event but for now the user uses the search bar in-map
-              }}
+              onPlaceContact={() => {}}
             />
           </div>
         )}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
   DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
-  CheckSquare, Network, FolderOpen, GripVertical, Settings2, Check,
+  CheckSquare, Network, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
 } from 'lucide-react';
 import {
   DndContext,
@@ -155,13 +155,15 @@ interface SidebarProps {
   onMobileClose: () => void;
   navOrder: NavSection[];
   onNavOrderChange: (order: NavSection[]) => void;
+  onThemeToggle?: () => void;
+  isDark?: boolean;
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 
 export function Sidebar({
   active, onNavigate, onSearch, mobileOpen, onMobileClose,
-  navOrder, onNavOrderChange,
+  navOrder, onNavOrderChange, onThemeToggle, isDark,
 }: SidebarProps) {
   const [isEditing, setIsEditing] = useState(false);
 
@@ -270,25 +272,38 @@ export function Sidebar({
 
           {/* Footer */}
           <div
-            className="p-3 flex items-center justify-between transition-colors duration-300"
+            className="p-3 flex items-center justify-between gap-2 transition-colors duration-300"
             style={{ borderTop: '1px solid var(--border)' }}
           >
-            <div>
+            <div className="min-w-0">
               <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>v1.0.0</div>
               <div className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>Built by Reed Webster</div>
             </div>
-            <button
-              onClick={() => setIsEditing(v => !v)}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{
-                backgroundColor: isEditing ? '#6366f1' : 'var(--bg-elevated)',
-                color: isEditing ? '#fff' : 'var(--text-muted)',
-              }}
-              title={isEditing ? 'Done reordering' : 'Reorder tabs'}
-            >
-              {isEditing ? <Check size={12} /> : <Settings2 size={12} />}
-              {isEditing ? 'Done' : ''}
-            </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Theme toggle — mobile only (hidden on sm+ where TopBar shows it) */}
+              {onThemeToggle && (
+                <button
+                  onClick={onThemeToggle}
+                  className="sm:hidden flex items-center justify-center w-8 h-8 rounded-lg border transition-colors"
+                  style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                  title={isDark ? 'Light mode' : 'Dark mode'}
+                >
+                  {isDark ? <Sun size={13} /> : <Moon size={13} />}
+                </button>
+              )}
+              <button
+                onClick={() => setIsEditing(v => !v)}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{
+                  backgroundColor: isEditing ? '#6366f1' : 'var(--bg-elevated)',
+                  color: isEditing ? '#fff' : 'var(--text-muted)',
+                }}
+                title={isEditing ? 'Done reordering' : 'Reorder tabs'}
+              >
+                {isEditing ? <Check size={12} /> : <Settings2 size={12} />}
+                {isEditing ? 'Done' : ''}
+              </button>
+            </div>
           </div>
         </div>
       </aside>

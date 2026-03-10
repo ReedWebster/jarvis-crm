@@ -833,10 +833,11 @@ export function NetworkView3D({
         onClick={() => setCmdkOpen(true)}
         className="absolute top-12 left-3 z-10 flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs"
         style={{ backgroundColor: 'rgba(10,10,24,0.7)', borderColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(8px)' }}
+        title="Fly to contact (⌘K)"
       >
         <Search size={10} />
-        Fly to contact
-        <kbd className="ml-1 px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>⌘K</kbd>
+        <span className="hidden sm:inline">Fly to contact</span>
+        <kbd className="hidden sm:inline ml-1 px-1 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>⌘K</kbd>
       </button>
 
       {/* ── Toolbar (top-right) ─────────────────────────────────────────── */}
@@ -849,27 +850,30 @@ export function NetworkView3D({
           <select
             value={groupBy}
             onChange={e => setGroupBy(e.target.value as GroupBy)}
-            className="bg-transparent outline-none text-xs cursor-pointer"
+            className="bg-transparent outline-none text-xs cursor-pointer max-w-[90px] sm:max-w-none"
             style={{ color: groupBy !== 'none' ? '#a78bfa' : 'rgba(255,255,255,0.7)' }}
           >
             <option value="none">No Grouping</option>
-            <option value="tag">Group by Tag</option>
-            <option value="strength">Group by Strength</option>
-            <option value="company">Group by Company</option>
-            <option value="followup">Follow-up Heatmap</option>
+            <option value="tag">By Tag</option>
+            <option value="strength">By Strength</option>
+            <option value="company">By Company</option>
+            <option value="followup">Follow-up Heat</option>
           </select>
         </div>
 
         <button onClick={() => setFullscreen(f => !f)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
+          title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
           {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-          {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          <span className="hidden sm:inline">{fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
         </button>
         <button onClick={() => setShowAddContact(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
-          <UserPlus size={12} /> Add Contact
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
+          title="Add Contact">
+          <UserPlus size={12} />
+          <span className="hidden sm:inline">Add Contact</span>
         </button>
         <button
           onClick={connectMode ? cancelConnect : () => setConnectMode(true)}
@@ -879,15 +883,19 @@ export function NetworkView3D({
             borderColor: connectMode ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.1)',
             color: connectMode ? 'rgba(251,191,36,0.9)' : 'rgba(255,255,255,0.7)',
             backdropFilter: 'blur(8px)',
-          }}>
+          }}
+          title={connectMode ? 'Cancel connect' : 'Connect nodes'}>
           {connectMode ? <Link2Off size={12} /> : <Link2 size={12} />}
-          {connectMode ? (connectSource ? 'Now click target…' : 'Click source node…') : 'Connect'}
+          <span className="hidden sm:inline">
+            {connectMode ? (connectSource ? 'Now click target…' : 'Click source…') : 'Connect'}
+          </span>
         </button>
         <button onClick={onToggleAutoConnections}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs shadow-lg"
-          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}>
+          style={{ backgroundColor: 'rgba(10,10,24,0.85)', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(8px)' }}
+          title={mapState.showAutoConnections ? 'Auto-Links On' : 'Auto-Links Off'}>
           {mapState.showAutoConnections ? <Zap size={12} /> : <ZapOff size={12} />}
-          {mapState.showAutoConnections ? 'Auto-Links On' : 'Auto-Links Off'}
+          <span className="hidden sm:inline">{mapState.showAutoConnections ? 'Auto-Links On' : 'Auto-Links Off'}</span>
         </button>
       </div>
 

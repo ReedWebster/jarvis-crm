@@ -96,10 +96,10 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         )}
       </div>
 
-      {/* Theme toggle */}
+      {/* Theme toggle — hidden on mobile (accessible in sidebar) */}
       <button
         onClick={onThemeToggle}
-        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="hidden sm:flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       >
@@ -122,12 +122,12 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         )}
       </button>
 
-      {/* Team page link */}
+      {/* Team page link — hidden on mobile */}
       <a
         href="/?view=team"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="hidden md:flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title="Open team page"
       >

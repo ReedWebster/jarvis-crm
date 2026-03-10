@@ -386,6 +386,8 @@ function MainApp() {
           onMobileClose={() => setMobileSidebarOpen(false)}
           navOrder={navOrder}
           onNavOrderChange={order => setNavOrder(() => order)}
+          onThemeToggle={toggle}
+          isDark={theme === 'dark'}
         />
 
         <TopBar
