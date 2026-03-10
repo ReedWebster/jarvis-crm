@@ -1117,12 +1117,130 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     toast.success('Interaction logged');
   };
 
-  const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── vCard parser (Apple Contacts .vcf export) ────────────────────────────
+  const parseVCardText = (text: string): Contact[] => {
+    const today = todayStr();
+    const parsed: Contact[] = [];
+
+    // Split on BEGIN:VCARD boundaries; each slice after index 0 is one card
+    const cards = text.split(/BEGIN:VCARD/i).slice(1);
+
+    for (const card of cards) {
+      // Unfold folded lines (RFC 6350 §3.2 — continuation line starts with space/tab)
+      const unfolded = card.replace(/\r?\n[ \t]/g, '');
+      const lines = unfolded.split(/\r?\n/).filter(l => l && !/^END:VCARD/i.test(l));
+
+      // Pull the first value for a given property name (e.g. "FN", "EMAIL")
+      const get = (prop: string): string => {
+        const re = new RegExp(`^${prop}(?:;[^:]*)?:(.*)`, 'i');
+        for (const l of lines) {
+          const m = l.match(re);
+          if (m) return m[1].trim();
+        }
+        return '';
+      };
+
+      const name = get('FN');
+      if (!name) continue;
+
+      // First EMAIL line
+      let email = '';
+      for (const l of lines) {
+        const m = l.match(/^EMAIL(?:;[^:]*)?:(.*)/i);
+        if (m) { email = m[1].trim(); break; }
+      }
+
+      // First TEL line
+      let phone = '';
+      for (const l of lines) {
+        const m = l.match(/^TEL(?:;[^:]*)?:(.*)/i);
+        if (m) { phone = m[1].trim(); break; }
+      }
+
+      // ORG can be "Company;Department" — take the first segment
+      const company = get('ORG').split(';')[0].trim();
+      const title = get('TITLE');
+
+      // NOTE may contain escaped newlines
+      const notes = get('NOTE').replace(/\\n/g, '\n').replace(/\\,/g, ',');
+
+      // BDAY: normalize 19900115 → 1990-01-15, drop --MMDD (no-year) values
+      let birthday: string | undefined;
+      const braw = get('BDAY');
+      if (braw && !braw.startsWith('--')) {
+        const clean = braw.replace(/\D/g, '');
+        if (clean.length === 8) {
+          birthday = `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}`;
+        } else if (braw.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          birthday = braw;
+        }
+      }
+
+      parsed.push({
+        id: generateId(),
+        name,
+        email: email || undefined,
+        phone: phone || undefined,
+        company: company || undefined,
+        relationship: title,
+        tags: ['Other'],
+        lastContacted: today,
+        followUpNeeded: false,
+        birthday,
+        notes,
+        interactions: [],
+        linkedProjects: [],
+      });
+    }
+
+    return parsed;
+  };
+
+  // ── Shared import finalizer ───────────────────────────────────────────────
+  const finalizeImport = (newContacts: Contact[], totalSkipped: number) => {
+    const existing = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
+    const deduped = newContacts.filter(c => {
+      if (!c.email) return true;
+      const key = c.email.toLowerCase();
+      if (existing.has(key)) return false;
+      existing.add(key);
+      return true;
+    });
+    const skipped = totalSkipped + (newContacts.length - deduped.length);
+    const added = deduped.length;
+
+    if (added > 0) setContacts(prev => [...deduped, ...(Array.isArray(prev) ? prev : [])]);
+
+    if (added > 0 && skipped > 0) {
+      toast.success(`Imported ${added} contacts (${skipped} skipped — duplicates or missing name)`);
+    } else if (added > 0) {
+      toast.success(`Imported ${added} contact${added !== 1 ? 's' : ''}`);
+    } else {
+      toast.error(`No contacts imported — ${skipped} skipped`);
+    }
+  };
+
+  const handleContactImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Reset input so the same file can be re-imported if needed
     e.target.value = '';
 
+    const ext = file.name.split('.').pop()?.toLowerCase();
+
+    if (ext === 'vcf' || ext === 'vcard') {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        if (!text) { toast.error('Could not read .vcf file'); return; }
+        const parsed = parseVCardText(text);
+        if (!parsed.length) { toast.error('No contacts found in this .vcf file'); return; }
+        finalizeImport(parsed, 0);
+      };
+      reader.readAsText(file, 'utf-8');
+      return;
+    }
+
+    // Default: CSV
     Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: true,
@@ -1139,19 +1257,14 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
         };
 
         const today = todayStr();
-        const existing = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
-        let added = 0;
         let skipped = 0;
-
         const newContacts: Contact[] = [];
+
         for (const row of rows) {
           const name = normalizeKey(row, 'name', 'full name', 'fullname', 'contact name');
           if (!name) { skipped++; continue; }
 
           const email = normalizeKey(row, 'email', 'email address');
-          if (email && existing.has(email.toLowerCase())) { skipped++; continue; }
-          if (email) existing.add(email.toLowerCase());
-
           const rawTag = normalizeKey(row, 'tag', 'type', 'category', 'relationship type');
           const tag = (ALL_TAGS.includes(rawTag as ContactTag) ? rawTag : 'Other') as ContactTag;
 
@@ -1169,20 +1282,9 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             interactions: [],
             linkedProjects: [],
           });
-          added++;
         }
 
-        if (newContacts.length) {
-          setContacts(prev => [...newContacts, ...(Array.isArray(prev) ? prev : [])]);
-        }
-
-        if (added > 0 && skipped > 0) {
-          toast.success(`Imported ${added} contacts (${skipped} skipped — duplicates or missing name)`);
-        } else if (added > 0) {
-          toast.success(`Imported ${added} contact${added !== 1 ? 's' : ''}`);
-        } else {
-          toast.error(`No contacts imported — ${skipped} row${skipped !== 1 ? 's' : ''} skipped`);
-        }
+        finalizeImport(newContacts, skipped);
       },
       error: () => toast.error('Failed to parse CSV'),
     });
@@ -1217,17 +1319,17 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
           <input
             ref={csvInputRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.vcf,.vcard"
             className="hidden"
-            onChange={handleCSVImport}
+            onChange={handleContactImport}
           />
           <button
             onClick={() => csvInputRef.current?.click()}
             className="caesar-btn-ghost flex items-center gap-2"
-            title="Import contacts from a CSV file"
+            title="Import contacts from Apple Contacts (.vcf) or a CSV file"
           >
             <Upload size={15} />
-            Import CSV
+            Import
           </button>
           <button
             onClick={() => setAddModalOpen(true)}
