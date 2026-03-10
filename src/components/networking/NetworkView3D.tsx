@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, memo } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
 import { X, Zap, ZapOff, UserPlus, Link2, Link2Off, Search } from 'lucide-react';
@@ -185,6 +185,23 @@ export function NetworkView3D({
   onAddContact,
 }: Props) {
   const fgRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ w: 800, h: 600 });
+
+  // Track container size so ForceGraph3D fills it exactly
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setDims({ w: Math.floor(width), h: Math.floor(height) });
+    });
+    obs.observe(el);
+    // Set initial size
+    const { width, height } = el.getBoundingClientRect();
+    if (width > 0 && height > 0) setDims({ w: Math.floor(width), h: Math.floor(height) });
+    return () => obs.disconnect();
+  }, []);
 
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedMapData, setSelectedMapData] = useState<ContactMapData | null>(null);
@@ -305,9 +322,11 @@ export function NetworkView3D({
   // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full h-full relative" style={{ background: '#050510' }}>
+    <div ref={containerRef} className="w-full h-full relative" style={{ background: '#050510' }}>
       <ForceGraph3D
         ref={fgRef}
+        width={dims.w}
+        height={dims.h}
         graphData={graphData}
         nodeId="id"
         nodeLabel="name"
