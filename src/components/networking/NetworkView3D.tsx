@@ -350,6 +350,7 @@ export function NetworkView3D({
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        e.stopPropagation(); // prevent GlobalSearch from intercepting while graph is open
         setCmdkOpen(o => !o);
         return;
       }
@@ -359,8 +360,9 @@ export function NetworkView3D({
         if (fullscreen) setFullscreen(false);
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    // Use capture phase so this fires before GlobalSearch's bubble-phase handler
+    document.addEventListener('keydown', handler, { capture: true });
+    return () => document.removeEventListener('keydown', handler, { capture: true });
   }, [cmdkOpen, focusedNodeId, fullscreen]);
 
   // Track mouse for tooltip positioning
