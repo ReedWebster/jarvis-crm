@@ -235,6 +235,7 @@ export function NetworkView3D({
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
   const clusterLabelsRef = useRef<SpriteText[]>([]);
   const animFrameRef = useRef<number | null>(null);
+  const graphDataNodesRef = useRef<any[]>([]);
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -267,9 +268,8 @@ export function NetworkView3D({
   useEffect(() => {
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
-      if (!fgRef.current) return;
       const t = Date.now() * 0.001;
-      (fgRef.current.graphData().nodes as any[]).forEach(node => {
+      graphDataNodesRef.current.forEach(node => {
         if (!node._halo) return;
         const pulse = (Math.sin(t * 1.8 + (node._haloOffset ?? 0)) + 1) * 0.5;
         node._halo.scale.setScalar(1 + pulse * 0.3);
@@ -390,6 +390,9 @@ export function NetworkView3D({
 
     return { nodes, links: [...autoLinks, ...manualLinks] };
   }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo]);
+
+  // Keep nodes ref in sync for the animation loop (avoids calling fgRef.graphData() in RAF)
+  useEffect(() => { graphDataNodesRef.current = graphData.nodes as any[]; }, [graphData]);
 
   // ─── CLUSTER FORCE ───────────────────────────────────────────────────────────
 
