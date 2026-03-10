@@ -323,6 +323,10 @@ export function NetworkView3D({
   // Map from node id → pulse ring mesh, for animation
   const pulseRingsRef = useRef<Map<string, THREE.Mesh>>(new Map());
   const pulseRAFRef = useRef<number>(0);
+  // Starfield Three.js Points object
+  const starfieldRef = useRef<THREE.Points | null>(null);
+  // Glow texture cache by color hex
+  const glowTextureCache = useRef<Map<string, THREE.Texture>>(new Map());
   // Double-click detection
   const lastClickRef = useRef<{ id: string; time: number } | null>(null);
 
@@ -352,21 +356,86 @@ export function NetworkView3D({
     return () => window.removeEventListener('mousemove', handler);
   }, []);
 
-  // ─── PULSE ANIMATION ──────────────────────────────────────────────────────
+  // ─── PULSE + STARFIELD ANIMATION ─────────────────────────────────────────
 
   useEffect(() => {
     const animate = () => {
       const t = Date.now() / 1000;
+      // Pulse rings
       pulseRingsRef.current.forEach(ring => {
         const scale = 1 + 0.3 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0));
         ring.scale.setScalar(scale);
         (ring.material as THREE.MeshBasicMaterial).opacity =
           0.2 + 0.3 * (0.5 + 0.5 * Math.sin(t * 2.2 + (ring.userData.phase ?? 0)));
       });
+      // Slowly rotate starfield
+      if (starfieldRef.current) {
+        starfieldRef.current.rotation.y += 0.00008;
+        starfieldRef.current.rotation.x += 0.00003;
+      }
       pulseRAFRef.current = requestAnimationFrame(animate);
     };
     pulseRAFRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(pulseRAFRef.current);
+  }, []);
+
+  // ─── STARFIELD ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    let stars: THREE.Points | null = null;
+    let geometry: THREE.BufferGeometry | null = null;
+    let material: THREE.PointsMaterial | null = null;
+
+    const timer = setTimeout(() => {
+      const fg = fgRef.current;
+      if (!fg) return;
+      try {
+        const scene = fg.scene();
+        if (!scene) return;
+
+        const COUNT = 2200;
+        const positions = new Float32Array(COUNT * 3);
+        const opacities = new Float32Array(COUNT);
+
+        for (let i = 0; i < COUNT; i++) {
+          // Uniform distribution on a sphere shell between radius 500–900
+          const r = 500 + Math.random() * 400;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+          positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+          positions[i * 3 + 2] = r * Math.cos(phi);
+          opacities[i] = 0.3 + Math.random() * 0.7;
+        }
+
+        geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        material = new THREE.PointsMaterial({
+          color: 0xffffff,
+          size: 0.9,
+          transparent: true,
+          opacity: 0.55,
+          sizeAttenuation: true,
+          depthWrite: false,
+        });
+
+        stars = new THREE.Points(geometry, material);
+        stars.userData.isStarfield = true;
+        scene.add(stars);
+        starfieldRef.current = stars;
+      } catch { /* scene not ready */ }
+    }, 600);
+
+    return () => {
+      clearTimeout(timer);
+      if (stars && fgRef.current) {
+        try { fgRef.current.scene()?.remove(stars); } catch { /* ignore */ }
+      }
+      geometry?.dispose();
+      material?.dispose();
+      starfieldRef.current = null;
+    };
   }, []);
 
   // Keep dims in sync when fullscreen toggles
@@ -607,12 +676,55 @@ export function NetworkView3D({
     return () => { clearTimeout(timer); cleanupLabels(); };
   }, [clusterInfo]);
 
+  // ─── GLOW TEXTURE FACTORY ────────────────────────────────────────────────
+
+  const makeGlowTexture = useCallback((hex: string): THREE.Texture => {
+    const cached = glowTextureCache.current.get(hex);
+    if (cached) return cached;
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2, cy = size / 2, r = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0,   hex + 'cc'); // centre ~80%
+    grad.addColorStop(0.25, hex + '88');
+    grad.addColorStop(0.6,  hex + '33');
+    grad.addColorStop(1,    hex + '00');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    glowTextureCache.current.set(hex, tex);
+    return tex;
+  }, []);
+
   // ─── NODE RENDERING ──────────────────────────────────────────────────────────
 
   const nodeThreeObject = useCallback((nodeRaw: object) => {
     const node = nodeRaw as GraphNode;
+    const group = new THREE.Group();
 
-    // Text label
+    // ── Glow sprite (behind node sphere) ──────────────────────────────────
+    if (!node.dimmed) {
+      // Convert node.color (could be "rgba(...)" or "#rrggbb") to a hex for the texture key
+      const hexColor = node.color.startsWith('#') ? node.color : '#ffffff';
+      const glowTex = makeGlowTexture(hexColor);
+      const glowSprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTex,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          opacity: node.mapData.strength === 'hot' ? 0.9 : 0.65,
+        }),
+      );
+      const glowSize = node.val * 7;
+      glowSprite.scale.set(glowSize, glowSize, 1);
+      (glowSprite as any).position.set(0, 0, -0.5); // slightly behind
+      group.add(glowSprite);
+    }
+
+    // ── Text label ────────────────────────────────────────────────────────
     const sprite = new SpriteText(node.name);
     sprite.color = node.dimmed ? '#2a2a4a' : 'rgba(255,255,255,0.92)';
     sprite.textHeight = Math.max(2.5, node.val * 0.55);
@@ -620,8 +732,9 @@ export function NetworkView3D({
     sprite.backgroundColor = node.dimmed ? 'transparent' : 'rgba(5,5,18,0.65)';
     sprite.padding = 1.5;
     sprite.borderRadius = 2;
+    group.add(sprite as unknown as THREE.Object3D);
 
-    // Pulse ring for hot/warm/overdue nodes
+    // ── Pulse ring for hot/warm/overdue nodes ─────────────────────────────
     if (!node.dimmed && (node.mapData.strength === 'hot' || node.mapData.strength === 'warm' || node.hasPending)) {
       const ringColor = node.hasPending
         ? '#ef4444'
@@ -637,19 +750,15 @@ export function NetworkView3D({
           depthWrite: false,
         }),
       );
-      ring.userData.phase = Math.random() * Math.PI * 2; // stagger phases
+      ring.userData.phase = Math.random() * Math.PI * 2;
       pulseRingsRef.current.set(node.id, ring);
-      // Return a group with both the sprite and the ring
-      const group = new THREE.Group();
-      group.add(sprite as unknown as THREE.Object3D);
       group.add(ring);
-      return group;
+    } else {
+      pulseRingsRef.current.delete(node.id);
     }
 
-    // Remove any old ring for this node if it's now dimmed
-    pulseRingsRef.current.delete(node.id);
-    return sprite;
-  }, []);
+    return group;
+  }, [makeGlowTexture]);
 
   // ─── INTERACTIONS ────────────────────────────────────────────────────────────
 
