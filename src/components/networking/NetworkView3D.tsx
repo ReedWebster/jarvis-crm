@@ -36,6 +36,9 @@ interface GraphNode {
   mapData?: ContactMapData;
   isOrg?: boolean;
   orgData?: NetworkOrg;
+  isMetAt?: boolean;
+  metAtValue?: string;
+  metAtMemberCount?: number;
 }
 
 interface GraphLink {
@@ -324,6 +327,7 @@ export function NetworkView3D({
   type GroupBy = 'none' | 'tag' | 'strength' | 'company' | 'followup' | 'metat';
   const [groupBy, setGroupBy] = useState<GroupBy>('tag');
   const [showOrgsPanel, setShowOrgsPanel] = useState(false);
+  const [selectedMetAtGroup, setSelectedMetAtGroup] = useState<string | null>(null);
   const [newOrgName, setNewOrgName] = useState('');
   const [newOrgColor, setNewOrgColor] = useState('#6366f1');
   const [newOrgTag, setNewOrgTag] = useState<ContactTag | ''>('');
@@ -639,7 +643,44 @@ export function NetworkView3D({
       });
     });
 
-    return { nodes: [...nodes, ...orgNodes], links: [...autoLinks, ...manualLinks, ...orgLinks] };
+    // Auto-generate metAt bubble nodes from contact metAt field values
+    const metAtGroups: Record<string, string[]> = {};
+    contacts.forEach(c => {
+      const val = (c as any).metAt?.trim();
+      if (val) {
+        if (!metAtGroups[val]) metAtGroups[val] = [];
+        metAtGroups[val].push(c.id);
+      }
+    });
+
+    const metAtNodes: GraphNode[] = [];
+    const metAtLinks: GraphLink[] = [];
+
+    // Assign each metAt group a stable color from the palette
+    const metAtKeys = Object.keys(metAtGroups).sort();
+    metAtKeys.forEach((metAtVal, i) => {
+      const memberIds = metAtGroups[metAtVal];
+      const color = AUTO_PALETTE[i % AUTO_PALETTE.length];
+      metAtNodes.push({
+        id: `metat:${metAtVal}`,
+        name: metAtVal,
+        color,
+        val: 18 + memberIds.length * 5,  // grows with member count
+        dimmed: false,
+        hasPending: false,
+        urgency: null,
+        isMetAt: true,
+        metAtValue: metAtVal,
+        metAtMemberCount: memberIds.length,
+      });
+      memberIds.forEach(cId => {
+        if (contactMap.has(cId)) {
+          metAtLinks.push({ source: cId, target: `metat:${metAtVal}`, label: '', isAuto: true });
+        }
+      });
+    });
+
+    return { nodes: [...nodes, ...orgNodes, ...metAtNodes], links: [...autoLinks, ...manualLinks, ...orgLinks, ...metAtLinks] };
   }, [contacts, mapState, filteredIds, graphSearchLower, contactMap, clusterInfo, focusConnectedIds]);
 
   // Keep nodes ref in sync
@@ -781,6 +822,57 @@ export function NetworkView3D({
       return group;
     }
 
+    // ── metAt bubble node ─────────────────────────────────────────────────
+    if (node.isMetAt) {
+      const group = new THREE.Group();
+      const hexColor = node.color.startsWith('#') ? node.color : '#818cf8';
+      const c = new THREE.Color(hexColor);
+      const count = node.metAtMemberCount ?? 1;
+      const r = Math.min(10 + count * 3.5, 32);
+
+      // Soft glow sprite (additive)
+      const glowTex = makeGlowTexture(hexColor);
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }),
+      );
+      glow.scale.set(r * 7, r * 7, 1);
+      group.add(glow);
+
+      // Outer translucent sphere (solid fill, like a water bubble)
+      const outerMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 24, 18),
+        new THREE.MeshPhongMaterial({ color: c, emissive: c, emissiveIntensity: 0.25, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.FrontSide }),
+      );
+      group.add(outerMesh);
+
+      // Inner bright edge ring
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(r, 1.0, 8, 52),
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.7 }),
+      );
+      group.add(ring);
+
+      // Second tilted ring for depth
+      const ring2 = new THREE.Mesh(
+        new THREE.TorusGeometry(r * 0.7, 0.5, 8, 40),
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35 }),
+      );
+      ring2.rotation.x = Math.PI / 3;
+      group.add(ring2);
+
+      // Name label
+      const label = new SpriteText(`${node.name}  (${count})`);
+      label.color = hexColor;
+      label.textHeight = count > 5 ? 7 : 5.5;
+      label.fontFace = 'Inter, sans-serif';
+      label.fontWeight = '700';
+      (label as any).backgroundColor = false;
+      (label as any).position.set(0, r + 6, 0);
+      group.add(label);
+
+      return group;
+    }
+
     const group = new THREE.Group();
     const radius = Math.cbrt(node.val) * 2.8;
     const hexColor = node.color.startsWith('#') ? node.color : '#60a5fa';
@@ -899,6 +991,12 @@ export function NetworkView3D({
       return;
     }
 
+    // MetAt node click → open member list
+    if (node.isMetAt) {
+      setSelectedMetAtGroup(node.metAtValue ?? null);
+      return;
+    }
+
     setSelectedContact(node.contact ?? null);
     setSelectedMapData(node.mapData ?? null);
   }, [connectMode, connectSource]);
@@ -998,7 +1096,12 @@ export function NetworkView3D({
           }}
         >
           <div className="font-semibold mb-1" style={{ color: 'rgba(255,255,255,0.95)' }}>{hoveredNode.name}</div>
-          {hoveredNode.isOrg ? (
+          {hoveredNode.isMetAt ? (
+            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              Where met · {hoveredNode.metAtMemberCount} contact{hoveredNode.metAtMemberCount !== 1 ? 's' : ''}
+              <span className="ml-1 opacity-60">· click to view</span>
+            </div>
+          ) : hoveredNode.isOrg ? (
             <div className="text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
               Org · {hoveredNode.orgData?.memberContactIds.length ?? 0} members
               {hoveredNode.orgData?.autoTag && <span className="ml-1">→ {hoveredNode.orgData.autoTag}</span>}
@@ -1348,6 +1451,67 @@ export function NetworkView3D({
           />
         </div>
       )}
+
+      {/* ── MetAt group panel ────────────────────────────────────────────── */}
+      {selectedMetAtGroup && (() => {
+        const groupContacts = contacts.filter(c => (c as any).metAt?.trim() === selectedMetAtGroup);
+        return (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 w-80" style={{ maxWidth: 'calc(100vw - 24px)' }}>
+            <div className="rounded-xl shadow-2xl border flex flex-col overflow-hidden"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', maxHeight: 480 }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+                <div>
+                  <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{selectedMetAtGroup}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{groupContacts.length} contact{groupContacts.length !== 1 ? 's' : ''}</div>
+                </div>
+                <button onClick={() => setSelectedMetAtGroup(null)} style={{ color: 'var(--text-muted)' }}><X size={15} /></button>
+              </div>
+              {/* Contact list */}
+              <div className="overflow-y-auto flex-1">
+                {groupContacts.map(c => {
+                  const initials = c.name.trim().split(/\s+/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
+                  const md = mapState.contactData[c.id];
+                  const strengthColor = md ? getContactStrengthColor(md.strength) : '#6b7280';
+                  return (
+                    <button
+                      key={c.id}
+                      className="w-full flex items-center gap-3 px-4 py-3 border-b text-left transition-colors"
+                      style={{ borderColor: 'var(--border)' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      onClick={() => {
+                        const md2 = mapState.contactData[c.id] ?? defaultContactMapData(c.id);
+                        setSelectedContact(c);
+                        setSelectedMapData(md2);
+                        setSelectedMetAtGroup(null);
+                      }}
+                    >
+                      <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold"
+                        style={{ backgroundColor: 'var(--bg-elevated)', border: `2px solid ${strengthColor}`, color: 'var(--text-primary)' }}>
+                        {md?.photo
+                          ? <img src={md.photo} alt={c.name} className="w-full h-full object-cover rounded-full" />
+                          : initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{c.name}</div>
+                        <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.company || c.relationship || ''}</div>
+                        {c.tags.length > 0 && (
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {c.tags.slice(0, 3).map(tag => (
+                              <span key={tag} className="text-xs px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Connection label modal ───────────────────────────────────────── */}
       {pendingConn && (
