@@ -66,6 +66,22 @@ export default async function handler(req: any, res: any) {
     const now = Date.now();
     const expiresAt = expiresIn ? new Date(now + expiresIn * 1000).toISOString() : null;
 
+    // Fetch profile info using OpenID Connect userinfo endpoint
+    let profile: { sub?: string; name?: string; email?: string; picture?: string } = {};
+    try {
+      const userInfoRes = await fetch('https://api.linkedin.com/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (userInfoRes.ok) {
+        profile = await userInfoRes.json();
+      }
+    } catch {
+      // Non-fatal: profile info is nice-to-have
+    }
+
+    // Derive authorUrn from OpenID sub claim (e.g. "urn:li:person:XXXX")
+    const authorUrn = profile.sub ? `urn:li:person:${profile.sub}` : undefined;
+
     if (!supabaseAdmin) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -81,6 +97,10 @@ export default async function handler(req: any, res: any) {
           value: {
             accessToken,
             expiresAt,
+            authorUrn,
+            name: profile.name ?? null,
+            email: profile.email ?? null,
+            picture: profile.picture ?? null,
           },
           updated_at: new Date().toISOString(),
         },

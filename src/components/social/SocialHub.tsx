@@ -58,6 +58,7 @@ export function SocialHub({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiDrafts, setAiDrafts] = useState<{ platform: string; content: string }[]>([]);
   const [linkedinStatus, setLinkedinStatus] = useState<'unknown' | 'disconnected' | 'connected' | 'needs-reauth'>('unknown');
+  const [linkedinProfile, setLinkedinProfile] = useState<{ name?: string; email?: string; picture?: string } | null>(null);
   const [linkedinLoading, setLinkedinLoading] = useState(false);
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
 
@@ -89,6 +90,9 @@ export function SocialHub({
         } else {
           const st = json?.status as 'disconnected' | 'connected' | 'needs-reauth' | undefined;
           setLinkedinStatus(st ?? 'disconnected');
+          if (json?.name || json?.picture) {
+            setLinkedinProfile({ name: json.name, email: json.email, picture: json.picture });
+          }
         }
       } catch (err: any) {
         if (cancelled) return;
@@ -378,11 +382,15 @@ export function SocialHub({
                         <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                           {label}
                         </p>
-                        {existing?.accountName && (
+                        {platform === 'linkedin' && linkedinProfile?.name ? (
+                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                            {linkedinProfile.name}
+                          </p>
+                        ) : existing?.accountName ? (
                           <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                             {existing.accountName}
                           </p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                     <span

@@ -1,11 +1,5 @@
 import { createLinkedInPost, LinkedInError } from '../src/lib/linkedin';
-
-// NOTE:
-// This function is a sketch of a first-party LinkedIn integration for Litehouse.
-// It expects you to:
-// - Set LINKEDIN_ACCESS_TOKEN in your Vercel environment (Reed's token).
-// - Set LINKEDIN_AUTHOR_URN to something like "urn:li:person:XXXXXXXX".
-// It does not perform OAuth itself and NEVER exposes the token to the client.
+import { supabaseAdmin } from './_supabaseAdmin.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -15,16 +9,33 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const accessToken = process.env.LINKEDIN_ACCESS_TOKEN;
-  const authorUrn = process.env.LINKEDIN_AUTHOR_URN;
-
-  if (!accessToken || !authorUrn) {
+  if (!supabaseAdmin) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      error: 'LinkedIn is not configured on the server.',
-      detail: 'Set LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN in your environment.',
-    }));
+    res.end(JSON.stringify({ error: 'Supabase admin client is not configured.' }));
+    return;
+  }
+
+  const { data, error: dbError } = await supabaseAdmin
+    .from('workspace_data')
+    .select('value')
+    .eq('key', 'linkedin_auth')
+    .maybeSingle();
+
+  if (dbError || !data?.value?.accessToken) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'LinkedIn is not connected. Authorize via the Social Accounts tab first.' }));
+    return;
+  }
+
+  const accessToken: string = data.value.accessToken;
+  const authorUrn: string | undefined = data.value.authorUrn;
+
+  if (!authorUrn) {
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'LinkedIn author URN not found. Please reconnect LinkedIn.' }));
     return;
   }
 

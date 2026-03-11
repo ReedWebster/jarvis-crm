@@ -49,8 +49,10 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({
     status,
-    // Never expose the token itself
     expiresAt: value.expiresAt ?? null,
+    name: value.name ?? null,
+    email: value.email ?? null,
+    picture: value.picture ?? null,
   }));
 }
 
