@@ -48,6 +48,7 @@ import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
 import { NetworkingMap } from './components/networking/NetworkingMap';
 import { DocHub } from './components/dochub/DocHub';
+import { SocialHub } from './components/social/SocialHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
 import { QuickCaptureSheet } from './components/shared/QuickCaptureSheet';
@@ -64,7 +65,7 @@ import type {
   FinancialEntry, SavingsGoal, VentureFinancial, Goal, WeeklyReview,
   DecisionLog, ReadingItem, Candidate, Note, DailyEvent, Habit,
   HabitTracker, DailyMoodLog, StatusMode, TodoItem, Client,
-  DocFolder, DocFile,
+  DocFolder, DocFile, SocialAccount, SocialPost, SocialApprovalItem,
 } from './types';
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -81,6 +82,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
   networking: 'Networking Map',
+  social: 'Social Command Center',
   dochub: 'Doc Hub',
 };
 
@@ -198,6 +200,9 @@ function MainApp() {
   const [docFolders, setDocFolders] = useSupabaseStorage<DocFolder[]>('jarvis:docFolders', []);
   const [docFiles, setDocFiles] = useSupabaseStorage<DocFile[]>('jarvis:docFiles', []);
   const [navOrder, setNavOrder] = useSupabaseStorage<NavSection[]>('jarvis:navOrder', []);
+  const [socialAccounts, setSocialAccounts] = useSupabaseStorage<SocialAccount[]>('jarvis:socialAccounts', []);
+  const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
+  const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
 
   // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
   useEffect(() => {
@@ -357,6 +362,18 @@ function MainApp() {
             setContacts={setContacts}
             projects={projects}
             onNavigateToCRM={() => setActiveSection('contacts')}
+          />
+        );
+      case 'social':
+        return (
+          <SocialHub
+            contacts={contacts}
+            socialAccounts={socialAccounts}
+            setSocialAccounts={setSocialAccounts}
+            socialPosts={socialPosts}
+            setSocialPosts={setSocialPosts}
+            approvals={socialApprovals}
+            setApprovals={setSocialApprovals}
           />
         );
       case 'dochub':
