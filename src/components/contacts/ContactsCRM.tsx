@@ -320,6 +320,7 @@ function FlashcardView({
   onBackToGrid,
 }: FlashcardViewProps) {
   const [index, setIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
   const contact = deck[index] ?? null;
   const total = deck.length;
 
@@ -359,6 +360,22 @@ function FlashcardView({
   const goNext = useCallback(() => {
     setIndex((i) => (i >= total - 1 ? 0 : i + 1));
   }, [total]);
+
+  const SWIPE_THRESHOLD = 50;
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  }, []);
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (touchStartX.current == null) return;
+      const endX = e.changedTouches[0].clientX;
+      const delta = endX - touchStartX.current;
+      touchStartX.current = null;
+      if (delta > SWIPE_THRESHOLD) goPrev();
+      else if (delta < -SWIPE_THRESHOLD) goNext();
+    },
+    [goPrev, goNext]
+  );
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -437,12 +454,14 @@ function FlashcardView({
         </div>
       </div>
 
-      {/* Card */}
+      {/* Card — keyboard: ←/→/Space; touch: swipe left/right */}
       <div
-        className="caesar-card flex flex-col gap-6 p-8 min-h-[320px] select-none"
+        className="caesar-card flex flex-col gap-6 p-8 min-h-[320px] select-none touch-pan-y"
         style={{ borderColor: 'var(--border)' }}
         role="region"
         aria-label={`Contact ${index + 1} of ${total}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
         {contact && (
           <>
