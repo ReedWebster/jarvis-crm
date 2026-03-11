@@ -20,7 +20,7 @@ export default async function handler(req: any, res: any) {
   }
 
   const state = 'litehouse-linkedin'; // For Reed-only instance; for multi-user, generate per-session
-  const scope = encodeURIComponent('openid profile email w_member_social');
+  const scope = encodeURIComponent('w_member_social');
   const encodedRedirect = encodeURIComponent(redirectUri);
 
   const url =
