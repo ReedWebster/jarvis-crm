@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { X, Mic, MicOff, Play, Pause, Trash2, Camera, MessageSquare, Edit3, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, Mic, MicOff, Play, Pause, Trash2, Camera, MessageSquare, Edit3, CheckCircle, AlertTriangle, Mail, Inbox } from 'lucide-react';
 import type { Contact, ContactMapData, RelationshipStrength, NetworkOrg } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import {
@@ -10,6 +10,9 @@ import {
   compressImage,
   getLastContactedColor,
 } from '../../utils/networkingMap';
+import { useGmail } from '../../hooks/useGmail';
+import { EmailComposeModal } from '../email/EmailComposeModal';
+import { EmailThread } from '../email/EmailThread';
 
 const STRENGTH_OPTIONS: RelationshipStrength[] = ['hot', 'warm', 'cold', 'personal'];
 const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Text', 'LinkedIn'];
@@ -141,6 +144,9 @@ function VoiceNoteSection({
 
 export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, onUpdateContact, onEditInCRM, orgs = [], onUpdateOrgs }: Props) {
   const [tab, setTab] = useState<'info' | 'log'>('info');
+  const [showCompose, setShowCompose] = useState(false);
+  const [showThread, setShowThread] = useState(false);
+  const { isConnected: gmailConnected } = useGmail();
   const [logType, setLogType] = useState('Call');
   const [logNotes, setLogNotes] = useState('');
   const [logDate, setLogDate] = useState(todayStr());
@@ -431,6 +437,24 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
               >
                 <MessageSquare size={11} /> Log Interaction
               </button>
+              {contact.email && (
+                <button
+                  onClick={() => setShowCompose(true)}
+                  className="caesar-btn-ghost text-xs px-3 py-1.5 flex items-center gap-1"
+                  title="Send Email"
+                >
+                  <Mail size={11} /> Send Email
+                </button>
+              )}
+              {contact.email && (
+                <button
+                  onClick={() => setShowThread(true)}
+                  className="caesar-btn-ghost text-xs px-3 py-1.5 flex items-center gap-1"
+                  title="View Email History"
+                >
+                  <Inbox size={11} /> View Emails
+                </button>
+              )}
             </div>
           </>
         )}
@@ -464,6 +488,24 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
           </>
         )}
       </div>
+
+      {/* Email modals — rendered outside the card so they aren't clipped */}
+      {showCompose && contact.email && (
+        <EmailComposeModal
+          to={contact.email}
+          toName={contact.name}
+          onSent={() => setShowCompose(false)}
+          onClose={() => setShowCompose(false)}
+        />
+      )}
+      {showThread && contact.email && (
+        <EmailThread
+          email={contact.email}
+          contactName={contact.name}
+          onClose={() => setShowThread(false)}
+          onCompose={() => { setShowThread(false); setShowCompose(true); }}
+        />
+      )}
     </div>
   );
 }

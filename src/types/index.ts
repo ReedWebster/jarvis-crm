@@ -383,6 +383,7 @@ export interface ContactMapData {
   geocodedAddress?: string; // address string that produced the current lat/lng
   nodeX?: number;
   nodeY?: number;
+  nodeZ?: number;
   mapNotes: string;
   strength: RelationshipStrength;
   voiceNote?: string;
