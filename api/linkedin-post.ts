@@ -1,4 +1,3 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
 import { createLinkedInPost, LinkedInError } from '../src/lib/linkedin';
 
 // NOTE:
@@ -8,9 +7,11 @@ import { createLinkedInPost, LinkedInError } from '../src/lib/linkedin';
 // - Set LINKEDIN_AUTHOR_URN to something like "urn:li:person:XXXXXXXX".
 // It does not perform OAuth itself and NEVER exposes the token to the client.
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
 
@@ -18,17 +19,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const authorUrn = process.env.LINKEDIN_AUTHOR_URN;
 
   if (!accessToken || !authorUrn) {
-    res.status(500).json({
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
       error: 'LinkedIn is not configured on the server.',
       detail: 'Set LINKEDIN_ACCESS_TOKEN and LINKEDIN_AUTHOR_URN in your environment.',
-    });
+    }));
     return;
   }
 
   const { text, dryRun } = req.body ?? {};
 
   if (typeof text !== 'string' || !text.trim()) {
-    res.status(400).json({ error: 'text is required' });
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'text is required' }));
     return;
   }
 
@@ -37,14 +42,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // The frontend must enforce that state machine; this route never auto-posts.
 
   if (dryRun) {
-    res.status(200).json({
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
       ok: true,
       dryRun: true,
       preview: {
         authorUrn,
         text,
       },
-    });
+    }));
     return;
   }
 
@@ -53,12 +60,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       authorUrn,
       text,
     });
-    res.status(200).json({ ok: true, id: result.id });
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true, id: result.id }));
   } catch (err: any) {
     if (err instanceof LinkedInError) {
-      res.status(err.status || 502).json({ error: err.message });
+      res.statusCode = err.status || 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err.message }));
     } else {
-      res.status(500).json({ error: 'Unexpected LinkedIn error', detail: err?.message ?? String(err) });
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Unexpected LinkedIn error', detail: err?.message ?? String(err) }));
     }
   }
 }
