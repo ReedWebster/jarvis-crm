@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Search,
   Plus,
@@ -16,8 +16,13 @@ import {
   Star,
   Filter,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Upload,
   Layers,
+  Shuffle,
+  LayoutGrid,
+  CreditCard,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
@@ -291,6 +296,273 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
           style={{ color: 'var(--text-muted)' }}
         >
           <Trash2 size={11} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── FLASHCARD VIEW ──────────────────────────────────────────────────────────
+
+interface FlashcardViewProps {
+  deck: Contact[];
+  setContacts: (v: Contact[] | ((p: Contact[]) => Contact[])) => void;
+  shuffled: boolean;
+  onShuffleToggle: () => void;
+  onBackToGrid: () => void;
+}
+
+function FlashcardView({
+  deck,
+  setContacts,
+  shuffled,
+  onShuffleToggle,
+  onBackToGrid,
+}: FlashcardViewProps) {
+  const [index, setIndex] = useState(0);
+  const contact = deck[index] ?? null;
+  const total = deck.length;
+
+  const updateContact = useCallback(
+    (updated: Contact) => {
+      setContacts((prev) =>
+        (Array.isArray(prev) ? prev : []).map((c) => (c.id === updated.id ? updated : c))
+      );
+    },
+    [setContacts]
+  );
+
+  const setTag = useCallback(
+    (c: Contact, tag: ContactTag) => {
+      const next = { ...c, tags: [tag] };
+      updateContact(next);
+    },
+    [updateContact]
+  );
+
+  const setFollowUp = useCallback(
+    (c: Contact, needed: boolean) => {
+      const next = {
+        ...c,
+        followUpNeeded: needed,
+        followUpDate: needed ? c.followUpDate || todayStr() : '',
+      };
+      updateContact(next);
+    },
+    [updateContact]
+  );
+
+  const goPrev = useCallback(() => {
+    setIndex((i) => (i <= 0 ? total - 1 : i - 1));
+  }, [total]);
+
+  const goNext = useCallback(() => {
+    setIndex((i) => (i >= total - 1 ? 0 : i + 1));
+  }, [total]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+      }
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [goPrev, goNext]);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [deck.length, shuffled]);
+
+  if (total === 0) {
+    return (
+      <div className="caesar-card flex flex-col items-center justify-center py-20 text-center">
+        <CreditCard size={48} className="mb-4" style={{ color: 'var(--text-muted)' }} />
+        <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
+          No contacts to show in flashcard view
+        </p>
+        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+          Adjust filters or add contacts, then try again.
+        </p>
+        <button onClick={onBackToGrid} className="caesar-btn-ghost mt-4">
+          Back to grid
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onBackToGrid}
+            className="caesar-btn-ghost flex items-center gap-2"
+            title="Back to grid view"
+          >
+            <LayoutGrid size={16} />
+            Grid
+          </button>
+          <button
+            onClick={onShuffleToggle}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+              shuffled ? 'border-blue-500/50 bg-blue-500/10' : 'caesar-btn-ghost'
+            }`}
+            style={shuffled ? { color: 'var(--text-primary)' } : undefined}
+            title="Shuffle deck"
+          >
+            <Shuffle size={14} />
+            {shuffled ? 'Shuffled' : 'Shuffle'}
+          </button>
+        </div>
+        <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <span>
+            {index + 1} / {total}
+          </span>
+          <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-200"
+              style={{
+                width: `${total ? (100 * (index + 1)) / total : 0}%`,
+                backgroundColor: 'var(--text-muted)',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Card */}
+      <div
+        className="caesar-card flex flex-col gap-6 p-8 min-h-[320px] select-none"
+        style={{ borderColor: 'var(--border)' }}
+        role="region"
+        aria-label={`Contact ${index + 1} of ${total}`}
+      >
+        {contact && (
+          <>
+            <div className="flex flex-col gap-1">
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {contact.name}
+              </h2>
+              {contact.company && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <Building size={14} />
+                  {contact.company}
+                </div>
+              )}
+              {contact.relationship && (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {contact.relationship}
+                </p>
+              )}
+              <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                <Clock size={12} />
+                Last contact: {formatDate(contact.lastContacted)}
+              </div>
+              {contact.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {contact.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2 py-0.5 rounded-md text-xs font-medium"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        color: TAG_COLORS[tag],
+                        border: `1px solid ${TAG_COLORS[tag]}`,
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick sort: set tag */}
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
+                Set category
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ALL_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setTag(contact, tag)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all border"
+                    style={{
+                      borderColor: contact.tags.includes(tag) ? TAG_COLORS[tag] : 'var(--border)',
+                      backgroundColor: contact.tags.includes(tag) ? `${TAG_COLORS[tag]}20` : 'transparent',
+                      color: contact.tags.includes(tag) ? TAG_COLORS[tag] : 'var(--text-secondary)',
+                    }}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Follow-up toggle */}
+            <div className="flex items-center gap-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Needs follow-up?
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFollowUp(contact, true)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    contact.followUpNeeded ? 'ring-2 ring-amber-500/60' : ''
+                  }`}
+                  style={{
+                    backgroundColor: contact.followUpNeeded ? 'rgba(245,158,11,0.2)' : 'var(--bg-elevated)',
+                    color: contact.followUpNeeded ? '#f59e0b' : 'var(--text-muted)',
+                  }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFollowUp(contact, false)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    !contact.followUpNeeded ? 'ring-2 ring-emerald-500/40' : ''
+                  }`}
+                  style={{
+                    backgroundColor: !contact.followUpNeeded ? 'rgba(16,185,129,0.15)' : 'var(--bg-elevated)',
+                    color: !contact.followUpNeeded ? '#10b981' : 'var(--text-muted)',
+                  }}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Nav */}
+      <div className="flex items-center justify-center gap-4">
+        <button
+          onClick={goPrev}
+          className="caesar-btn-ghost p-3 rounded-xl"
+          title="Previous (←)"
+          aria-label="Previous contact"
+        >
+          <ChevronLeft size={24} />
+        </button>
+        <button
+          onClick={goNext}
+          className="caesar-btn-primary p-3 rounded-xl"
+          title="Next (→ or Space)"
+          aria-label="Next contact"
+        >
+          <ChevronRight size={24} />
         </button>
       </div>
     </div>
@@ -1074,6 +1346,15 @@ function QuickLogModal({ isOpen, onClose, contact, onLog }: QuickLogModalProps) 
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 export default function ContactsCRM({ contacts, setContacts }: Props) {
   const toast = useToast();
   const [search, setSearch] = useState('');
@@ -1081,6 +1362,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
   const [filterFollowUp, setFilterFollowUp] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [groupBy, setGroupBy] = useState<'none' | 'metAt' | 'tag' | 'company'>('none');
+  const [viewMode, setViewMode] = useState<'grid' | 'flashcard'>('grid');
+  const [flashcardShuffled, setFlashcardShuffled] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Modal state
@@ -1103,6 +1386,12 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
       return matchSearch && matchTag && matchFollowUp;
     });
   }, [contacts, search, filterTag, filterFollowUp]);
+
+  // Flashcard deck: filtered list, optionally shuffled
+  const flashcardDeck = useMemo(
+    () => (flashcardShuffled ? shuffleArray([...filtered]) : filtered),
+    [filtered, flashcardShuffled]
+  );
 
   // CRUD helpers
   const handleAdd = (data: ContactFormData) => {
@@ -1492,10 +1781,39 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             <option value="company">By Company</option>
           </select>
         </div>
+
+        {/* View: Grid | Flashcard */}
+        <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={() => setViewMode('grid')}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: viewMode === 'grid' ? 'var(--bg-elevated)' : 'transparent',
+              color: viewMode === 'grid' ? 'var(--text-primary)' : 'var(--text-muted)',
+            }}
+            title="Grid view"
+          >
+            <LayoutGrid size={14} />
+            Grid
+          </button>
+          <button
+            onClick={() => setViewMode('flashcard')}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: viewMode === 'flashcard' ? 'var(--bg-elevated)' : 'transparent',
+              color: viewMode === 'flashcard' ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderLeft: '1px solid var(--border)',
+            }}
+            title="Flashcard view — flip through and sort"
+          >
+            <CreditCard size={14} />
+            Flashcard
+          </button>
+        </div>
       </div>
 
-      {/* Results count */}
-      {(search || filterTag || filterFollowUp) && (
+      {/* Results count (grid only) */}
+      {viewMode === 'grid' && (search || filterTag || filterFollowUp) && (
         <p className="text-xs -mt-2" style={{ color: 'var(--text-muted)' }}>
           Showing {filtered.length} of {contacts.length} contacts
         </p>
@@ -1504,8 +1822,19 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
       {/* MetAt datalist for form autocomplete */}
       <MetAtDatalist contacts={contacts} />
 
-      {/* Contact Grid */}
-      {filtered.length === 0 ? (
+      {/* Flashcard view */}
+      {viewMode === 'flashcard' && (
+        <FlashcardView
+          deck={flashcardDeck}
+          setContacts={setContacts}
+          shuffled={flashcardShuffled}
+          onShuffleToggle={() => setFlashcardShuffled((s) => !s)}
+          onBackToGrid={() => setViewMode('grid')}
+        />
+      )}
+
+      {/* Contact Grid (only when grid view) */}
+      {viewMode === 'grid' && (filtered.length === 0 ? (
         <div className="caesar-card flex flex-col items-center justify-center py-16 text-center">
           <User size={40} className="mb-3" style={{ color: 'var(--text-muted)' }} />
           <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
@@ -1577,7 +1906,7 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             </div>
           );
         })()
-      )}
+      ))}
 
       {/* Add Contact Modal */}
       <ContactFormModal
