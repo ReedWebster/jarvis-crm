@@ -395,26 +395,16 @@ export function SocialHub({
                   <button
                     type="button"
                     className="caesar-btn-ghost flex items-center justify-center gap-1 text-xs"
+                    onClick={platform === 'linkedin' ? () => { window.location.href = '/api/linkedin-oauth-start'; } : undefined}
                   >
                     {platform === 'linkedin'
-                      ? (linkedinLoading ? 'Checking…' : status === 'connected' ? 'Reconnect' : 'Connect')
+                      ? (linkedinLoading ? 'Checking…' : status === 'connected' ? 'Reconnect' : 'Connect LinkedIn')
                       : status === 'connected' ? 'Disconnect' : 'Connect'}
                   </button>
                   {platform === 'linkedin' && linkedinError && (
                     <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>
                       {linkedinError}
                     </p>
-                  )}
-                  {platform === 'linkedin' && (
-                    <button
-                      type="button"
-                      className="caesar-btn-ghost mt-1 text-[11px]"
-                      onClick={() => {
-                        window.location.href = '/api/linkedin-oauth-start';
-                      }}
-                    >
-                      {status === 'connected' ? 'Open LinkedIn OAuth' : 'Connect LinkedIn'}
-                    </button>
                   )}
                 </div>
               );
