@@ -152,18 +152,18 @@ function StatsRow({ contacts }: { contacts: Contact[] }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
       {stats.map(({ label, value, icon: Icon, color }) => (
-        <div key={label} className="caesar-card flex items-center gap-3">
+        <div key={label} className="caesar-card flex items-center gap-2 sm:gap-3 min-w-0">
           <div
-            className="flex items-center justify-center rounded-xl"
-            style={{ width: 40, height: 40, backgroundColor: `${color}20` }}
+            className="flex items-center justify-center rounded-xl flex-shrink-0"
+            style={{ width: 36, height: 36, backgroundColor: `${color}20` }}
           >
-            <Icon size={18} style={{ color }} />
+            <Icon size={16} style={{ color }} />
           </div>
-          <div>
-            <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{value}</p>
-            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg sm:text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>{value}</p>
+            <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }} title={label}>{label}</p>
           </div>
         </div>
       ))}
@@ -456,7 +456,7 @@ function FlashcardView({
 
       {/* Card — keyboard: ←/→/Space; touch: swipe left/right */}
       <div
-        className="caesar-card flex flex-col gap-6 p-8 min-h-[320px] select-none touch-pan-y"
+        className="caesar-card flex flex-col gap-4 sm:gap-6 p-4 sm:p-6 md:p-8 min-h-[280px] sm:min-h-[320px] select-none touch-pan-y overflow-x-hidden"
         style={{ borderColor: 'var(--border)' }}
         role="region"
         aria-label={`Contact ${index + 1} of ${total}`}
@@ -566,10 +566,10 @@ function FlashcardView({
       </div>
 
       {/* Nav */}
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-3 sm:gap-4">
         <button
           onClick={goPrev}
-          className="caesar-btn-ghost p-3 rounded-xl"
+          className="caesar-btn-ghost p-3 rounded-xl touch-target-min"
           title="Previous (←)"
           aria-label="Previous contact"
         >
@@ -577,7 +577,7 @@ function FlashcardView({
         </button>
         <button
           onClick={goNext}
-          className="caesar-btn-primary p-3 rounded-xl"
+          className="caesar-btn-primary p-3 rounded-xl touch-target-min"
           title="Next (→ or Space)"
           aria-label="Next contact"
         >
@@ -1670,14 +1670,14 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
   return (
     <div className="flex flex-col gap-6 transition-colors duration-300">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="section-title">Contacts</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-sm mt-0.5 truncate" style={{ color: 'var(--text-secondary)' }}>
             Manage your network and relationships
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <input
             ref={csvInputRef}
             type="file"
@@ -1707,9 +1707,9 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
       <StatsRow contacts={contacts} />
 
       {/* Search + Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         {/* Search */}
-        <div className="relative flex-1 min-w-52">
+        <div className="relative flex-1 min-w-0 w-full sm:min-w-[200px] sm:w-auto">
           <Search
             size={15}
             className="absolute left-3 top-1/2 -translate-y-1/2"

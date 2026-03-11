@@ -214,10 +214,10 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
   // ─── RENDER ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg)' }}>
+    <div className="flex flex-col h-full min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--bg)' }}>
       {/* Top Bar */}
       <div
-        className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0 flex-wrap"
+        className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 border-b flex-shrink-0 flex-wrap"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
       >
         {/* View toggle */}
@@ -246,7 +246,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
         </div>
 
         {/* Search */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border flex-1 min-w-0"
+        <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg border flex-1 min-w-0"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)' }}>
           <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           <input
@@ -282,9 +282,9 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
       {showFilters && (
         <div
           className="border-b flex-shrink-0 overflow-x-auto"
-          style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
+          style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', WebkitOverflowScrolling: 'touch' }}
         >
-          <div className="flex items-center gap-3 px-4 py-2.5 min-w-max">
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 min-w-max">
             {/* Venture */}
             <select
               className="caesar-select text-xs min-w-[130px]"
@@ -374,7 +374,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
       )}
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden gap-3 p-3 relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden gap-2 sm:gap-3 p-2 sm:p-3 relative">
         {/* Follow-up queue (left side — desktop only) */}
         <div className="flex-shrink-0 w-56 flex flex-col gap-3 overflow-y-auto hidden md:flex">
           <FollowUpQueue

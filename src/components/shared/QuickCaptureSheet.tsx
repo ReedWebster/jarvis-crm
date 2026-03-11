@@ -191,14 +191,16 @@ export function QuickCaptureSheet({
         onClick={onClose}
       />
 
-      {/* Sheet */}
+      {/* Sheet — safe-area for home indicator on notched devices */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[60] rounded-t-2xl flex flex-col"
+        className="fixed left-0 right-0 z-[60] rounded-t-2xl flex flex-col"
         style={{
+          bottom: 0,
+          paddingBottom: 'env(safe-area-inset-bottom)',
           backgroundColor: 'var(--bg-card)',
           border: '1px solid var(--border)',
           borderBottom: 'none',
-          maxHeight: '75vh',
+          maxHeight: 'min(75vh, calc(100dvh - 2rem))',
           boxShadow: '0 -8px 40px rgba(0,0,0,0.3)',
         }}
       >
@@ -208,12 +210,15 @@ export function QuickCaptureSheet({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pb-3 flex-shrink-0">
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+        <div
+          className="flex items-center justify-between px-4 pb-3 flex-shrink-0"
+          style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}
+        >
+          <h2 className="text-sm font-semibold truncate min-w-0" style={{ color: 'var(--text-primary)' }}>
             Quick Capture
           </h2>
-          <button onClick={onClose} className="p-1 rounded-lg" style={{ color: 'var(--text-muted)' }}>
-            <X size={16} />
+          <button onClick={onClose} className="flex-shrink-0 p-2 rounded-lg touch-target-min" style={{ color: 'var(--text-muted)' }} aria-label="Close">
+            <X size={18} />
           </button>
         </div>
 
@@ -409,7 +414,11 @@ export function QuickCaptureSheet({
         {/* Save button */}
         <div
           className="px-4 py-4 flex-shrink-0"
-          style={{ borderTop: '1px solid var(--border)' }}
+          style={{
+            borderTop: '1px solid var(--border)',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          }}
         >
           <button
             onClick={handleSave}

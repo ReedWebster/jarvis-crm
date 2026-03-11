@@ -37,11 +37,17 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         paddingTop: 'env(safe-area-inset-top)',
       }}
     >
-    <div className="h-14 flex items-center px-4 md:px-6 gap-3 md:gap-4">
+    <div
+      className="h-14 flex items-center gap-3 md:gap-4"
+      style={{
+        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+        paddingRight: 'max(1rem, env(safe-area-inset-right))',
+      }}
+    >
       {/* Hamburger — mobile only */}
       <button
         onClick={onMenuOpen}
-        className="flex md:hidden items-center justify-center w-11 h-11 rounded-lg border flex-shrink-0"
+        className="flex md:hidden items-center justify-center w-11 h-11 rounded-lg border flex-shrink-0 touch-target-min"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         aria-label="Open menu"
       >

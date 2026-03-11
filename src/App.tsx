@@ -425,14 +425,16 @@ function MainApp() {
           style={{
             paddingTop: 'calc(56px + env(safe-area-inset-top))',
             paddingBottom: 'env(safe-area-inset-bottom)',
+            paddingLeft: 'env(safe-area-inset-left)',
+            paddingRight: 'env(safe-area-inset-right)',
           }}
         >
           <div
             className={activeSection === 'networking'
-              ? 'animate-fade-in'
-              : 'p-3 sm:p-4 md:p-6 max-w-[1600px] animate-fade-in'}
+              ? 'animate-fade-in h-full overflow-hidden'
+              : 'p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full animate-fade-in'}
             style={activeSection === 'networking'
-              ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top))' }
+              ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }
               : undefined}
             key={activeSection}
           >
@@ -491,11 +493,13 @@ function MainApp() {
           onExternalOpenChange={setInsightsPanelOpen}
         />
 
-        {/* Mobile Quick Capture FAB */}
+        {/* Mobile Quick Capture FAB — safe-area aware */}
         <button
           onClick={() => setQuickCaptureOpen(true)}
-          className="fixed bottom-6 left-4 md:hidden z-[60] w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          className="fixed md:hidden z-[60] w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95 touch-target-min"
           style={{
+            bottom: 'calc(1.5rem + env(safe-area-inset-bottom))',
+            left: 'calc(1rem + env(safe-area-inset-left))',
             background: 'linear-gradient(135deg, #10b981, #059669)',
             boxShadow: '0 4px 20px rgba(16,185,129,0.4)',
             color: '#fff',
