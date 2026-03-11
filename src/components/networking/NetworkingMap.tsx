@@ -15,7 +15,7 @@ import {
   forwardGeocode,
 } from '../../utils/networkingMap';
 import { GeographicView } from './GeographicView';
-import { NetworkView3D } from './NetworkView3D';
+import NetworkView3D from './NetworkView3D';
 import { FollowUpQueue } from './FollowUpQueue';
 import { UnplacedContacts } from './UnplacedContacts';
 

@@ -6,6 +6,7 @@ import {
   Trash2,
   Calendar,
   Mail,
+  Inbox,
   Phone,
   Building,
   Clock,
@@ -31,6 +32,8 @@ import { generateId, todayStr, calcRelationshipHealth, getHealthColor, formatDat
 import { useToast } from '../shared/Toast';
 import { Modal } from '../shared/Modal';
 import { Badge } from '../shared/Badge';
+import { EmailComposeModal } from '../email/EmailComposeModal';
+import { EmailThread } from '../email/EmailThread';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
@@ -179,9 +182,11 @@ interface ContactCardProps {
   onDelete: () => void;
   onDetail: () => void;
   onLogInteraction: () => void;
+  onSendEmail?: () => void;
+  onViewEmails?: () => void;
 }
 
-function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: ContactCardProps) {
+function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails }: ContactCardProps) {
   const health = calcRelationshipHealth(contact.lastContacted);
   const daysAgo = useMemo(() => {
     try {
@@ -290,6 +295,26 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction }: 
           <Edit3 size={11} />
           Edit
         </button>
+        {contact.email && (
+          <>
+            <button
+              onClick={onSendEmail}
+              title="Send Email"
+              className="caesar-btn-ghost flex-1 text-xs flex items-center justify-center gap-1 py-1.5"
+            >
+              <Mail size={11} />
+              Send
+            </button>
+            <button
+              onClick={onViewEmails}
+              title="View Email History"
+              className="caesar-btn-ghost flex-1 text-xs flex items-center justify-center gap-1 py-1.5"
+            >
+              <Inbox size={11} />
+              Inbox
+            </button>
+          </>
+        )}
         <button
           onClick={onDelete}
           className="text-xs flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg transition-colors hover:text-[var(--text-secondary)] "
@@ -1043,9 +1068,11 @@ interface ContactDetailModalProps {
   onClose: () => void;
   contact: Contact | null;
   onUpdate: (updated: Contact) => void;
+  onSendEmail?: () => void;
+  onViewEmails?: () => void;
 }
 
-function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetailModalProps) {
+function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
   const [newInteraction, setNewInteraction] = useState<Omit<ContactInteraction, 'id'>>(emptyInteraction());
   const [showAddInteraction, setShowAddInteraction] = useState(false);
 
@@ -1081,11 +1108,25 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate }: ContactDetai
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-2">
             {contact.email && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Mail size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                <a href={`mailto:${contact.email}`} className="text-sm  hover:underline">
-                  {contact.email}
-                </a>
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contact.email}</span>
+                <button
+                  onClick={onSendEmail}
+                  className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2"
+                  title="Send Email"
+                >
+                  <Mail size={11} />
+                  Send
+                </button>
+                <button
+                  onClick={onViewEmails}
+                  className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2"
+                  title="View Email History"
+                >
+                  <Inbox size={11} />
+                  Inbox
+                </button>
               </div>
             )}
             {contact.phone && (
@@ -1390,6 +1431,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [composeModalOpen, setComposeModalOpen] = useState(false);
+  const [threadModalOpen, setThreadModalOpen] = useState(false);
 
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
@@ -1667,6 +1710,16 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
     setLogModalOpen(true);
   };
 
+  const openCompose = (contact: Contact) => {
+    setSelectedContact(contact);
+    setComposeModalOpen(true);
+  };
+
+  const openThread = (contact: Contact) => {
+    setSelectedContact(contact);
+    setThreadModalOpen(true);
+  };
+
   return (
     <div className="flex flex-col gap-6 transition-colors duration-300">
       {/* Header */}
@@ -1875,6 +1928,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
               onDelete={() => handleDelete(contact.id)}
               onDetail={() => openDetail(contact)}
               onLogInteraction={() => openLog(contact)}
+              onSendEmail={() => openCompose(contact)}
+              onViewEmails={() => openThread(contact)}
             />
           ))}
         </div>
@@ -1917,6 +1972,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
                         onDelete={() => handleDelete(contact.id)}
                         onDetail={() => openDetail(contact)}
                         onLogInteraction={() => openLog(contact)}
+                        onSendEmail={() => openCompose(contact)}
+                        onViewEmails={() => openThread(contact)}
                       />
                     ))}
                   </div>
@@ -1970,6 +2027,8 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
         onClose={() => { setDetailModalOpen(false); setSelectedContact(null); }}
         contact={selectedContact}
         onUpdate={handleUpdateContact}
+        onSendEmail={() => selectedContact && openCompose(selectedContact)}
+        onViewEmails={() => selectedContact && openThread(selectedContact)}
       />
 
       {/* Quick Log Modal */}
@@ -1979,6 +2038,26 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
         contact={selectedContact}
         onLog={handleLogInteraction}
       />
+
+      {/* Email Compose Modal */}
+      {composeModalOpen && selectedContact?.email && (
+        <EmailComposeModal
+          to={selectedContact.email}
+          toName={selectedContact.name}
+          onSent={() => setComposeModalOpen(false)}
+          onClose={() => setComposeModalOpen(false)}
+        />
+      )}
+
+      {/* Email Thread Modal */}
+      {threadModalOpen && selectedContact?.email && (
+        <EmailThread
+          email={selectedContact.email}
+          contactName={selectedContact.name}
+          onClose={() => setThreadModalOpen(false)}
+          onCompose={() => { setThreadModalOpen(false); setComposeModalOpen(true); }}
+        />
+      )}
     </div>
   );
 }
