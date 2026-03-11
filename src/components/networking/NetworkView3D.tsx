@@ -3,7 +3,7 @@
  * Your CRM contacts live here as NPCs, grouped into districts by company/relationship.
  * WASD to walk, mouse to look (pointer lock), E to view a contact, Escape to exit.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { Search, X, MapPin } from 'lucide-react';
@@ -15,7 +15,7 @@ import type {
   NetworkManualConnection,
   NetworkOrg,
 } from '../../types';
-import { defaultContactMapData } from '../../utils/networkingMap';
+
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
