@@ -363,6 +363,76 @@ export interface TodoItem {
   checklist: TodoChecklistItem[];
 }
 
+// ─── SOCIAL / BRAND OPERATIONS ───────────────────────────────────────────────
+
+export type SocialPlatform = 'instagram' | 'linkedin' | 'twitter' | 'facebook';
+
+export type SocialAccountStatus = 'connected' | 'disconnected' | 'needs-reauth';
+
+export interface SocialAccount {
+  platform: SocialPlatform;
+  status: SocialAccountStatus;
+  accountName?: string;
+  // Note: provider tokens are managed by Ayrshare and never exposed to the client.
+  lastSyncAt?: string;
+}
+
+export type SocialPostStatus = 'draft' | 'pending-approval' | 'scheduled' | 'published' | 'failed';
+
+export interface SocialPost {
+  id: string;
+  creatorUserId: string;
+  platforms: SocialPlatform[];
+  baseContent: string;
+  instagramContent?: string;
+  linkedinContent?: string;
+  twitterContent?: string;
+  facebookContent?: string;
+  mediaUrls?: string[];          // stored as public URLs once uploaded
+  perPlatformMedia?: Partial<Record<SocialPlatform, string[]>>;
+  status: SocialPostStatus;
+  scheduledAt?: string;
+  publishedAt?: string;
+  approvalState: 'draft' | 'pending' | 'approved';
+  externalPostIds?: Partial<Record<SocialPlatform, string>>;
+  analyticsSnapshot?: SocialAnalyticsSnapshot;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SocialAnalyticsSnapshot {
+  windowStart: string;
+  windowEnd: string;
+  perPlatform: Partial<Record<SocialPlatform, {
+    impressions: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    followerDelta: number;
+    topPostId?: string;
+    topPostPreview?: string;
+  }>>;
+}
+
+export type SocialApprovalType = 'post-draft' | 'dm-suggestion' | 'idea' | 'retry' | 'reschedule';
+
+export type SocialApprovalStatus = 'pending' | 'approved' | 'dismissed';
+
+export interface SocialApprovalItem {
+  id: string;
+  type: SocialApprovalType;
+  title: string;
+  preview: string;
+  createdAt: string;
+  relatedContactId?: string;
+  relatedPostId?: string;
+  source: 'ai' | 'system' | 'manual';
+  status: SocialApprovalStatus;
+  suggestedPlatform?: SocialPlatform;
+  metadata?: Record<string, any>;
+  dismissalReason?: 'too-formal' | 'wrong-topic' | 'bad-timing' | 'off-brand' | 'other';
+}
+
 // ─── NETWORKING MAP ──────────────────────────────────────────────────────────
 
 export type RelationshipStrength = 'hot' | 'warm' | 'cold' | 'personal';

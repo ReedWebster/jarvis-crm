@@ -101,7 +101,6 @@ export function SocialHub({
     load();
     return () => { cancelled = true; };
   }, []);
-
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
       {/* Header */}
