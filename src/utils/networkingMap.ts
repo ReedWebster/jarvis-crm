@@ -12,6 +12,7 @@ export function defaultMapState(): NetworkingMapState {
     showAutoConnections: true,
     activeView: 'network',
     orgs: [],
+    buildings: [],
   };
 }
 

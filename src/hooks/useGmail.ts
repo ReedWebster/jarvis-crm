@@ -35,16 +35,26 @@ const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapi
 const TOKEN_KEY = 'gmail_token';
 const EXPIRY_KEY = 'gmail_token_expiry';
 
-// ─── Parsed message type ─────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface GmailAttachment {
+  attachmentId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
 
 export interface GmailMessage {
   id: string;
+  threadId: string;
   subject: string;
   from: string;
   to: string;
   date: string;
   snippet: string;
   body: string;
+  attachments: GmailAttachment[];
+  isRead: boolean;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -113,63 +123,15 @@ export function useGmail() {
     return fresh;
   }, [connect]);
 
-  const sendEmail = useCallback(
-    async (
-      to: string,
-      subject: string,
-      body: string,
-      replyToMessageId?: string
-    ): Promise<void> => {
-      setIsLoading(true);
-      try {
-        const accessToken = await getToken();
-
-        const lines = [
-          `To: ${to}`,
-          `From: me`,
-          `Subject: ${subject}`,
-          `Content-Type: text/plain; charset=utf-8`,
-        ];
-        if (replyToMessageId) {
-          lines.push(`In-Reply-To: ${replyToMessageId}`);
-          lines.push(`References: ${replyToMessageId}`);
-        }
-        lines.push('', body);
-
-        const message = lines.join('\r\n');
-        const encoded = btoa(unescape(encodeURIComponent(message)))
-          .replace(/\+/g, '-')
-          .replace(/\//g, '_')
-          .replace(/=+$/, '');
-
-        const url = replyToMessageId
-          ? `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`
-          : `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`;
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ raw: encoded }),
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error?.message ?? `Send failed: ${res.status}`);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [getToken]
-  );
+  // ─── Helpers ────────────────────────────────────────────────────────────────
 
   const decodeBase64Url = (data: string): string => {
     try {
       const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
-      return decodeURIComponent(escape(atob(base64)));
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder('utf-8').decode(bytes);
     } catch {
       return '';
     }
@@ -181,28 +143,193 @@ export function useGmail() {
 
   const parseMessageBody = (payload: any): string => {
     if (!payload) return '';
-
-    // Multipart: look for text/plain part
     if (payload.parts && Array.isArray(payload.parts)) {
       for (const part of payload.parts) {
         if (part.mimeType === 'text/plain' && part.body?.data) {
           return decodeBase64Url(part.body.data);
         }
       }
-      // Recurse into nested parts
       for (const part of payload.parts) {
         const result = parseMessageBody(part);
         if (result) return result;
       }
     }
-
-    // Single part
     if (payload.body?.data) {
       return decodeBase64Url(payload.body.data);
     }
-
     return '';
   };
+
+  const parseAttachments = (payload: any): GmailAttachment[] => {
+    const attachments: GmailAttachment[] = [];
+    const extract = (parts: any[]) => {
+      for (const part of parts) {
+        if (part.filename && part.filename.length > 0 && part.body?.attachmentId) {
+          attachments.push({
+            attachmentId: part.body.attachmentId,
+            filename: part.filename,
+            mimeType: part.mimeType ?? 'application/octet-stream',
+            size: part.body.size ?? 0,
+          });
+        }
+        if (part.parts) extract(part.parts);
+      }
+    };
+    if (payload?.parts) extract(payload.parts);
+    return attachments;
+  };
+
+  const parseMessageData = (msg: any): GmailMessage => {
+    const headers: Array<{ name: string; value: string }> = msg.payload?.headers ?? [];
+    return {
+      id: msg.id,
+      threadId: msg.threadId ?? msg.id,
+      subject: getHeader(headers, 'Subject') || '(no subject)',
+      from: getHeader(headers, 'From'),
+      to: getHeader(headers, 'To'),
+      date: getHeader(headers, 'Date'),
+      snippet: msg.snippet ?? '',
+      body: parseMessageBody(msg.payload),
+      attachments: parseAttachments(msg.payload),
+      isRead: !(msg.labelIds ?? []).includes('UNREAD'),
+    };
+  };
+
+  const fetchMessageById = async (id: string, accessToken: string): Promise<any | null> => {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) return null;
+    return res.json();
+  };
+
+  // ─── Encode raw MIME message for Gmail API ───────────────────────────────────
+
+  const encodeMimeMessage = (mimeMessage: string): string => {
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(mimeMessage);
+    let binary = '';
+    bytes.forEach(b => { binary += String.fromCharCode(b); });
+    return btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  };
+
+  const buildMimeMessage = async (
+    to: string,
+    subject: string,
+    body: string,
+    replyToMessageId?: string,
+    attachments?: File[]
+  ): Promise<string> => {
+    const extraHeaders: string[] = [];
+    if (replyToMessageId) {
+      extraHeaders.push(`In-Reply-To: ${replyToMessageId}`);
+      extraHeaders.push(`References: ${replyToMessageId}`);
+    }
+
+    if (!attachments || attachments.length === 0) {
+      const lines = [
+        `To: ${to}`,
+        `From: me`,
+        `Subject: ${subject}`,
+        `Content-Type: text/plain; charset=utf-8`,
+        ...extraHeaders,
+        '',
+        body,
+      ];
+      return lines.join('\r\n');
+    }
+
+    const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const headers = [
+      `To: ${to}`,
+      `From: me`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      ...extraHeaders,
+    ].join('\r\n');
+
+    const textPart =
+      `--${boundary}\r\n` +
+      `Content-Type: text/plain; charset=utf-8\r\n` +
+      `\r\n` +
+      body;
+
+    const attachmentParts: string[] = [];
+    for (const file of attachments) {
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1] ?? '');
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      // Wrap at 76 chars for MIME compliance
+      const wrapped = base64Data.match(/.{1,76}/g)?.join('\r\n') ?? base64Data;
+      attachmentParts.push(
+        `--${boundary}\r\n` +
+        `Content-Type: ${file.type || 'application/octet-stream'}; name="${file.name}"\r\n` +
+        `Content-Transfer-Encoding: base64\r\n` +
+        `Content-Disposition: attachment; filename="${file.name}"\r\n` +
+        `\r\n` +
+        wrapped
+      );
+    }
+
+    return (
+      headers +
+      '\r\n\r\n' +
+      [textPart, ...attachmentParts].join('\r\n\r\n') +
+      `\r\n--${boundary}--`
+    );
+  };
+
+  // ─── Send email ──────────────────────────────────────────────────────────────
+
+  const sendEmail = useCallback(
+    async (
+      to: string,
+      subject: string,
+      body: string,
+      replyToMessageId?: string,
+      attachments?: File[]
+    ): Promise<void> => {
+      setIsLoading(true);
+      try {
+        const accessToken = await getToken();
+        const mimeMessage = await buildMimeMessage(to, subject, body, replyToMessageId, attachments);
+        const raw = encodeMimeMessage(mimeMessage);
+
+        const res = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ raw }),
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err as any)?.error?.message ?? `Send failed: ${res.status}`);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  // ─── Fetch threads by contact email ──────────────────────────────────────────
 
   const fetchThreads = useCallback(
     async (email: string): Promise<GmailMessage[]> => {
@@ -212,50 +339,95 @@ export function useGmail() {
 
         const listRes = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=from:${encodeURIComponent(email)}+OR+to:${encodeURIComponent(email)}&maxResults=20`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
+          { headers: { Authorization: `Bearer ${accessToken}` } }
         );
 
-        if (!listRes.ok) {
-          throw new Error(`Failed to fetch message list: ${listRes.status}`);
-        }
+        if (!listRes.ok) throw new Error(`Failed to fetch message list: ${listRes.status}`);
 
         const listData = await listRes.json();
         const messageItems: Array<{ id: string }> = listData.messages ?? [];
-
         if (messageItems.length === 0) return [];
 
         const messages = await Promise.all(
-          messageItems.map(async ({ id }) => {
-            const msgRes = await fetch(
-              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
-              {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              }
-            );
-            if (!msgRes.ok) return null;
-            return msgRes.json();
-          })
+          messageItems.map(({ id }) => fetchMessageById(id, accessToken))
         );
 
-        return messages
-          .filter(Boolean)
-          .map((msg: any): GmailMessage => {
-            const headers: Array<{ name: string; value: string }> = msg.payload?.headers ?? [];
-            return {
-              id: msg.id,
-              subject: getHeader(headers, 'Subject') || '(no subject)',
-              from: getHeader(headers, 'From'),
-              to: getHeader(headers, 'To'),
-              date: getHeader(headers, 'Date'),
-              snippet: msg.snippet ?? '',
-              body: parseMessageBody(msg.payload),
-            };
-          });
+        return messages.filter(Boolean).map(parseMessageData);
       } finally {
         setIsLoading(false);
       }
+    },
+    [getToken]
+  );
+
+  // ─── Fetch inbox ─────────────────────────────────────────────────────────────
+
+  const fetchInbox = useCallback(
+    async (maxResults = 50, query = ''): Promise<GmailMessage[]> => {
+      setIsLoading(true);
+      try {
+        const accessToken = await getToken();
+
+        const params = new URLSearchParams({ maxResults: String(maxResults) });
+        if (query) {
+          params.set('q', query);
+        } else {
+          params.set('labelIds', 'INBOX');
+        }
+
+        const listRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!listRes.ok) throw new Error(`Failed to fetch inbox: ${listRes.status}`);
+
+        const listData = await listRes.json();
+        const messageItems: Array<{ id: string }> = listData.messages ?? [];
+        if (messageItems.length === 0) return [];
+
+        const messages = await Promise.all(
+          messageItems.map(({ id }) => fetchMessageById(id, accessToken))
+        );
+
+        return messages.filter(Boolean).map(parseMessageData);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  // ─── Download attachment ──────────────────────────────────────────────────────
+
+  const downloadAttachment = useCallback(
+    async (messageId: string, attachmentId: string, filename: string, mimeType: string): Promise<void> => {
+      const accessToken = await getToken();
+
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      if (!res.ok) throw new Error(`Failed to download attachment: ${res.status}`);
+
+      const data = await res.json();
+      const base64 = (data.data as string).replace(/-/g, '+').replace(/_/g, '/');
+      const byteString = atob(base64);
+      const bytes = new Uint8Array(byteString.length);
+      for (let i = 0; i < byteString.length; i++) {
+        bytes[i] = byteString.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     },
     [getToken]
   );
@@ -267,5 +439,7 @@ export function useGmail() {
     disconnect,
     sendEmail,
     fetchThreads,
+    fetchInbox,
+    downloadAttachment,
   };
 }

@@ -458,6 +458,7 @@ export interface ContactMapData {
   strength: RelationshipStrength;
   voiceNote?: string;
   photo?: string;
+  buildingId?: string; // references CityBuilding.id for 3D city placement
 }
 
 export interface NetworkManualConnection {
@@ -467,12 +468,24 @@ export interface NetworkManualConnection {
   label: string;
 }
 
+export type CityBuildingArchetype = 'tower' | 'midrise' | 'slab' | 'residential' | 'warehouse' | 'campus' | 'spire' | 'podiumTower';
+
+export interface CityBuilding {
+  id: string;             // e.g. "vanta-0", "byu-2"
+  districtId: string;     // "vanta" | "byu" | "rockcanyonai" | "neighborhood" | "chapel" | "outskirts"
+  name: string;           // user-editable display name, e.g. "Vanta Tower 1"
+  archetype: CityBuildingArchetype;
+  position: { x: number; z: number };
+  contactIds: string[];   // denormalized for fast render lookup
+}
+
 export interface NetworkingMapState {
   contactData: Record<string, ContactMapData>;
   manualConnections: NetworkManualConnection[];
   showAutoConnections: boolean;
   activeView: 'geographic' | 'network';
   orgs: NetworkOrg[];
+  buildings?: CityBuilding[];
 }
 
 export interface MapFilters {

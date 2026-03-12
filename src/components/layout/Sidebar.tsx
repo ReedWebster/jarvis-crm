@@ -3,7 +3,7 @@ import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
   DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
   CheckSquare, Network, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
-  Share2,
+  Share2, Inbox,
 } from 'lucide-react';
 import {
   DndContext,
@@ -35,8 +35,9 @@ export type NavSection =
   | 'notes'
   | 'todos'
   | 'networking'
-   | 'social'
-  | 'dochub';
+  | 'social'
+  | 'dochub'
+  | 'messaging';
 
 interface NavItem {
   id: NavSection;
@@ -60,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'networking', label: 'Networking Map',   icon: <Network size={18} /> },
   { id: 'social',     label: 'Social Command',   icon: <Share2 size={18} /> },
   { id: 'dochub',     label: 'Doc Hub',          icon: <FolderOpen size={18} /> },
+  { id: 'messaging',  label: 'Messaging',        icon: <Inbox size={18} /> },
 ];
 
 const DEFAULT_ORDER = NAV_ITEMS.map(i => i.id);

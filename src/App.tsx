@@ -49,6 +49,7 @@ import { TodoList } from './components/todos/TodoList';
 import { NetworkingMap } from './components/networking/NetworkingMap';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
+import { MessagingHub } from './components/messaging/MessagingHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
 import { QuickCaptureSheet } from './components/shared/QuickCaptureSheet';
@@ -84,6 +85,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   networking: 'Networking Map',
   social: 'Social Command Center',
   dochub: 'Doc Hub',
+  messaging: 'Messaging',
 };
 
 // Route to TeamView for co-founders; all hooks live in MainApp so Rules of Hooks are satisfied
@@ -385,6 +387,8 @@ function MainApp() {
             setFiles={setDocFiles}
           />
         );
+      case 'messaging':
+        return <MessagingHub />;
       default:
         return null;
     }
