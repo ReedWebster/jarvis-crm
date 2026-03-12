@@ -1,13 +1,12 @@
 /**
- * NetworkView3D — Phase 3 City: Photorealistic Visual Overhaul.
- * Same layout, districts, and interactions as Phase 2.
- * New: Sky shader, post-processing, detailed buildings, trees, cars, fountain, traffic signals.
+ * NetworkView3D — Phase 4 City: White/Ice-Blue Architectural Aesthetic + Contact Sorting.
+ * Same layout, districts, and interactions as Phase 3.
+ * New: Custom gradient sky, white/ice-blue palette, building registry, NPC-building binding.
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect, VignetteEffect, NoiseEffect } from 'postprocessing';
+import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
 import { Search, X } from 'lucide-react';
 import type {
   Contact,
@@ -17,6 +16,8 @@ import type {
   NetworkManualConnection,
   NetworkOrg,
   RelationshipStrength,
+  CityBuilding,
+  CityBuildingArchetype,
 } from '../../types';
 import { defaultContactMapData, isFollowUpPending } from '../../utils/networkingMap';
 import { ContactMapPopup } from './ContactMapPopup';
@@ -74,18 +75,17 @@ function deriveStrength(c: Contact, mapData?: ContactMapData): RelationshipStren
 interface DistrictDef {
   id: string; name: string;
   cx: number; cz: number;
-  color: string; trim: string;
   w: number; d: number;
   mmColor: string;
 }
 
 const DISTRICTS: DistrictDef[] = [
-  { id: 'byu',          name: 'BYU District',   cx:   0, cz: -80, color: '#8B4513', trim: '#D2691E', w: 60, d: 50, mmColor: '#9B5523' },
-  { id: 'vanta',        name: 'Vanta HQ',        cx:  80, cz:   0, color: '#1a1a2e', trim: '#0066ff', w: 60, d: 50, mmColor: '#2244aa' },
-  { id: 'rockcanyonai', name: 'Rock Canyon AI',  cx:  60, cz:  80, color: '#d8d8e8', trim: '#00d4ff', w: 60, d: 50, mmColor: '#99ccdd' },
-  { id: 'neighborhood', name: 'Neighborhood',    cx: -80, cz:   0, color: '#D2B48C', trim: '#8B7355', w: 60, d: 50, mmColor: '#D2B48C' },
-  { id: 'chapel',       name: 'Chapel District', cx: -60, cz: -70, color: '#F0EEE8', trim: '#B8B8B0', w: 50, d: 40, mmColor: '#DDDDD5' },
-  { id: 'outskirts',    name: 'Outskirts',        cx:   0, cz:  80, color: '#909090', trim: '#606060', w: 70, d: 55, mmColor: '#808080' },
+  { id: 'byu',          name: 'BYU District',   cx:   0, cz: -80, w: 60, d: 50, mmColor: '#9B9EC8' },
+  { id: 'vanta',        name: 'Vanta HQ',        cx:  80, cz:   0, w: 60, d: 50, mmColor: '#7B9EC8' },
+  { id: 'rockcanyonai', name: 'Rock Canyon AI',  cx:  60, cz:  80, w: 60, d: 50, mmColor: '#9BBCD8' },
+  { id: 'neighborhood', name: 'Neighborhood',    cx: -80, cz:   0, w: 60, d: 50, mmColor: '#B8C8D8' },
+  { id: 'chapel',       name: 'Chapel District', cx: -60, cz: -70, w: 50, d: 40, mmColor: '#C8D8E8' },
+  { id: 'outskirts',    name: 'Outskirts',        cx:   0, cz:  80, w: 70, d: 55, mmColor: '#A8B8C8' },
 ];
 
 function assignDistrict(c: Contact): string {
@@ -154,6 +154,8 @@ interface Props {
   onNavigateToCRM:         () => void;
   onAddContact:            (contact: Contact) => void;
   onUpdateOrgs:            (orgs: NetworkOrg[]) => void;
+  buildings?:              CityBuilding[];
+  onBuildingsReady?:       (buildings: CityBuilding[]) => void;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ function makeLamp(x: number, z: number): THREE.Group {
     new THREE.Vector2(0.05, 3.5),
     new THREE.Vector2(0.055, 3.9),
   ];
-  const poleMat = new THREE.MeshStandardMaterial({ color: '#444444', metalness: 0.7, roughness: 0.3 });
+  const poleMat = new THREE.MeshStandardMaterial({ color: '#8899AA', metalness: 0.7, roughness: 0.3 });
   const pole = new THREE.Mesh(new THREE.LatheGeometry(pts, 8), poleMat);
   pole.castShadow = true;
   g.add(pole);
@@ -184,14 +186,14 @@ function makeLamp(x: number, z: number): THREE.Group {
   // Horizontal arm
   const arm = new THREE.Mesh(
     new THREE.BoxGeometry(0.85, 0.07, 0.07),
-    new THREE.MeshStandardMaterial({ color: '#444444', metalness: 0.7, roughness: 0.3 })
+    new THREE.MeshStandardMaterial({ color: '#8899AA', metalness: 0.7, roughness: 0.3 })
   );
   arm.position.set(0.42, 3.88, 0);
   g.add(arm);
 
   // Globe
   const headMat = new THREE.MeshStandardMaterial({
-    color: '#fffbe6', emissive: '#ffffaa', emissiveIntensity: 0
+    color: '#E8F0FF', emissive: '#C8DCFF', emissiveIntensity: 0
   });
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), headMat);
   head.position.set(0.86, 3.88, 0);
@@ -215,16 +217,14 @@ function makeTree(x: number, z: number, rng: () => number, distId: string): THRE
   const trunkH = 1.8 + rng() * 0.8;
   const trunk = new THREE.Mesh(
     new THREE.CylinderGeometry(0.10, 0.16, trunkH, 8),
-    new THREE.MeshStandardMaterial({ color: '#5c3d1e', roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: '#B8C8D8', roughness: 0.9 })
   );
   trunk.position.y = trunkH / 2;
   trunk.castShadow = true;
   g.add(trunk);
 
-  const byuDist = distId === 'byu';
-  const colors = byuDist
-    ? ['#5a7a2a', '#6b8c2a', '#7a9c30']
-    : ['#2d6a2d', '#3a7a30', '#4a8f3f'];
+  const colors = ['#D0DDE8', '#C8D8E8', '#D8E4EE'];
+  void distId; // district no longer affects tree color in white aesthetic
 
   for (let i = 0; i < 3; i++) {
     const r = 0.9 + rng() * 0.5;
@@ -246,7 +246,7 @@ function makeTree(x: number, z: number, rng: () => number, distId: string): THRE
 
 // ─── PARKED CAR ───────────────────────────────────────────────────────────────
 
-const CAR_COLORS = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400'];
+const CAR_COLORS = ['#E8EEF4', '#D8E4EE', '#E0E8F0', '#D0DCE8', '#EAF0F6'];
 
 function makeCar(x: number, z: number, rotY: number, colorIdx: number): THREE.Group {
   const g = new THREE.Group();
@@ -254,7 +254,7 @@ function makeCar(x: number, z: number, rotY: number, colorIdx: number): THREE.Gr
   g.rotation.y = rotY;
 
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: CAR_COLORS[colorIdx % 5], metalness: 0.6, roughness: 0.3
+    color: CAR_COLORS[colorIdx % 5], metalness: 0.5, roughness: 0.35
   });
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.65, 1.1), bodyMat);
   body.position.y = 0.45;
@@ -263,7 +263,7 @@ function makeCar(x: number, z: number, rotY: number, colorIdx: number): THREE.Gr
 
   const cabin = new THREE.Mesh(
     new THREE.BoxGeometry(1.3, 0.52, 0.95),
-    new THREE.MeshStandardMaterial({ color: '#1a2a3a', roughness: 0.05, metalness: 0.8 })
+    new THREE.MeshStandardMaterial({ color: '#C8D8EC', roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.8 })
   );
   cabin.position.set(0.1, 0.98, 0);
   cabin.castShadow = true;
@@ -337,253 +337,259 @@ function makeTrafficSignal(x: number, z: number, rot: number): { group: THREE.Gr
   return { group: g, signal };
 }
 
-// ─── DISTRICT BUILDINGS (Phase 3) ─────────────────────────────────────────────
+// ─── BUILDING ARCHETYPES (Phase 4) ────────────────────────────────────────────
 
-function buildDistrictBuildings(
-  dist: DistrictDef,
-  contactCount: number,
-  scene: THREE.Scene,
-  collidables: THREE.Object3D[],
-  windows: THREE.Mesh[],
-  specialMats: THREE.MeshStandardMaterial[]
-): void {
-  const mainH = Math.max(4, 2 + contactCount * 0.5);
-  const rng   = seededRandom(dist.id + 'blds3');
+interface ArchMats {
+  main:  THREE.MeshStandardMaterial;
+  alt:   THREE.MeshStandardMaterial;
+  trim:  THREE.MeshStandardMaterial;
+  glass: THREE.MeshStandardMaterial;
+}
 
-  // Ground patch
-  const dGround = new THREE.Mesh(
-    new THREE.PlaneGeometry(dist.w, dist.d),
-    new THREE.MeshStandardMaterial({ color: dist.color, roughness: 0.9 })
-  );
-  dGround.rotation.x = -Math.PI / 2;
-  dGround.position.set(dist.cx, 0.015, dist.cz);
-  dGround.receiveShadow = true;
-  scene.add(dGround);
+function makeArchMats(): ArchMats {
+  return {
+    main:  new THREE.MeshStandardMaterial({ color: '#F2F6FF', roughness: 0.85, metalness: 0 }),
+    alt:   new THREE.MeshStandardMaterial({ color: '#D8E8F8', roughness: 0.80, metalness: 0 }),
+    trim:  new THREE.MeshStandardMaterial({ color: '#C8DCEF', roughness: 0.75, metalness: 0.05 }),
+    glass: new THREE.MeshStandardMaterial({ color: '#B8D4EC', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.72 }),
+  };
+}
 
-  // Per-district material
-  let mainMat: THREE.MeshStandardMaterial;
-  switch (dist.id) {
-    case 'vanta':
-      mainMat = new THREE.MeshStandardMaterial({ color: '#0a0a1a', roughness: 0.05, metalness: 0.9 });
-      break;
-    case 'rockcanyonai':
-      mainMat = new THREE.MeshStandardMaterial({ color: '#f0f0f5', roughness: 0.3, metalness: 0.05 });
-      break;
-    case 'chapel':
-      mainMat = new THREE.MeshStandardMaterial({ color: '#F0EEE8', roughness: 0.7, metalness: 0 });
-      break;
-    case 'outskirts':
-      mainMat = new THREE.MeshStandardMaterial({ color: '#7a7a7a', roughness: 0.8, metalness: 0.4 });
-      break;
-    default:
-      mainMat = new THREE.MeshStandardMaterial({ color: dist.color, roughness: 0.85, metalness: 0.0 });
-  }
+function archBox(w: number, h: number, d: number, mat: THREE.MeshStandardMaterial): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
 
-  // Base slab
-  const baseMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(dist.color).lerp(new THREE.Color('#aaaaaa'), 0.3), roughness: 0.9
-  });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.6, 13.4), baseMat);
-  base.position.set(dist.cx, 0.3, dist.cz);
-  base.castShadow = true; base.receiveShadow = true;
-  scene.add(base);
-
-  // Main tower (same footprint as Phase 1 for collision compatibility)
-  const mainBld = new THREE.Mesh(new THREE.BoxGeometry(12, mainH, 12), mainMat);
-  mainBld.position.set(dist.cx, mainH / 2 + 0.6, dist.cz);
-  mainBld.castShadow = true; mainBld.receiveShadow = true;
-  mainBld.userData.districtId = dist.id;
-  scene.add(mainBld);
-  collidables.push(mainBld);
-
-  // Setback floors for tall buildings
-  if (mainH > 6) {
-    const setH = Math.min(mainH * 0.35, 4.5);
-    const set1 = new THREE.Mesh(new THREE.BoxGeometry(9, setH, 9), mainMat.clone());
-    set1.position.set(dist.cx, mainH + 0.6 + setH / 2, dist.cz);
-    set1.castShadow = true;
-    scene.add(set1);
-    if (mainH > 10) {
-      const set2H = setH * 0.65;
-      const set2 = new THREE.Mesh(new THREE.BoxGeometry(6, set2H, 6), mainMat.clone());
-      set2.position.set(dist.cx, mainH + 0.6 + setH + set2H / 2, dist.cz);
-      set2.castShadow = true;
-      scene.add(set2);
-    }
-  }
-
-  // Roof cap
-  const trimMat = new THREE.MeshStandardMaterial({ color: dist.trim, roughness: 0.4, metalness: 0.3 });
-  const trimMesh = new THREE.Mesh(new THREE.BoxGeometry(12.8, 0.35, 12.8), trimMat);
-  trimMesh.position.set(dist.cx, mainH + 0.6 + 0.175, dist.cz);
-  scene.add(trimMesh);
-
-  // Roof details: AC units
-  for (let i = 0; i < 3; i++) {
-    const acH = 0.55 + rng() * 0.35;
-    const acW = 1.6 + rng() * 0.6;
-    const ac = new THREE.Mesh(
-      new THREE.BoxGeometry(acW, acH, 1.1),
-      new THREE.MeshStandardMaterial({ color: '#aaaaaa', roughness: 0.7, metalness: 0.3 })
-    );
-    ac.position.set(dist.cx + (i - 1) * 3.8, mainH + 0.6 + 0.35 + acH / 2, dist.cz + 3);
-    scene.add(ac);
-  }
-
-  // Antenna
-  const antenna = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.035, 0.035, 2.4, 6),
-    new THREE.MeshStandardMaterial({ color: '#888888', metalness: 0.8, roughness: 0.2 })
-  );
-  antenna.position.set(dist.cx + 2.5, mainH + 0.6 + 0.35 + 1.2, dist.cz - 2.5);
-  scene.add(antenna);
-
-  // Windows on main building
-  const winMat = new THREE.MeshStandardMaterial({ color: '#ffe8aa', emissive: '#ffcc44', emissiveIntensity: 0 });
-  for (let wy = 1; wy < mainH - 0.5; wy += 1.6) {
-    for (let wx = -4; wx <= 4; wx += 2.5) {
-      const win = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), winMat.clone());
-      win.position.set(dist.cx + wx, wy + 0.6, dist.cz + 6.02);
-      scene.add(win);
-      windows.push(win);
-    }
-  }
-
-  // Invisible entrance trigger (same as Phase 1/2)
-  const entranceTrigger = new THREE.Mesh(
-    new THREE.PlaneGeometry(8, 4),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  entranceTrigger.rotation.x = -Math.PI / 2;
-  entranceTrigger.position.set(dist.cx, 0.1, dist.cz + 8);
-  entranceTrigger.userData.isBuildingEntrance = true;
-  entranceTrigger.userData.districtId         = dist.id;
-  entranceTrigger.userData.districtName       = dist.name;
-  scene.add(entranceTrigger);
-  collidables.push(entranceTrigger);
-
-  // ── District-specific extras ──────────────────────────────────────────────
-
-  if (dist.id === 'vanta') {
-    // Blue LED strips along building vertical edges
-    const ledMat = new THREE.MeshStandardMaterial({ color: '#1e40af', emissive: '#1e40af', emissiveIntensity: 0 });
-    for (const [ex, ez] of [[5.88, 5.88], [-5.88, 5.88], [5.88, -5.88], [-5.88, -5.88]] as [number,number][]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.12, mainH + 0.4, 0.12), ledMat.clone());
-      strip.position.set(dist.cx + ex, mainH / 2 + 0.6, dist.cz + ez);
-      scene.add(strip);
-      specialMats.push(strip.material as THREE.MeshStandardMaterial);
-    }
-    // Dark granite base
-    const granite = new THREE.Mesh(
-      new THREE.BoxGeometry(14, 1.2, 14),
-      new THREE.MeshStandardMaterial({ color: '#050510', roughness: 0.2, metalness: 0.8 })
-    );
-    granite.position.set(dist.cx, 0.6, dist.cz);
-    scene.add(granite);
-  }
-
-  if (dist.id === 'chapel') {
-    // Bell tower + steeple on main building
-    const towerMat = mainMat.clone();
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(3.5, 5.5, 3.5), towerMat);
-    tower.position.set(dist.cx, mainH + 0.6 + 2.75, dist.cz - 2);
-    tower.castShadow = true;
-    scene.add(tower);
-
-    const steeple = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.28, 0.72, 5.5, 8),
-      towerMat.clone()
-    );
-    steeple.position.set(dist.cx, mainH + 0.6 + 5.5 + 2.75, dist.cz - 2);
-    steeple.castShadow = true;
-    scene.add(steeple);
-
-    const spire = new THREE.Mesh(
-      new THREE.ConeGeometry(0.48, 3.2, 8),
-      new THREE.MeshStandardMaterial({ color: '#d8d6d2', roughness: 0.5 })
-    );
-    spire.position.set(dist.cx, mainH + 0.6 + 5.5 + 5.5 + 1.6, dist.cz - 2);
-    spire.castShadow = true;
-    scene.add(spire);
-  }
-
-  if (dist.id === 'neighborhood') {
-    // Pitched roof — two angled planes forming a ridge
-    const roofMat = new THREE.MeshStandardMaterial({ color: '#6b4c30', roughness: 0.85 });
-    const slopeZ  = 3.8;
-    const pitch   = 0.30;
-    const leftSlope = new THREE.Mesh(new THREE.BoxGeometry(13.5, 0.28, 7.5), roofMat);
-    leftSlope.position.set(dist.cx, mainH + 0.6 + 0.35 + 1.7, dist.cz - slopeZ + 0.6);
-    leftSlope.rotation.x = -pitch;
-    scene.add(leftSlope);
-    const rightSlope = new THREE.Mesh(new THREE.BoxGeometry(13.5, 0.28, 7.5), roofMat.clone());
-    rightSlope.position.set(dist.cx, mainH + 0.6 + 0.35 + 1.7, dist.cz + slopeZ - 0.6);
-    rightSlope.rotation.x = pitch;
-    scene.add(rightSlope);
-  }
-
-  if (dist.id === 'rockcanyonai') {
-    // Flat rooftop green garden
-    const garden = new THREE.Mesh(
-      new THREE.BoxGeometry(10.5, 0.28, 10.5),
-      new THREE.MeshStandardMaterial({ color: '#3a6e3a', roughness: 0.8 })
-    );
-    garden.position.set(dist.cx, mainH + 0.6 + 0.35 + 0.14, dist.cz);
-    scene.add(garden);
-    // Horizontal window bands (wider windows)
-    for (let wy = 1.5; wy < mainH - 0.5; wy += 2.2) {
-      const band = new THREE.Mesh(
-        new THREE.PlaneGeometry(10.5, 0.85),
-        new THREE.MeshStandardMaterial({ color: '#cce8ff', emissive: '#88bbff', emissiveIntensity: 0, roughness: 0.1, metalness: 0.5 })
-      );
-      band.position.set(dist.cx, wy + 0.6, dist.cz + 6.03);
-      scene.add(band);
-      windows.push(band);
-    }
-  }
-
-  if (dist.id === 'outskirts') {
-    // Corrugated metal-look horizontal ribs on building
-    for (let wy = 1; wy < mainH - 0.5; wy += 1.2) {
-      const rib = new THREE.Mesh(
-        new THREE.BoxGeometry(12.3, 0.12, 0.05),
-        new THREE.MeshStandardMaterial({ color: '#888888', metalness: 0.5, roughness: 0.7 })
-      );
-      rib.position.set(dist.cx, wy + 0.6, dist.cz + 6.04);
-      scene.add(rib);
-    }
-  }
-
-  // ── Small surrounding buildings ───────────────────────────────────────────
-  const offsets: [number, number][] = [[-15, -12], [15, -12], [-15, 12], [15, 12], [0, -18]];
-  const numSmall = Math.min(5, 2 + Math.floor(contactCount / 4));
-  for (let bi = 0; bi < numSmall; bi++) {
-    const [bx, bz] = offsets[bi];
-    const bH = 2 + rng() * 4;
-    const bW = 5 + rng() * 4;
-    const b = new THREE.Mesh(
-      new THREE.BoxGeometry(bW, bH, bW),
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color(dist.color).lerp(new THREE.Color('#ffffff'), 0.2), roughness: 0.7
-      })
-    );
-    b.position.set(dist.cx + bx, bH / 2 + 0.6, dist.cz + bz);
-    b.castShadow = b.receiveShadow = true;
-    scene.add(b);
-    collidables.push(b);
-
-    // Windows on small buildings
-    for (let wy = 1; wy < bH - 0.5; wy += 1.6) {
-      const win = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.75, 0.75),
-        new THREE.MeshStandardMaterial({ color: '#ffe8aa', emissive: '#ffcc44', emissiveIntensity: 0 })
-      );
-      win.position.set(dist.cx + bx, wy + 0.6, dist.cz + bz + bW / 2 + 0.01);
-      scene.add(win);
-      windows.push(win);
-    }
+/** Place n windows across a facade row. cx/cz = face center in group-local space. */
+function addWindowRow(
+  g: THREE.Group, y: number, facadeW: number, n: number,
+  cx: number, faceZ: number, winMat: THREE.MeshStandardMaterial,
+) {
+  const step = facadeW / (n + 1);
+  for (let i = 1; i <= n; i++) {
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.9), winMat.clone());
+    win.position.set(cx + (i - (n + 1) / 2) * step, y, faceZ + 0.02);
+    g.add(win);
   }
 }
+
+function createTower(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 7, d = 7;
+  const base = archBox(w + 2, 0.8, d + 2, mats.trim.clone());
+  base.position.set(0, 0.4, 0);
+  g.add(base);
+  const shaft = archBox(w, h, d, mats.main.clone());
+  shaft.position.set(0, 0.8 + h / 2, 0);
+  g.add(shaft); collidables.push(shaft);
+  let topY = 0.8 + h;
+  if (h > 8) {
+    const s1H = h * 0.3;
+    const s1 = archBox(w - 2, s1H, d - 2, mats.main.clone());
+    s1.position.set(0, topY + s1H / 2, 0); g.add(s1); topY += s1H;
+    const s2H = s1H * 0.6;
+    const s2 = archBox(w - 4, s2H, d - 4, mats.main.clone());
+    s2.position.set(0, topY + s2H / 2, 0); g.add(s2); topY += s2H;
+  }
+  const trim = archBox(w + 0.4, 0.3, d + 0.4, mats.trim.clone());
+  trim.position.set(0, 0.8 + h + 0.15, 0); g.add(trim);
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6), mats.trim.clone());
+  ant.castShadow = true; ant.position.set(0, topY + 1.1, 0); g.add(ant);
+  const rows = Math.floor(h / 1.6);
+  for (let r = 0; r < rows; r++) addWindowRow(g, 0.8 + 1.0 + r * 1.6, w, 3, 0, d / 2, mats.glass);
+  return { group: g, height: topY };
+}
+
+function createMidrise(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(4, Math.min(h, 9));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 10, d = 9;
+  const body = archBox(w, h, d, mats.main.clone());
+  body.position.set(0, h / 2, 0); g.add(body); collidables.push(body);
+  const trim = archBox(w + 0.3, 0.35, d + 0.3, mats.trim.clone());
+  trim.position.set(0, h + 0.175, 0); g.add(trim);
+  const ac = archBox(2.5, 0.6, 1.8, mats.alt.clone());
+  ac.position.set(-2, h + 0.6, 1); g.add(ac);
+  const rows = Math.floor(h / 1.7);
+  for (let r = 0; r < rows; r++) addWindowRow(g, 1.0 + r * 1.7, w, 4, 0, d / 2, mats.glass);
+  return { group: g, height: h };
+}
+
+function createSlab(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(3, Math.min(h, 6));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 16, d = 7;
+  const body = archBox(w, h, d, mats.main.clone());
+  body.position.set(0, h / 2, 0); g.add(body); collidables.push(body);
+  const edge = archBox(w + 0.3, 0.25, d + 0.3, mats.trim.clone());
+  edge.position.set(0, h + 0.125, 0); g.add(edge);
+  const bandRows = Math.floor(h / 2);
+  for (let r = 0; r < bandRows; r++) {
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(w - 2, 0.9), mats.glass.clone());
+    band.position.set(0, 1.2 + r * 2, d / 2 + 0.02); g.add(band);
+  }
+  return { group: g, height: h };
+}
+
+function createResidential(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(3, Math.min(h, 6));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 8, d = 8;
+  const body = archBox(w, h, d, mats.alt.clone());
+  body.position.set(0, h / 2, 0); g.add(body); collidables.push(body);
+  const roofMat = new THREE.MeshStandardMaterial({ color: '#C8D4DE', roughness: 0.85 });
+  const lSlope = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.22, d / 2 + 0.5), roofMat);
+  lSlope.position.set(0, h + 1.4, -d / 4 + 0.2); lSlope.rotation.x = -0.36;
+  lSlope.castShadow = true; g.add(lSlope);
+  const rSlope = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.22, d / 2 + 0.5), roofMat.clone());
+  rSlope.position.set(0, h + 1.4, d / 4 - 0.2); rSlope.rotation.x = 0.36;
+  rSlope.castShadow = true; g.add(rSlope);
+  const rows = Math.floor(h / 1.8);
+  for (let r = 0; r < rows; r++) addWindowRow(g, 1.0 + r * 1.8, w, 2, 0, d / 2, mats.glass);
+  return { group: g, height: h + 2 };
+}
+
+function createWarehouse(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(3, Math.min(h, 5));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 18, d = 12;
+  const body = archBox(w, h, d, mats.alt.clone());
+  body.position.set(0, h / 2, 0); g.add(body); collidables.push(body);
+  const vaultMat = new THREE.MeshStandardMaterial({ color: '#D8E4EE', roughness: 0.85 });
+  const vault = new THREE.Mesh(new THREE.CylinderGeometry(d / 2, d / 2, w, 16, 1, false, 0, Math.PI), vaultMat);
+  vault.rotation.z = Math.PI / 2; vault.position.set(0, h + d * 0.25, 0);
+  vault.castShadow = true; g.add(vault);
+  for (let wy = 0.6; wy < h - 0.2; wy += 1.2) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.1, 0.05), mats.trim.clone());
+    rib.position.set(0, wy, d / 2 + 0.03); g.add(rib);
+  }
+  return { group: g, height: h + d * 0.5 };
+}
+
+function createCampus(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(4, Math.min(h, 8));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const vols = [
+    { ox: 0,   oz: 0,  w: 10, d: 9, fh: h },
+    { ox: -8,  oz: -3, w: 6,  d: 7, fh: h * 0.65 },
+    { ox:  8,  oz:  3, w: 6,  d: 7, fh: h * 0.80 },
+  ];
+  for (const v of vols) {
+    const b = archBox(v.w, v.fh, v.d, mats.main.clone());
+    b.position.set(v.ox, v.fh / 2, v.oz); g.add(b);
+    if (v.ox === 0) collidables.push(b);
+    const trim = archBox(v.w + 0.2, 0.25, v.d + 0.2, mats.trim.clone());
+    trim.position.set(v.ox, v.fh + 0.125, v.oz); g.add(trim);
+    const rows = Math.floor(v.fh / 1.7);
+    for (let r = 0; r < rows; r++) addWindowRow(g, 1.0 + r * 1.7, v.w, 3, v.ox, v.oz + v.d / 2, mats.glass);
+  }
+  return { group: g, height: h };
+}
+
+function createSpire(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(5, Math.min(h, 10));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const w = 7, d = 7;
+  const body = archBox(w, h, d, mats.main.clone());
+  body.position.set(0, h / 2, 0); g.add(body); collidables.push(body);
+  const towerH = 5;
+  const tower = archBox(3.5, towerH, 3.5, mats.main.clone());
+  tower.position.set(0, h + towerH / 2, 0); g.add(tower);
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.1, 3, 8), mats.trim.clone());
+  cyl.position.set(0, h + towerH + 1.5, 0); cyl.castShadow = true; g.add(cyl);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.55, 4, 8), new THREE.MeshStandardMaterial({ color: '#C8D8EC', roughness: 0.5 }));
+  cone.position.set(0, h + towerH + 3 + 2, 0); cone.castShadow = true; g.add(cone);
+  const rows = Math.floor(h / 1.8);
+  for (let r = 0; r < rows; r++) addWindowRow(g, 1.0 + r * 1.8, w, 2, 0, d / 2, mats.glass);
+  return { group: g, height: h + towerH + 5 };
+}
+
+function createPodiumTower(x: number, z: number, h: number, mats: ArchMats, collidables: THREE.Object3D[]): { group: THREE.Group; height: number } {
+  h = Math.max(6, Math.min(h, 16));
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const podH = 3;
+  const pod = archBox(14, podH, 12, mats.trim.clone());
+  pod.position.set(0, podH / 2, 0); g.add(pod); collidables.push(pod);
+  const towerH = h;
+  const tower = archBox(8, towerH, 7, mats.main.clone());
+  tower.position.set(0, podH + towerH / 2, 0); g.add(tower); collidables.push(tower);
+  const setH = towerH * 0.25;
+  const setback = archBox(5.5, setH, 4.5, mats.main.clone());
+  setback.position.set(0, podH + towerH + setH / 2, 0); g.add(setback);
+  const topTrim = archBox(8.4, 0.3, 7.4, mats.trim.clone());
+  topTrim.position.set(0, podH + towerH + 0.15, 0); g.add(topTrim);
+  for (const [ex, ez] of [[3.8, 3.3], [-3.8, 3.3], [3.8, -3.3], [-3.8, -3.3]] as [number, number][]) {
+    const strip = archBox(0.12, towerH, 0.12, mats.trim.clone());
+    strip.position.set(ex, podH + towerH / 2, ez); g.add(strip);
+  }
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 3, 6), mats.trim.clone());
+  ant.castShadow = true; ant.position.set(0, podH + towerH + setH + 1.5, 0); g.add(ant);
+  const rows = Math.floor(towerH / 1.6);
+  for (let r = 0; r < rows; r++) addWindowRow(g, podH + 1.0 + r * 1.6, 8, 3, 0, 3.5, mats.glass);
+  return { group: g, height: podH + towerH + setH };
+}
+
+function buildArchetype(
+  archetype: CityBuildingArchetype,
+  x: number, z: number, contactCount: number,
+  mats: ArchMats, collidables: THREE.Object3D[],
+): { group: THREE.Group; height: number } {
+  const h = Math.max(4, 3 + contactCount * 0.6);
+  switch (archetype) {
+    case 'tower':       return createTower(x, z, Math.min(h, 18), mats, collidables);
+    case 'midrise':     return createMidrise(x, z, h, mats, collidables);
+    case 'slab':        return createSlab(x, z, h, mats, collidables);
+    case 'residential': return createResidential(x, z, h, mats, collidables);
+    case 'warehouse':   return createWarehouse(x, z, h, mats, collidables);
+    case 'campus':      return createCampus(x, z, h, mats, collidables);
+    case 'spire':       return createSpire(x, z, Math.min(h, 10), mats, collidables);
+    case 'podiumTower': return createPodiumTower(x, z, Math.min(h, 16), mats, collidables);
+  }
+}
+
+const BUILDING_DEFS: Record<string, Array<{ id: string; offsetX: number; offsetZ: number; archetype: CityBuildingArchetype; name: string }>> = {
+  byu:          [
+    { id: 'byu-0', offsetX:   0, offsetZ:   0, archetype: 'campus',      name: 'BYU Main' },
+    { id: 'byu-1', offsetX: -14, offsetZ:   0, archetype: 'midrise',     name: 'East Hall' },
+    { id: 'byu-2', offsetX:  14, offsetZ:   3, archetype: 'midrise',     name: 'West Hall' },
+    { id: 'byu-3', offsetX:   5, offsetZ: -12, archetype: 'spire',       name: 'Bell Tower' },
+  ],
+  vanta:        [
+    { id: 'vanta-0', offsetX:   0, offsetZ:  0, archetype: 'podiumTower', name: 'Vanta HQ' },
+    { id: 'vanta-1', offsetX: -14, offsetZ: -5, archetype: 'tower',       name: 'North Tower' },
+    { id: 'vanta-2', offsetX:  12, offsetZ:  8, archetype: 'tower',       name: 'East Tower' },
+  ],
+  rockcanyonai: [
+    { id: 'rcai-0', offsetX:   0, offsetZ:  0, archetype: 'slab',    name: 'Tech Campus' },
+    { id: 'rcai-1', offsetX: -12, offsetZ: -5, archetype: 'midrise', name: 'Innovation Hall' },
+    { id: 'rcai-2', offsetX:  12, offsetZ: -8, archetype: 'campus',  name: 'Research Lab' },
+  ],
+  neighborhood: [
+    { id: 'nb-0', offsetX:   0, offsetZ: -12, archetype: 'residential', name: 'Oak House' },
+    { id: 'nb-1', offsetX: -11, offsetZ:   4, archetype: 'residential', name: 'Maple Cottage' },
+    { id: 'nb-2', offsetX:  10, offsetZ:   8, archetype: 'residential', name: 'Cedar Home' },
+    { id: 'nb-3', offsetX:  -2, offsetZ:  14, archetype: 'midrise',     name: 'Park Lofts' },
+  ],
+  chapel:       [
+    { id: 'ch-0', offsetX:   0, offsetZ:  0, archetype: 'spire',   name: 'Chapel' },
+    { id: 'ch-1', offsetX: -12, offsetZ:  5, archetype: 'midrise', name: 'Parish Hall' },
+    { id: 'ch-2', offsetX:  10, offsetZ: -6, archetype: 'midrise', name: 'Community Center' },
+  ],
+  outskirts:    [
+    { id: 'os-0', offsetX:   0, offsetZ:  8, archetype: 'warehouse', name: 'Warehouse A' },
+    { id: 'os-1', offsetX:  18, offsetZ:  2, archetype: 'warehouse', name: 'Warehouse B' },
+    { id: 'os-2', offsetX: -16, offsetZ: -6, archetype: 'slab',      name: 'Industrial Slab' },
+  ],
+};
 
 // ─── DISTRICT SPRITE ──────────────────────────────────────────────────────────
 
@@ -595,7 +601,7 @@ function makeDistrictSprite(dist: DistrictDef, count: number): THREE.Sprite {
   ctx.beginPath();
   (ctx as any).roundRect?.(0, 0, 256, 64, 8);
   ctx.fill();
-  ctx.fillStyle = dist.trim;
+  ctx.fillStyle = '#C8DCEF';
   ctx.font      = 'bold 20px system-ui';
   ctx.textAlign = 'center';
   ctx.fillText(dist.name, 128, 26);
@@ -731,6 +737,8 @@ export default function NetworkView3D({
   onUpdateContact,
   onNavigateToCRM,
   onUpdateOrgs,
+  buildings,
+  onBuildingsReady,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
@@ -744,6 +752,8 @@ export default function NetworkView3D({
   const [isRaining,       setIsRaining]       = useState(false);
   const [shownCount,      setShownCount]      = useState(0);
   const [quality,         setQuality]         = useState<'low' | 'medium' | 'high'>('medium');
+  const [tabOverlayOpen,  setTabOverlayOpen]  = useState(false);
+  const [tabNearestBldId, setTabNearestBldId] = useState<string | null>(null);
 
   const filteredRef        = useRef(filteredIds);
   const searchRef          = useRef('');
@@ -761,11 +771,17 @@ export default function NetworkView3D({
   const updateQualityRef   = useRef<((q: 'low' | 'medium' | 'high') => void) | null>(null);
   const nightLevelRef      = useRef(0);
   const nameplateMapRef    = useRef<Map<string, THREE.Sprite>>(new Map());
+  const buildingLabelRef   = useRef<Array<{ group: THREE.Group; div: HTMLDivElement; id: string }>>([]);
+  const buildingsRef       = useRef(buildings);
+  const onUpdateMapDataRef = useRef(onUpdateMapData);
+  const tabNearestBldRef   = useRef<string | null>(null);
 
   useEffect(() => { filteredRef.current       = filteredIds;    }, [filteredIds]);
   useEffect(() => { searchRef.current         = search;         }, [search]);
   useEffect(() => { districtFilterRef.current = districtFilter; }, [districtFilter]);
   useEffect(() => { isRainingRef.current      = isRaining;      }, [isRaining]);
+  useEffect(() => { buildingsRef.current       = buildings;         }, [buildings]);
+  useEffect(() => { onUpdateMapDataRef.current = onUpdateMapData;  }, [onUpdateMapData]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -776,10 +792,16 @@ export default function NetworkView3D({
       if (e.code === 'Escape') {
         setSelectedContact(null);
         selectedRef.current = null;
+        setTabOverlayOpen(false);
+      }
+      if (e.code === 'Tab' && tabNearestBldRef.current) {
+        e.preventDefault();
+        setTabOverlayOpen(prev => !prev);
+        setTabNearestBldId(tabNearestBldRef.current);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   useEffect(() => {
@@ -818,7 +840,7 @@ export default function NetworkView3D({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace  = THREE.SRGBColorSpace;
 
     // ── CSS2D ──
@@ -832,17 +854,40 @@ export default function NetworkView3D({
     // ── Scene ──
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.008);
+    scene.fog = new THREE.FogExp2(0xe4eaf0, 0.002);
 
-    // ── Sky shader ──
-    const sky = new Sky();
-    sky.scale.setScalar(450);
-    scene.add(sky);
-    const skyUniforms = (sky.material as THREE.ShaderMaterial).uniforms;
-    skyUniforms['turbidity'].value        = 8;
-    skyUniforms['rayleigh'].value         = 2;
-    skyUniforms['mieCoefficient'].value   = 0.005;
-    skyUniforms['mieDirectionalG'].value  = 0.8;
+    // ── Custom gradient sky (architectural model look) ──
+    const skyGeo = new THREE.SphereGeometry(400, 32, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        uHorizon: { value: new THREE.Color('#E8F0F8') },
+        uZenith:  { value: new THREE.Color('#7BB8D4') },
+        uSunDir:  { value: new THREE.Vector3(0, 1, 0) },
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uHorizon;
+        uniform vec3 uZenith;
+        uniform vec3 uSunDir;
+        varying vec3 vWorldPos;
+        void main() {
+          float t = clamp(normalize(vWorldPos).y * 1.4, 0.0, 1.0);
+          vec3 sky = mix(uHorizon, uZenith, t);
+          float sun = pow(max(dot(normalize(vWorldPos), uSunDir), 0.0), 180.0) * 2.0;
+          sky += vec3(1.0, 0.97, 0.9) * sun;
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `,
+    });
+    const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(skyMesh);
     const sunVec = new THREE.Vector3();
 
     // ── Stars ──
@@ -856,29 +901,27 @@ export default function NetworkView3D({
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    const starMat = new THREE.PointsMaterial({ size: 0.6, color: '#ffffff', transparent: true, opacity: 0, sizeAttenuation: true });
+    const starMat = new THREE.PointsMaterial({ size: 0.5, color: '#d0e0f0', transparent: true, opacity: 0, sizeAttenuation: true });
     const stars   = new THREE.Points(starGeo, starMat);
     stars.frustumCulled = false;
     scene.add(stars);
 
-    // ── Lighting ──
-    const ambient = new THREE.AmbientLight('#ffffff', 0.4);
-    scene.add(ambient);
-
-    const sun = new THREE.DirectionalLight('#ffffff', 1.5);
+    // ── Lighting — strong directional sun + cool hemi fill only ──
+    const sun = new THREE.DirectionalLight('#ffffff', 2.5);
     sun.position.set(60, 100, 40);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(8192, 8192);
     sun.shadow.camera.near   = 0.5;
     sun.shadow.camera.far    = 400;
-    sun.shadow.camera.left   = -140;
-    sun.shadow.camera.right  = 140;
-    sun.shadow.camera.top    = 140;
-    sun.shadow.camera.bottom = -140;
+    sun.shadow.camera.left   = -160;
+    sun.shadow.camera.right  = 160;
+    sun.shadow.camera.top    = 160;
+    sun.shadow.camera.bottom = -160;
     sun.shadow.bias = -0.0003;
+    (sun.shadow as THREE.DirectionalLightShadow & { radius?: number }).radius = 3;
     scene.add(sun);
 
-    const hemi = new THREE.HemisphereLight('#87ceeb', '#3d5a3e', 0.4);
+    const hemi = new THREE.HemisphereLight('#C8D8F0', '#E0E8F0', 0.4);
     scene.add(hemi);
 
     // ── Camera ──
@@ -889,33 +932,27 @@ export default function NetworkView3D({
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
 
-    const bloomEffect   = new BloomEffect({ intensity: 0.7, luminanceThreshold: 0.82, luminanceSmoothing: 0.04, mipmapBlur: true });
-    const vignetteEffect = new VignetteEffect({ darkness: 0.38, offset: 0.4 });
-    const noiseEffect    = new NoiseEffect({ premultiply: true });
-    noiseEffect.blendMode.opacity.value = 0;
-
-    const bloomPass  = new EffectPass(camera, bloomEffect);
-    const visualPass = new EffectPass(camera, vignetteEffect, noiseEffect);
+    // Subtle bloom only — no vignette/noise for the clean model look
+    const bloomEffect = new BloomEffect({ intensity: 0.2, luminanceThreshold: 0.95, luminanceSmoothing: 0.02, mipmapBlur: true });
+    const bloomPass   = new EffectPass(camera, bloomEffect);
     composer.addPass(bloomPass);
-    composer.addPass(visualPass);
 
     updateQualityRef.current = (q: 'low' | 'medium' | 'high') => {
       bloomPass.enabled = q !== 'low';
-      noiseEffect.blendMode.opacity.value = q === 'high' ? 0.035 : 0;
     };
 
     // ── Ground ──
     const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 400),
-      new THREE.MeshStandardMaterial({ color: '#2e4e1e', roughness: 1.0 })
+      new THREE.MeshStandardMaterial({ color: '#E4EAF0', roughness: 0.95, metalness: 0 })
     );
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
 
     // ── Roads ──
-    const roadMat  = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.95, metalness: 0.02 });
-    const swalkMat = new THREE.MeshStandardMaterial({ color: '#cccccc', roughness: 0.85 });
+    const roadMat  = new THREE.MeshStandardMaterial({ color: '#1C1C1E', roughness: 0.97, metalness: 0 });
+    const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.9 });
 
     function addRoad(cx: number, cz: number, width: number, length: number, rotY = 0) {
       const road = new THREE.Mesh(new THREE.PlaneGeometry(width, length), roadMat);
@@ -937,7 +974,7 @@ export default function NetworkView3D({
         const curbL = Math.abs(Math.cos(rotY)) > 0.7 ? length : 0.2;
         const curb = new THREE.Mesh(
           new THREE.BoxGeometry(curbW, 0.14, curbL),
-          new THREE.MeshStandardMaterial({ color: '#aaaaaa', roughness: 0.9 })
+          new THREE.MeshStandardMaterial({ color: '#C8CDD3', roughness: 0.85 })
         );
         const curbOff = (width / 2 + 0.05) * side;
         curb.position.set(cx + Math.cos(rotY) * curbOff, 0.07, cz + Math.sin(rotY) * curbOff);
@@ -955,8 +992,8 @@ export default function NetworkView3D({
     addRoad( 32,  38, 5, 80, Math.PI * 0.22);
 
     // ── Road markings ──
-    const dashMat  = new THREE.MeshStandardMaterial({ color: '#e8c100', roughness: 0.9 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: '#eeeeee', roughness: 0.9 });
+    const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.6 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.6 });
 
     // N-S center dashes
     for (let z = -128; z < 128; z += 5) {
@@ -985,7 +1022,7 @@ export default function NetworkView3D({
     // ── Central Plaza ──
     const plaza = new THREE.Mesh(
       new THREE.PlaneGeometry(32, 32),
-      new THREE.MeshStandardMaterial({ color: '#b0a898', roughness: 0.75 })
+      new THREE.MeshStandardMaterial({ color: '#D8E0E8', roughness: 0.8 })
     );
     plaza.rotation.x = -Math.PI / 2;
     plaza.position.set(0, 0.02, 0);
@@ -1002,7 +1039,7 @@ export default function NetworkView3D({
     ];
     const basin = new THREE.Mesh(
       new THREE.LatheGeometry(basinPts, 20),
-      new THREE.MeshStandardMaterial({ color: '#888c90', roughness: 0.6, metalness: 0.1 })
+      new THREE.MeshStandardMaterial({ color: '#C8D4DE', roughness: 0.6, metalness: 0.05 })
     );
     basin.position.set(0, 0.02, 0);
     basin.castShadow = true;
@@ -1011,7 +1048,7 @@ export default function NetworkView3D({
     // Fountain center pillar
     const pillar = new THREE.Mesh(
       new THREE.CylinderGeometry(0.18, 0.28, 1.8, 10),
-      new THREE.MeshStandardMaterial({ color: '#aaaaaa', roughness: 0.6 })
+      new THREE.MeshStandardMaterial({ color: '#D8E4EE', roughness: 0.6 })
     );
     pillar.position.set(0, 1.1, 0);
     pillar.castShadow = true;
@@ -1021,14 +1058,14 @@ export default function NetworkView3D({
     const wCv = document.createElement('canvas');
     wCv.width = wCv.height = 128;
     const wCtx = wCv.getContext('2d')!;
-    wCtx.fillStyle = '#1a5a7a';
+    wCtx.fillStyle = '#C8DCF0';
     wCtx.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 12; i++) {
       const grd = wCtx.createRadialGradient(
         Math.random() * 128, Math.random() * 128, 2,
         Math.random() * 128, Math.random() * 128, 18
       );
-      grd.addColorStop(0, 'rgba(80,160,220,0.28)');
+      grd.addColorStop(0, 'rgba(160,200,240,0.28)');
       grd.addColorStop(1, 'rgba(0,0,0,0)');
       wCtx.fillStyle = grd;
       wCtx.fillRect(0, 0, 128, 128);
@@ -1037,7 +1074,7 @@ export default function NetworkView3D({
     waterTex.wrapS = waterTex.wrapT = THREE.RepeatWrapping;
     waterTex.repeat.set(3, 3);
     const waterMat = new THREE.MeshStandardMaterial({
-      color: '#1a6090', map: waterTex, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.88
+      color: '#A8C8E8', map: waterTex, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.85
     });
     const waterSurface = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 5.4), waterMat);
     waterSurface.rotation.x = -Math.PI / 2;
@@ -1067,7 +1104,7 @@ export default function NetworkView3D({
     scene.add(fountainPts);
 
     // Plaza benches
-    const benchMat = new THREE.MeshStandardMaterial({ color: '#7a5c1e', roughness: 0.8 });
+    const benchMat = new THREE.MeshStandardMaterial({ color: '#C8D4DE', roughness: 0.8 });
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2;
       const bench = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.32, 0.7), benchMat);
@@ -1096,12 +1133,84 @@ export default function NetworkView3D({
     for (const d of DISTRICTS) distContactMap.set(d.id, []);
     for (const c of contacts)  distContactMap.get(assignDistrict(c))?.push(c);
 
+    const autoCityBuildings: CityBuilding[] = [];
+
     for (const dist of DISTRICTS) {
       const dcs = distContactMap.get(dist.id) ?? [];
-      buildDistrictBuildings(dist, dcs.length, scene, collidables, windows, vantaLedMats);
+      const defs = BUILDING_DEFS[dist.id] ?? [];
+      const mats = makeArchMats();
+
+      // District ground patch
+      const dGround = new THREE.Mesh(
+        new THREE.PlaneGeometry(dist.w, dist.d),
+        new THREE.MeshStandardMaterial({ color: '#D8E4EE', roughness: 0.9 })
+      );
+      dGround.rotation.x = -Math.PI / 2;
+      dGround.position.set(dist.cx, 0.015, dist.cz);
+      dGround.receiveShadow = true;
+      scene.add(dGround);
+
+      // Build each defined building using its archetype
+      let tallestH = 4;
+      for (let bi = 0; bi < defs.length; bi++) {
+        const def = defs[bi];
+        const wx = dist.cx + def.offsetX;
+        const wz = dist.cz + def.offsetZ;
+        const contactShare = Math.ceil(dcs.length / Math.max(defs.length, 1));
+        const stored = (buildings ?? []).find(b => b.id === def.id);
+        const result = buildArchetype(def.archetype, wx, wz, contactShare, mats, collidables);
+        result.group.userData.buildingId  = def.id;
+        result.group.userData.districtId  = dist.id;
+        result.group.userData.buildingName = def.name;
+        scene.add(result.group);
+        if (result.height > tallestH) tallestH = result.height;
+
+        // Building nameplate (CSS2DObject — fades by distance)
+        const bLabelDiv = document.createElement('div');
+        bLabelDiv.style.cssText = [
+          'color:#8899AA',
+          'font-size:10px',
+          'font-family:system-ui,sans-serif',
+          'white-space:nowrap',
+          'pointer-events:none',
+          'text-shadow:0 1px 3px rgba(255,255,255,0.9)',
+          'opacity:0',
+          'transition:opacity 0.3s',
+        ].join(';');
+        bLabelDiv.textContent = stored?.name ?? def.name;
+        const bLabelObj = new CSS2DObject(bLabelDiv);
+        bLabelObj.position.set(0, result.height + 1.8, 0);
+        result.group.add(bLabelObj);
+        buildingLabelRef.current.push({ group: result.group, div: bLabelDiv, id: def.id });
+
+        // Entrance trigger for main building (first def)
+        if (bi === 0) {
+          const trigger = new THREE.Mesh(
+            new THREE.PlaneGeometry(8, 4),
+            new THREE.MeshBasicMaterial({ visible: false })
+          );
+          trigger.rotation.x = -Math.PI / 2;
+          trigger.position.set(wx, 0.1, wz + 9);
+          trigger.userData.isBuildingEntrance = true;
+          trigger.userData.districtId   = dist.id;
+          trigger.userData.districtName = dist.name;
+          scene.add(trigger);
+          collidables.push(trigger);
+        }
+
+        // Register building in CityBuilding list (use stored name if available)
+        autoCityBuildings.push({
+          id:         def.id,
+          districtId: dist.id,
+          name:       stored?.name ?? def.name,
+          archetype:  def.archetype,
+          position:   { x: wx, z: wz },
+          contactIds: stored?.contactIds ?? [],
+        });
+      }
 
       // District building height for sprite position
-      const mainH = Math.max(4, 2 + dcs.length * 0.5);
+      const mainH = tallestH;
 
       // District nameplate sprite
       const sprite = makeDistrictSprite(dist, dcs.length);
@@ -1141,6 +1250,9 @@ export default function NetworkView3D({
         scene.add(tree);
       }
     }
+
+    // Fire building registry callback once on mount
+    onBuildingsReady?.(autoCityBuildings);
 
     // ── Parked Cars ──
     const carGroups: THREE.Group[] = [];
@@ -1328,6 +1440,16 @@ export default function NetworkView3D({
           existing.delete(c.id);
           updateNameplate(distDef, newContacts);
         }
+
+        // Snap NPC to assigned building position
+        const entry = map.get(c.id)!;
+        if (md.buildingId) {
+          const bld = buildingsRef.current?.find(b => b.id === md.buildingId);
+          if (bld) {
+            const rng = seededRandom(c.id + 'bpos');
+            entry.group.position.set(bld.position.x + (rng() - 0.5) * 5, 0, bld.position.z + (rng() - 0.5) * 5);
+          }
+        }
       }
       for (const deletedId of existing) {
         const entry = map.get(deletedId);
@@ -1386,56 +1508,64 @@ export default function NetworkView3D({
       else               sunElevation = -0.5;
 
       sunVec.setFromSphericalCoords(1, Math.PI / 2 - sunElevation, 1.5);
-      skyUniforms['sunPosition'].value.copy(sunVec);
+      skyMat.uniforms.uSunDir.value.copy(sunVec);
 
-      // Compute light values for current time
+      // Compute light values for current time — cool blue palette
       if (t < 0.2) {
-        sunC = new THREE.Color('#000015'); sunI = 0; ambI = 0.07; lampI = 2.2;
-        fogC = new THREE.Color('#050510');
-        hemi.color.set('#0a0a2a'); hemi.groundColor.set('#0a1a0a'); hemi.intensity = 0.1;
+        sunC = new THREE.Color('#000820'); sunI = 0; ambI = 0; lampI = 2.2;
+        fogC = new THREE.Color('#0a0e18');
+        hemi.color.set('#0a0e2a'); hemi.groundColor.set('#0e1418'); hemi.intensity = 0.15;
+        skyMat.uniforms.uHorizon.value.set('#1a2030');
+        skyMat.uniforms.uZenith.value.set('#0a0e1a');
       } else if (t < 0.3) {
         const tt = (t - 0.2) / 0.1;
-        sunC = new THREE.Color('#FDB97D');
-        sunI = tt * 0.9; ambI = lerpN(0.07, 0.28, tt); lampI = lerpN(2.2, 0, tt);
-        fogC = lerpColor(new THREE.Color('#050510'), new THREE.Color('#ff8050'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#0a0a2a'), new THREE.Color('#ff9060'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#0a1a0a'), new THREE.Color('#5c3a20'), tt));
-        hemi.intensity = lerpN(0.1, 0.3, tt);
+        sunC = new THREE.Color('#EEE8D8');
+        sunI = tt * 1.2; ambI = 0; lampI = lerpN(2.2, 0, tt);
+        fogC = lerpColor(new THREE.Color('#0a0e18'), new THREE.Color('#D0DCE8'), tt);
+        hemi.color.set(lerpColor(new THREE.Color('#0a0e2a'), new THREE.Color('#C8D8F0'), tt));
+        hemi.groundColor.set(lerpColor(new THREE.Color('#0e1418'), new THREE.Color('#E0E8F0'), tt));
+        hemi.intensity = lerpN(0.15, 0.4, tt);
+        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#1a2030'), new THREE.Color('#E8F0F8'), tt));
+        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#0a0e1a'), new THREE.Color('#7BB8D4'), tt));
       } else if (t < 0.5) {
         const tt = (t - 0.3) / 0.2;
-        sunC = lerpColor(new THREE.Color('#FDB97D'), new THREE.Color('#ffffff'), tt);
-        sunI = lerpN(0.9, 1.8, tt); ambI = lerpN(0.28, 0.48, tt); lampI = 0;
-        fogC = lerpColor(new THREE.Color('#ff8050'), new THREE.Color('#87ceeb'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#ff9060'), new THREE.Color('#87ceeb'), tt));
-        hemi.groundColor.set('#3d5a3e'); hemi.intensity = lerpN(0.3, 0.5, tt);
+        sunC = lerpColor(new THREE.Color('#EEE8D8'), new THREE.Color('#ffffff'), tt);
+        sunI = lerpN(1.2, 2.5, tt); ambI = 0; lampI = 0;
+        fogC = lerpColor(new THREE.Color('#D0DCE8'), new THREE.Color('#E4EAF0'), tt);
+        hemi.color.set('#C8D8F0'); hemi.groundColor.set('#E0E8F0'); hemi.intensity = lerpN(0.4, 0.4, tt);
+        skyMat.uniforms.uHorizon.value.set('#E8F0F8');
+        skyMat.uniforms.uZenith.value.set('#7BB8D4');
       } else if (t < 0.65) {
-        const tt = (t - 0.5) / 0.15;
-        sunC = lerpColor(new THREE.Color('#ffffff'), new THREE.Color('#ffe0b0'), tt);
-        sunI = lerpN(1.8, 1.4, tt); ambI = 0.45; lampI = 0;
-        fogC = lerpColor(new THREE.Color('#87ceeb'), new THREE.Color('#5bbae0'), tt);
-        hemi.color.set('#87ceeb'); hemi.groundColor.set('#3d5a3e'); hemi.intensity = 0.5;
+        sunC = new THREE.Color('#ffffff'); sunI = 2.5; ambI = 0; lampI = 0;
+        fogC = new THREE.Color('#E4EAF0');
+        hemi.color.set('#C8D8F0'); hemi.groundColor.set('#E0E8F0'); hemi.intensity = 0.4;
+        skyMat.uniforms.uHorizon.value.set('#E8F0F8');
+        skyMat.uniforms.uZenith.value.set('#7BB8D4');
       } else if (t < 0.8) {
         const tt = (t - 0.65) / 0.15;
-        sunC = lerpColor(new THREE.Color('#ffe0b0'), new THREE.Color('#FF6B35'), tt);
-        sunI = lerpN(1.4, 0.2, tt); ambI = lerpN(0.45, 0.1, tt); lampI = lerpN(0, 2.2, tt);
-        fogC = lerpColor(new THREE.Color('#5bbae0'), new THREE.Color('#ff4020'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#87ceeb'), new THREE.Color('#ff9060'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#3d5a3e'), new THREE.Color('#5c3a20'), tt));
-        hemi.intensity = lerpN(0.5, 0.1, tt);
+        sunC = lerpColor(new THREE.Color('#ffffff'), new THREE.Color('#EED8B8'), tt);
+        sunI = lerpN(2.5, 0.3, tt); ambI = 0; lampI = lerpN(0, 2.2, tt);
+        fogC = lerpColor(new THREE.Color('#E4EAF0'), new THREE.Color('#C8D0D8'), tt);
+        hemi.color.set(lerpColor(new THREE.Color('#C8D8F0'), new THREE.Color('#8899BB'), tt));
+        hemi.groundColor.set(lerpColor(new THREE.Color('#E0E8F0'), new THREE.Color('#7888AA'), tt));
+        hemi.intensity = lerpN(0.4, 0.15, tt);
+        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#E8F0F8'), new THREE.Color('#1a2030'), tt));
+        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#7BB8D4'), new THREE.Color('#0a0e1a'), tt));
       } else {
         const tt = (t - 0.8) / 0.2;
-        sunC = new THREE.Color('#000015');
-        sunI = lerpN(0.2, 0, tt); ambI = lerpN(0.1, 0.07, tt); lampI = 2.2;
-        fogC = lerpColor(new THREE.Color('#ff4020'), new THREE.Color('#050510'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#ff9060'), new THREE.Color('#0a0a2a'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#5c3a20'), new THREE.Color('#0a1a0a'), tt));
-        hemi.intensity = lerpN(0.3, 0.1, tt);
+        sunC = new THREE.Color('#000820'); sunI = lerpN(0.3, 0, tt); ambI = 0; lampI = 2.2;
+        fogC = lerpColor(new THREE.Color('#C8D0D8'), new THREE.Color('#0a0e18'), tt);
+        hemi.color.set(lerpColor(new THREE.Color('#8899BB'), new THREE.Color('#0a0e2a'), tt));
+        hemi.groundColor.set(lerpColor(new THREE.Color('#7888AA'), new THREE.Color('#0e1418'), tt));
+        hemi.intensity = lerpN(0.15, 0.15, tt);
+        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#1a2030'), new THREE.Color('#1a2030'), tt));
+        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#0a0e1a'), new THREE.Color('#0a0e1a'), tt));
       }
 
       (scene.fog as THREE.FogExp2).color = fogC;
       sun.color = sunC;
       sun.intensity = sunI;
-      ambient.intensity = ambI;
+      void ambI; // no separate ambient light in Phase 4
 
       // Sun direction light position (matches sky shader)
       sun.position.set(sunVec.x * 120, sunVec.y * 120, sunVec.z * 120);
@@ -1450,16 +1580,11 @@ export default function NetworkView3D({
         if (ll) ll.intensity = lampI;
       }
 
-      // Windows
-      const winOn = lampI > 0.5;
-      for (const w of windows) {
-        if (w.material instanceof THREE.MeshStandardMaterial)
-          w.material.emissiveIntensity = winOn ? 0.7 : 0;
-      }
+      // Windows — no emissive in white aesthetic (glass panels rely on sun/shadow)
+      void windows;
 
-      // Vanta LED strips
-      const ledI = lampI > 0.5 ? 0.85 : 0;
-      for (const mat of vantaLedMats) mat.emissiveIntensity = ledI;
+      // Edge trim strips (subtle, no emissive in white aesthetic)
+      void vantaLedMats;
 
       // Car lights
       const carOn = lampI > 0.5;
@@ -1471,16 +1596,16 @@ export default function NetworkView3D({
       }
 
       // Fountain night light
-      fountainLight.intensity = lampI > 0.5 ? 1.3 : 0;
+      fountainLight.intensity = lampI > 0.5 ? 0.8 : 0;
 
       // Stars
-      starMat.opacity = lerpN(starMat.opacity, lampI > 1.0 ? 0.88 : 0, dt * 0.8);
+      starMat.opacity = lerpN(starMat.opacity, lampI > 1.0 ? 0.6 : 0, dt * 0.8);
 
-      // Fog density
-      const fogTarget = isRainingRef.current ? 0.016
-        : lampI > 1.5 ? 0.010
-        : lampI > 0.3 ? 0.006
-        : 0.003;
+      // Fog density — lighter in white aesthetic
+      const fogTarget = isRainingRef.current ? 0.010
+        : lampI > 1.5 ? 0.006
+        : lampI > 0.3 ? 0.004
+        : 0.002;
       fogDensity = lerpN(fogDensity, fogTarget, dt * 0.5);
       (scene.fog as THREE.FogExp2).density = fogDensity;
 
@@ -1722,6 +1847,29 @@ export default function NetworkView3D({
       nearbyRef.current = closestContact;
       setNearbyContact(closestContact);
 
+      // Track nearest building for Tab overlay
+      let nearestBldId: string | null = null;
+      let nearestBldDist = Infinity;
+      for (const entry of buildingLabelRef.current) {
+        const bx = entry.group.position.x - camera.position.x;
+        const bz = entry.group.position.z - camera.position.z;
+        const bd = Math.sqrt(bx * bx + bz * bz);
+        if (bd < 8 && bd < nearestBldDist) { nearestBldDist = bd; nearestBldId = entry.id; }
+      }
+      tabNearestBldRef.current = nearestBldId;
+
+      // Building nameplate distance fade
+      for (const entry of buildingLabelRef.current) {
+        const bx = entry.group.position.x - camera.position.x;
+        const bz = entry.group.position.z - camera.position.z;
+        const bdist = Math.sqrt(bx * bx + bz * bz);
+        const bStoredBuilding = buildingsRef.current?.find(b => b.id === entry.id);
+        const hasContacts = (bStoredBuilding?.contactIds.length ?? 0) > 0;
+        const targetOp = bdist < 35 ? 1 : bdist < 50 ? (50 - bdist) / 15 : 0;
+        entry.div.style.opacity = String(Math.round(targetOp * 100) / 100);
+        entry.div.style.color = hasContacts ? '#D4AF37' : '#8899AA';
+      }
+
       // Render via EffectComposer (bloom, vignette, noise)
       composer.render(delta);
       css2d.render(scene, camera);
@@ -1814,6 +1962,70 @@ export default function NetworkView3D({
           pointerEvents: 'none',
         }}>
           <span style={{ color: '#fbbf24', fontWeight: 700 }}>[E]</span> Talk to {nearbyContact.name}
+        </div>
+      )}
+
+      {/* Tab hint when near a building */}
+      {isLocked && tabNearestBldRef.current && !tabOverlayOpen && !selectedContact && (
+        <div style={{
+          position: 'absolute', bottom: '22%', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.72)', border: '1px solid rgba(255,255,255,0.18)',
+          borderRadius: 8, padding: '5px 16px', color: '#e2e8f0', fontSize: 12,
+          pointerEvents: 'none',
+        }}>
+          <span style={{ color: '#a78bfa', fontWeight: 700 }}>[Tab]</span> Assign contacts to{' '}
+          {buildingsRef.current?.find(b => b.id === tabNearestBldRef.current)?.name ?? 'building'}
+        </div>
+      )}
+
+      {/* Tab overlay — in-city contact assignment (Mode B) */}
+      {tabOverlayOpen && tabNearestBldId && (
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          background: 'rgba(15,20,35,0.96)', border: '1px solid rgba(255,255,255,0.15)',
+          borderRadius: 12, padding: 20, width: 340, maxHeight: '70vh', overflowY: 'auto',
+          zIndex: 40, color: '#e2e8f0',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>
+              Assign to{' '}
+              <span style={{ color: '#D4AF37' }}>
+                {buildingsRef.current?.find(b => b.id === tabNearestBldId)?.name ?? tabNearestBldId}
+              </span>
+            </div>
+            <button
+              onClick={() => setTabOverlayOpen(false)}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}
+            >×</button>
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>
+            Unassigned contacts — click to place at this building
+          </div>
+          {contacts
+            .filter(c => !(mapState.contactData[c.id]?.buildingId))
+            .slice(0, 10)
+            .map(c => (
+              <div key={c.id} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)',
+              }}>
+                <span style={{ fontSize: 13 }}>{c.name}{c.company ? ` · ${c.company}` : ''}</span>
+                <button
+                  onClick={() => {
+                    onUpdateMapDataRef.current(c.id, { buildingId: tabNearestBldId });
+                  }}
+                  style={{
+                    background: '#1d4ed8', border: 'none', borderRadius: 6,
+                    color: '#fff', fontSize: 11, padding: '3px 10px', cursor: 'pointer',
+                  }}
+                >Place here</button>
+              </div>
+            ))}
+          {contacts.filter(c => !(mapState.contactData[c.id]?.buildingId)).length === 0 && (
+            <div style={{ color: '#64748b', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
+              All contacts are already assigned.
+            </div>
+          )}
         </div>
       )}
 
@@ -1916,6 +2128,7 @@ export default function NetworkView3D({
             }}
             orgs={mapState.orgs ?? []}
             onUpdateOrgs={onUpdateOrgs}
+            buildings={buildingsRef.current}
           />
         </div>
       )}

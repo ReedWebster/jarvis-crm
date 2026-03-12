@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { X, Mic, MicOff, Play, Pause, Trash2, Camera, MessageSquare, Edit3, CheckCircle, AlertTriangle, Mail, Inbox } from 'lucide-react';
-import type { Contact, ContactMapData, RelationshipStrength, NetworkOrg } from '../../types';
+import type { Contact, ContactMapData, RelationshipStrength, NetworkOrg, CityBuilding } from '../../types';
 import { generateId, todayStr } from '../../utils';
 import {
   getContactStrengthColor,
@@ -26,6 +26,7 @@ interface Props {
   onEditInCRM: () => void;
   orgs?: NetworkOrg[];
   onUpdateOrgs?: (orgs: NetworkOrg[]) => void;
+  buildings?: CityBuilding[];
 }
 
 // ─── VOICE NOTE RECORDER ─────────────────────────────────────────────────────
@@ -142,7 +143,7 @@ function VoiceNoteSection({
 
 // ─── MAIN POPUP ──────────────────────────────────────────────────────────────
 
-export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, onUpdateContact, onEditInCRM, orgs = [], onUpdateOrgs }: Props) {
+export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, onUpdateContact, onEditInCRM, orgs = [], onUpdateOrgs, buildings = [] }: Props) {
   const [tab, setTab] = useState<'info' | 'log'>('info');
   const [showCompose, setShowCompose] = useState(false);
   const [showThread, setShowThread] = useState(false);
@@ -382,6 +383,33 @@ export function ContactMapPopup({ contact, mapData, onClose, onUpdateMapData, on
                 )}
               </div>
             </div>
+
+            {/* City Location */}
+            {buildings.length > 0 && (
+              <div>
+                <div className="caesar-label">City Location</div>
+                <select
+                  className="caesar-input text-xs"
+                  value={mapData.buildingId ?? ''}
+                  onChange={e => onUpdateMapData({ buildingId: e.target.value || undefined })}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">— Not assigned —</option>
+                  {(['byu','vanta','rockcanyonai','neighborhood','chapel','outskirts'] as const).map(did => {
+                    const dBuildings = buildings.filter(b => b.districtId === did);
+                    if (!dBuildings.length) return null;
+                    const dName = { byu:'BYU District', vanta:'Vanta HQ', rockcanyonai:'Rock Canyon AI', neighborhood:'Neighborhood', chapel:'Chapel District', outskirts:'Outskirts' }[did];
+                    return (
+                      <optgroup key={did} label={dName}>
+                        {dBuildings.map(b => (
+                          <option key={b.id} value={b.id}>{b.name} ({b.contactIds.length})</option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
 
             {/* Map notes */}
             <div>

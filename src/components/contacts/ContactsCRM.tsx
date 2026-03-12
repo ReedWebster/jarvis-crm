@@ -63,6 +63,7 @@ const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Text', 'LinkedIn'];
 interface Props {
   contacts: Contact[];
   setContacts: (v: Contact[] | ((p: Contact[]) => Contact[])) => void;
+  onNavigateToNetworking?: () => void;
 }
 
 // ─── EMPTY FORMS ─────────────────────────────────────────────────────────────
@@ -1415,7 +1416,7 @@ function shuffleArray<T>(arr: T[]): T[] {
   return out;
 }
 
-export default function ContactsCRM({ contacts, setContacts }: Props) {
+export default function ContactsCRM({ contacts, setContacts, onNavigateToNetworking }: Props) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
@@ -1746,6 +1747,20 @@ export default function ContactsCRM({ contacts, setContacts }: Props) {
             <Upload size={15} />
             Import
           </button>
+          {onNavigateToNetworking && (
+            <button
+              onClick={() => {
+                const url = new URL(window.location.href);
+                url.searchParams.set('sortPanel', 'true');
+                window.history.replaceState({}, '', url.toString());
+                onNavigateToNetworking();
+              }}
+              className="caesar-btn flex items-center gap-2"
+              title="Open contact sort panel in the city view"
+            >
+              Sort into City
+            </button>
+          )}
           <button
             onClick={() => setAddModalOpen(true)}
             className="caesar-btn-primary flex items-center gap-2"

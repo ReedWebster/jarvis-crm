@@ -7,6 +7,7 @@ import type {
   NetworkingMapState,
   NetworkManualConnection,
   MapFilters,
+  CityBuilding,
 } from '../../types';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import {
@@ -18,6 +19,7 @@ import { GeographicView } from './GeographicView';
 import NetworkView3D from './NetworkView3D';
 import { FollowUpQueue } from './FollowUpQueue';
 import { UnplacedContacts } from './UnplacedContacts';
+import { ContactSortPanel } from './ContactSortPanel';
 
 const ALL_RELATIONSHIP_TYPES = [
   'Investor', 'Professor', 'Resident', 'Partner', 'Friend',
@@ -45,8 +47,9 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
     'jarvis:networkingMap',
     defaultMapState(),
   );
-  const [filters, setFilters] = useState<MapFilters>(DEFAULT_FILTERS);
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters,        setFilters]        = useState<MapFilters>(DEFAULT_FILTERS);
+  const [showFilters,    setShowFilters]    = useState(false);
+  const [sortPanelOpen,  setSortPanelOpen]  = useState(() => new URLSearchParams(window.location.search).get('sortPanel') === 'true');
 
   // ─── DERIVED DATA ───────────────────────────────────────────────────────────
 
@@ -191,6 +194,17 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
 
   const updateOrgs = (orgs: import('../../types').NetworkOrg[]) => {
     setMapState(prev => ({ ...prev, orgs }));
+  };
+
+  const updateBuildings = (buildings: CityBuilding[]) => {
+    setMapState(prev => ({ ...prev, buildings }));
+  };
+
+  const handleBuildingsReady = (autoBuildings: CityBuilding[]) => {
+    setMapState(prev => {
+      if (prev.buildings && prev.buildings.length > 0) return prev; // already initialized
+      return { ...prev, buildings: autoBuildings };
+    });
   };
 
   const clearFilter = (key: keyof MapFilters) => {
@@ -412,6 +426,8 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onNavigateToCRM={onNavigateToCRM}
               onAddContact={(contact) => setContacts(prev => [...prev, contact])}
               onUpdateOrgs={updateOrgs}
+              buildings={mapState.buildings}
+              onBuildingsReady={handleBuildingsReady}
             />
           )}
 
@@ -469,6 +485,17 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
           </div>
         )}
       </div>
+
+      {/* Contact Sort Panel (Mode A) */}
+      {sortPanelOpen && (
+        <ContactSortPanel
+          contacts={contacts}
+          mapState={mapState}
+          onUpdateMapData={updateMapData}
+          onUpdateBuildings={updateBuildings}
+          onClose={() => setSortPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }
