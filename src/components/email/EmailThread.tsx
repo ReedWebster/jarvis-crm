@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, RefreshCw, ChevronDown, ChevronUp, Reply, Mail } from 'lucide-react';
+import { X, RefreshCw, ChevronDown, ChevronUp, Reply, Mail, Paperclip, Download } from 'lucide-react';
 import { useGmail, GmailMessage } from '../../hooks/useGmail';
 import { EmailComposeModal } from './EmailComposeModal';
 
@@ -32,13 +32,14 @@ function getSenderName(from: string): string {
 }
 
 export function EmailThread({ email, contactName, onClose, onCompose }: Props) {
-  const { fetchThreads, isConnected, connect, isLoading } = useGmail();
+  const { fetchThreads, isConnected, connect, isLoading, downloadAttachment } = useGmail();
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<GmailMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -68,6 +69,18 @@ export function EmailThread({ email, contactName, onClose, onCompose }: Props) {
       setError(e?.message ?? 'Failed to connect');
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const handleDownload = async (msgId: string, attachmentId: string, filename: string, mimeType: string) => {
+    setDownloadingId(attachmentId);
+    try {
+      await downloadAttachment(msgId, attachmentId, filename, mimeType);
+    } catch (e) {
+      // Surface a generic error – the main error banner will show
+      setError((e as any)?.message ?? 'Failed to download attachment');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -243,9 +256,45 @@ export function EmailThread({ email, contactName, onClose, onCompose }: Props) {
                       >
                         {msg.body || msg.snippet || '(no content)'}
                       </div>
+
+                      {/* Attachments (if any) */}
+                      {msg.attachments.length > 0 && (
+                        <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                          <div
+                            className="text-[11px] mb-2 flex items-center gap-1.5"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            <Paperclip size={11} />
+                            {msg.attachments.length} attachment{msg.attachments.length !== 1 ? 's' : ''}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {msg.attachments.map(att => (
+                              <button
+                                key={att.attachmentId}
+                                onClick={() => handleDownload(msg.id, att.attachmentId, att.filename, att.mimeType)}
+                                disabled={downloadingId === att.attachmentId}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all hover:opacity-80"
+                                style={{
+                                  borderColor: 'var(--border)',
+                                  backgroundColor: 'var(--bg-elevated)',
+                                  color: 'var(--text-secondary)',
+                                }}
+                              >
+                                {downloadingId === att.attachmentId ? (
+                                  <RefreshCw size={10} className="animate-spin" />
+                                ) : (
+                                  <Download size={10} />
+                                )}
+                                <span className="max-w-[140px] truncate">{att.filename}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <button
                         onClick={() => setReplyTo(msg)}
-                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border"
+                        className="mt-3 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border"
                         style={{
                           borderColor: 'var(--border)',
                           color: 'var(--text-secondary)',

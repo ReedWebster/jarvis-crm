@@ -156,6 +156,9 @@ export function useGmail() {
             localStorage.setItem(TOKEN_KEY, response.access_token);
             localStorage.setItem(EXPIRY_KEY, String(expiresAt));
             setToken(response.access_token);
+            // Persist per-user Gmail auth so the connection
+            // can be restored automatically on future logins.
+            saveTokenToSupabase(response.access_token, expiresAt);
             resolve();
           },
         });
@@ -170,6 +173,7 @@ export function useGmail() {
     localStorage.removeItem(EXPIRY_KEY);
     setToken(null);
     tokenClientRef.current = null;
+    clearTokenFromSupabase();
   }, []);
 
   const getToken = useCallback(async (): Promise<string> => {
