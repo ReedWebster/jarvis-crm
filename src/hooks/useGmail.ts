@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 // ─── Google Identity Services type declarations ───────────────────────────────
 
@@ -34,6 +35,12 @@ const CLIENT_ID = '8551940265-5t2rjjtb495tvbdj519d569vq4aa57ge.apps.googleuserco
 const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
 const TOKEN_KEY = 'gmail_token';
 const EXPIRY_KEY = 'gmail_token_expiry';
+const SUPABASE_KEY = 'jarvis:gmail_auth';
+
+interface GmailAuth {
+  access_token: string;
+  expires_at: number;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,8 +82,59 @@ export function useGmail() {
   const [token, setToken] = useState<string | null>(getStoredToken);
   const [isLoading, setIsLoading] = useState(false);
   const tokenClientRef = useRef<TokenClient | null>(null);
+  const userIdRef = useRef<string | null>(null);
 
   const isConnected = token !== null;
+
+  // ── Subscribe to Supabase auth ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      userIdRef.current = session?.user.id ?? null;
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      userIdRef.current = session?.user.id ?? null;
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── On login: restore Gmail token from Supabase if still valid ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const uid = session?.user.id;
+      if (!uid) return;
+      supabase
+        .from('user_data')
+        .select('value')
+        .eq('user_id', uid)
+        .eq('key', SUPABASE_KEY)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!data?.value) return;
+          const auth = data.value as GmailAuth;
+          if (Date.now() < auth.expires_at) {
+            localStorage.setItem(TOKEN_KEY, auth.access_token);
+            localStorage.setItem(EXPIRY_KEY, String(auth.expires_at));
+            setToken(auth.access_token);
+          }
+        });
+    });
+  }, []);
+
+  const saveTokenToSupabase = (accessToken: string, expiresAt: number) => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    const auth: GmailAuth = { access_token: accessToken, expires_at: expiresAt };
+    supabase.from('user_data').upsert(
+      { user_id: uid, key: SUPABASE_KEY, value: auth, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,key' }
+    );
+  };
+
+  const clearTokenFromSupabase = () => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    supabase.from('user_data').delete().eq('user_id', uid).eq('key', SUPABASE_KEY);
+  };
 
   const connect = useCallback((): Promise<void> => {
     return new Promise((resolve, reject) => {
