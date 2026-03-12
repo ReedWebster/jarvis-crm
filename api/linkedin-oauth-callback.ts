@@ -108,19 +108,16 @@ export default async function handler(req: any, res: any) {
       );
 
     if (dbError) {
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.end(`<p>Saved LinkedIn token, but failed to persist to workspace_data: ${dbError.message}</p>`);
+      res.writeHead(302, { Location: `/social?linkedin=error&msg=${encodeURIComponent(dbError.message)}` });
+      res.end();
       return;
     }
 
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end('<p>LinkedIn account connected. You can close this tab and return to Litehouse.</p>');
+    res.writeHead(302, { Location: '/social?linkedin=connected' });
+    res.end();
   } catch (e: any) {
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end(`<p>Unexpected LinkedIn error: ${e?.message ?? String(e)}</p>`);
+    res.writeHead(302, { Location: `/social?linkedin=error&msg=${encodeURIComponent(e?.message ?? 'Unknown error')}` });
+    res.end();
   }
 }
 

@@ -61,6 +61,13 @@ export function SocialHub({
   const [linkedinProfile, setLinkedinProfile] = useState<{ name?: string; email?: string; picture?: string } | null>(null);
   const [linkedinLoading, setLinkedinLoading] = useState(false);
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
+  const [linkedinBanner, setLinkedinBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const li = params.get('linkedin');
+    if (li === 'connected') return { type: 'success', msg: 'LinkedIn connected successfully!' };
+    if (li === 'error') return { type: 'error', msg: params.get('msg') || 'LinkedIn connection failed.' };
+    return null;
+  });
 
   const groupedPosts = useMemo(() => {
     const groups: Record<string, SocialPost[]> = {};
@@ -125,6 +132,24 @@ export function SocialHub({
           </button>
         </div>
       </div>
+
+      {/* LinkedIn callback banner */}
+      {linkedinBanner && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3"
+          style={{
+            backgroundColor: linkedinBanner.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+            color: linkedinBanner.type === 'success' ? '#22c55e' : '#ef4444',
+            border: `1px solid ${linkedinBanner.type === 'success' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          }}
+        >
+          <span>{linkedinBanner.msg}</span>
+          <button type="button" onClick={() => {
+            setLinkedinBanner(null);
+            window.history.replaceState({}, '', window.location.pathname);
+          }} style={{ opacity: 0.7 }}>✕</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div
