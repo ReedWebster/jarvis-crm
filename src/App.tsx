@@ -304,7 +304,13 @@ function MainApp() {
           />
         );
       case 'contacts':
-        return <ContactsCRM contacts={contacts} setContacts={setContacts} />;
+        return (
+          <ContactsCRM
+            contacts={contacts}
+            setContacts={setContacts}
+            onNavigateToNetworking={() => setActiveSection('networking')}
+          />
+        );
       case 'academic':
         return <AcademicTracker courses={courses} setCourses={setCourses} />;
       case 'financial':
@@ -388,7 +394,7 @@ function MainApp() {
           />
         );
       case 'messaging':
-        return <MessagingHub />;
+        return <MessagingHub contacts={contacts} />;
       default:
         return null;
     }

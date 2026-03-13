@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useGmail, type GmailMessage } from '../../hooks/useGmail';
 import { EmailComposeModal } from '../email/EmailComposeModal';
+import type { Contact } from '../../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,9 +60,37 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+// ─── Build sandboxed HTML for email iframe ────────────────────────────────────
+
+function buildEmailHtml(htmlBody: string, inlineImages: Record<string, string>): string {
+  // Replace cid: references with resolved data URLs
+  let resolved = htmlBody.replace(/cid:([^\s"'>]+)/gi, (_match, cid) => {
+    return inlineImages[cid] ?? inlineImages[cid.replace(/^<|>$/g, '')] ?? `cid:${cid}`;
+  });
+  return `<!DOCTYPE html>
+<html>
+<head>
+<base target="_blank">
+<meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 0; font-family: inherit; font-size: 14px; line-height: 1.6; color: #374151; word-break: break-word; }
+  img { max-width: 100%; height: auto; }
+  a { color: #6366f1; }
+  pre, code { white-space: pre-wrap; word-break: break-all; }
+  blockquote { border-left: 3px solid #d1d5db; margin: 0 0 0 4px; padding-left: 12px; color: #6b7280; }
+</style>
+</head>
+<body>${resolved}</body>
+</html>`;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function MessagingHub() {
+interface MessagingHubProps {
+  contacts?: Contact[];
+}
+
+export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const { fetchInbox, isConnected, connect, isLoading, downloadAttachment } = useGmail();
 
   const [messages, setMessages] = useState<GmailMessage[]>([]);
@@ -377,16 +406,30 @@ export function MessagingHub() {
 
               {/* Email body + attachments */}
               <div className="flex-1 overflow-y-auto p-5">
-                <div
-                  className="text-sm whitespace-pre-wrap"
-                  style={{
-                    color: 'var(--text-secondary)',
-                    lineHeight: '1.75',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {selected.body || selected.snippet || '(no content)'}
-                </div>
+                {selected.htmlBody ? (
+                  <iframe
+                    srcDoc={buildEmailHtml(selected.htmlBody, selected.inlineImages ?? {})}
+                    sandbox="allow-same-origin"
+                    className="w-full border-0"
+                    style={{ minHeight: '300px', display: 'block' }}
+                    onLoad={e => {
+                      const el = e.currentTarget;
+                      const h = el.contentDocument?.body?.scrollHeight;
+                      if (h) el.style.height = `${h + 24}px`;
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="text-sm whitespace-pre-wrap"
+                    style={{
+                      color: 'var(--text-secondary)',
+                      lineHeight: '1.75',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {selected.body || selected.snippet || '(no content)'}
+                  </div>
+                )}
 
                 {/* Attachments */}
                 {selected.attachments.length > 0 && (
@@ -448,6 +491,7 @@ export function MessagingHub() {
               ? replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`
               : ''
           }
+          contacts={contacts}
           onSent={() => { setComposeOpen(false); setReplyTo(null); load(); }}
           onClose={() => { setComposeOpen(false); setReplyTo(null); }}
         />

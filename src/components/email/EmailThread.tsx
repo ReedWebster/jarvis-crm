@@ -10,6 +10,27 @@ interface Props {
   onCompose: () => void;
 }
 
+function buildEmailHtml(htmlBody: string, inlineImages: Record<string, string>): string {
+  const resolved = htmlBody.replace(/cid:([^\s"'>]+)/gi, (_match, cid) => {
+    return inlineImages[cid] ?? `cid:${cid}`;
+  });
+  return `<!DOCTYPE html>
+<html>
+<head>
+<base target="_blank">
+<meta charset="utf-8">
+<style>
+  body { margin: 0; padding: 0; font-family: inherit; font-size: 13px; line-height: 1.6; color: #374151; word-break: break-word; }
+  img { max-width: 100%; height: auto; }
+  a { color: #6366f1; }
+  pre, code { white-space: pre-wrap; word-break: break-all; }
+  blockquote { border-left: 3px solid #d1d5db; margin: 0 0 0 4px; padding-left: 12px; color: #6b7280; }
+</style>
+</head>
+<body>${resolved}</body>
+</html>`;
+}
+
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
   try {
@@ -243,18 +264,33 @@ export function EmailThread({ email, contactName, onClose, onCompose }: Props) {
                   {/* Expanded body */}
                   {isExpanded && (
                     <div className="px-3 pb-3">
-                      <div
-                        className="text-xs mb-3 border-t pt-3 whitespace-pre-wrap"
-                        style={{
-                          borderColor: 'var(--border)',
-                          color: 'var(--text-secondary)',
-                          fontFamily: 'var(--font-mono, monospace)',
-                          lineHeight: '1.6',
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                        }}
-                      >
-                        {msg.body || msg.snippet || '(no content)'}
+                      <div className="border-t pt-3 mb-3" style={{ borderColor: 'var(--border)' }}>
+                        {msg.htmlBody ? (
+                          <iframe
+                            srcDoc={buildEmailHtml(msg.htmlBody, msg.inlineImages ?? {})}
+                            sandbox="allow-same-origin"
+                            className="w-full border-0"
+                            style={{ minHeight: '120px', display: 'block' }}
+                            onLoad={e => {
+                              const el = e.currentTarget;
+                              const h = el.contentDocument?.body?.scrollHeight;
+                              if (h) el.style.height = `${Math.min(h + 16, 400)}px`;
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className="text-xs whitespace-pre-wrap"
+                            style={{
+                              color: 'var(--text-secondary)',
+                              fontFamily: 'var(--font-mono, monospace)',
+                              lineHeight: '1.6',
+                              maxHeight: '200px',
+                              overflowY: 'auto',
+                            }}
+                          >
+                            {msg.body || msg.snippet || '(no content)'}
+                          </div>
+                        )}
                       </div>
 
                       {/* Attachments (if any) */}

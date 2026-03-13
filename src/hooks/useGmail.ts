@@ -60,6 +60,8 @@ export interface GmailMessage {
   date: string;
   snippet: string;
   body: string;
+  htmlBody?: string;
+  inlineImages?: Record<string, string>; // contentId → data URL
   attachments: GmailAttachment[];
   isRead: boolean;
 }
@@ -216,10 +218,52 @@ export function useGmail() {
         if (result) return result;
       }
     }
-    if (payload.body?.data) {
+    if (payload.mimeType === 'text/plain' && payload.body?.data) {
       return decodeBase64Url(payload.body.data);
     }
     return '';
+  };
+
+  const parseHtmlBody = (payload: any): string => {
+    if (!payload) return '';
+    if (payload.parts && Array.isArray(payload.parts)) {
+      for (const part of payload.parts) {
+        if (part.mimeType === 'text/html' && part.body?.data) {
+          return decodeBase64Url(part.body.data);
+        }
+      }
+      for (const part of payload.parts) {
+        const result = parseHtmlBody(part);
+        if (result) return result;
+      }
+    }
+    if (payload.mimeType === 'text/html' && payload.body?.data) {
+      return decodeBase64Url(payload.body.data);
+    }
+    return '';
+  };
+
+  const parseInlineImages = (payload: any): Record<string, string> => {
+    const map: Record<string, string> = {};
+    const extract = (parts: any[]) => {
+      for (const part of parts) {
+        if (
+          part.mimeType?.startsWith('image/') &&
+          part.body?.data &&
+          !part.body?.attachmentId
+        ) {
+          const cidHeader = (part.headers as Array<{ name: string; value: string }> | undefined)
+            ?.find(h => h.name.toLowerCase() === 'content-id')?.value;
+          if (cidHeader) {
+            const cid = cidHeader.replace(/^<|>$/g, '');
+            map[cid] = `data:${part.mimeType};base64,${part.body.data.replace(/-/g, '+').replace(/_/g, '/')}`;
+          }
+        }
+        if (part.parts) extract(part.parts);
+      }
+    };
+    if (payload?.parts) extract(payload.parts);
+    return map;
   };
 
   const parseAttachments = (payload: any): GmailAttachment[] => {
@@ -243,6 +287,8 @@ export function useGmail() {
 
   const parseMessageData = (msg: any): GmailMessage => {
     const headers: Array<{ name: string; value: string }> = msg.payload?.headers ?? [];
+    const htmlBody = parseHtmlBody(msg.payload);
+    const inlineImages = parseInlineImages(msg.payload);
     return {
       id: msg.id,
       threadId: msg.threadId ?? msg.id,
@@ -252,6 +298,8 @@ export function useGmail() {
       date: getHeader(headers, 'Date'),
       snippet: msg.snippet ?? '',
       body: parseMessageBody(msg.payload),
+      htmlBody: htmlBody || undefined,
+      inlineImages: Object.keys(inlineImages).length > 0 ? inlineImages : undefined,
       attachments: parseAttachments(msg.payload),
       isRead: !(msg.labelIds ?? []).includes('UNREAD'),
     };

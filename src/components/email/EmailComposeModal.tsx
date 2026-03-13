@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { X, Send, Paperclip, XCircle } from 'lucide-react';
 import { useGmail } from '../../hooks/useGmail';
+import type { Contact } from '../../types';
 
 interface Props {
   to?: string;
   toName?: string;
   replyToMessageId?: string;
   defaultSubject?: string;
+  contacts?: Contact[];
   onSent: () => void;
   onClose: () => void;
 }
@@ -17,7 +19,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function EmailComposeModal({ to: toProp = '', toName, replyToMessageId, defaultSubject = '', onSent, onClose }: Props) {
+export function EmailComposeModal({ to: toProp = '', toName, replyToMessageId, defaultSubject = '', contacts = [], onSent, onClose }: Props) {
   const { sendEmail, isLoading, isConnected, connect } = useGmail();
   const [to, setTo] = useState(toProp);
   const [subject, setSubject] = useState(defaultSubject);
@@ -25,7 +27,24 @@ export function EmailComposeModal({ to: toProp = '', toName, replyToMessageId, d
   const [attachments, setAttachments] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isToEditable = !toProp;
+
+  const suggestions = isToEditable && to.length > 0
+    ? contacts
+        .filter(c => c.email && (
+          c.name.toLowerCase().includes(to.toLowerCase()) ||
+          c.email.toLowerCase().includes(to.toLowerCase())
+        ))
+        .slice(0, 5)
+    : [];
+
+  const handleSelectContact = (c: Contact) => {
+    setTo(c.email!);
+    setShowSuggestions(false);
+  };
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -111,17 +130,44 @@ export function EmailComposeModal({ to: toProp = '', toName, replyToMessageId, d
             </div>
           )}
 
-          {/* To field — editable if no pre-filled recipient */}
+          {/* To field — editable if no pre-filled recipient, with contact autocomplete */}
           <div>
             <label className="caesar-label">To</label>
-            <input
-              className="caesar-input w-full"
-              placeholder="recipient@example.com"
-              value={to}
-              onChange={e => setTo(e.target.value)}
-              disabled={!isConnected || !!toProp}
-              type="email"
-            />
+            <div className="relative">
+              <input
+                className="caesar-input w-full"
+                placeholder="recipient@example.com"
+                value={to}
+                onChange={e => { setTo(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onKeyDown={e => { if (e.key === 'Escape') setShowSuggestions(false); }}
+                disabled={!isConnected || !isToEditable}
+                type={isToEditable ? 'text' : 'email'}
+                autoComplete="off"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <div
+                  className="absolute top-full left-0 right-0 z-50 rounded-lg border shadow-lg overflow-hidden mt-1"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
+                >
+                  {suggestions.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => handleSelectContact(c)}
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-xs transition-colors"
+                      style={{ color: 'var(--text-primary)' }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--bg-elevated)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <span className="font-medium truncate">{c.name}</span>
+                      <span className="truncate" style={{ color: 'var(--text-muted)' }}>{c.email}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
