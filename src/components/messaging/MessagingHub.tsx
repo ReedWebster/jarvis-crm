@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Mail, RefreshCw, PenSquare, Search, X, Download, Reply,
-  ArrowLeft, Paperclip, AlertCircle,
+  ArrowLeft, Paperclip, AlertCircle, Trash2,
 } from 'lucide-react';
 import { useGmail, type GmailMessage } from '../../hooks/useGmail';
 import { EmailComposeModal } from '../email/EmailComposeModal';
@@ -91,7 +91,7 @@ interface MessagingHubProps {
 }
 
 export function MessagingHub({ contacts = [] }: MessagingHubProps) {
-  const { fetchInbox, isConnected, connect, isLoading, downloadAttachment } = useGmail();
+  const { fetchInbox, isConnected, connect, isLoading, downloadAttachment, trashEmail } = useGmail();
 
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [selected, setSelected] = useState<GmailMessage | null>(null);
@@ -104,6 +104,7 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const [hasFetched, setHasFetched] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [trashingId, setTrashingId] = useState<string | null>(null);
 
   const load = useCallback(async (query?: string) => {
     setError(null);
@@ -151,6 +152,23 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
       setError(e?.message ?? 'Failed to download attachment');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleTrash = async (msgId: string) => {
+    setTrashingId(msgId);
+    setError(null);
+    try {
+      await trashEmail(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+      if (selected?.id === msgId) {
+        setSelected(null);
+        setShowDetail(false);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to delete email');
+    } finally {
+      setTrashingId(null);
     }
   };
 
@@ -287,58 +305,77 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
                 const senderName = getSenderName(msg.from);
                 const color = avatarColor(senderName);
                 return (
-                  <button
+                  <div
                     key={msg.id}
-                    onClick={() => handleSelectMessage(msg)}
-                    className="w-full text-left px-3 py-3 border-b transition-colors"
+                    className="group relative border-b transition-colors"
                     style={{
                       borderColor: 'var(--border)',
                       backgroundColor: isSelected ? 'var(--bg-elevated)' : 'transparent',
                     }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = isSelected ? 'var(--bg-elevated)' : 'transparent'; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = isSelected ? 'var(--bg-elevated)' : 'transparent'; }}
                   >
-                    <div className="flex items-start gap-2.5">
-                      {/* Avatar */}
-                      <div
-                        className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold mt-0.5"
-                        style={{ backgroundColor: color + '22', color }}
-                      >
-                        {getSenderInitial(msg.from)}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline justify-between gap-1 mb-0.5">
-                          <span
-                            className={`text-xs truncate ${!msg.isRead ? 'font-bold' : 'font-medium'}`}
-                            style={{ color: 'var(--text-primary)' }}
-                          >
-                            {senderName}
-                          </span>
-                          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
-                            {formatDate(msg.date)}
-                          </span>
-                        </div>
+                    {/* Clickable select area */}
+                    <button
+                      onClick={() => handleSelectMessage(msg)}
+                      className="w-full text-left px-3 py-3 pr-8"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        {/* Avatar */}
                         <div
-                          className="text-xs truncate mb-0.5"
-                          style={{ color: !msg.isRead ? 'var(--text-secondary)' : 'var(--text-muted)', fontWeight: !msg.isRead ? 500 : 400 }}
+                          className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold mt-0.5"
+                          style={{ backgroundColor: color + '22', color }}
                         >
-                          {msg.subject}
+                          {getSenderInitial(msg.from)}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs truncate flex-1" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                            {msg.snippet}
-                          </span>
-                          {msg.attachments.length > 0 && (
-                            <Paperclip size={10} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                          )}
-                          {!msg.isRead && (
-                            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#6366f1' }} />
-                          )}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-1 mb-0.5">
+                            <span
+                              className={`text-xs truncate ${!msg.isRead ? 'font-bold' : 'font-medium'}`}
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {senderName}
+                            </span>
+                            <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                              {formatDate(msg.date)}
+                            </span>
+                          </div>
+                          <div
+                            className="text-xs truncate mb-0.5"
+                            style={{ color: !msg.isRead ? 'var(--text-secondary)' : 'var(--text-muted)', fontWeight: !msg.isRead ? 500 : 400 }}
+                          >
+                            {msg.subject}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs truncate flex-1" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                              {msg.snippet}
+                            </span>
+                            {msg.attachments.length > 0 && (
+                              <Paperclip size={10} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                            )}
+                            {!msg.isRead && (
+                              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#6366f1' }} />
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+
+                    {/* Trash button — visible on row hover */}
+                    <button
+                      onClick={() => handleTrash(msg.id)}
+                      disabled={trashingId === msg.id}
+                      title="Move to trash"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:opacity-70"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {trashingId === msg.id
+                        ? <RefreshCw size={12} className="animate-spin" />
+                        : <Trash2 size={12} />
+                      }
+                    </button>
+                  </div>
                 );
               })
             )}
@@ -367,13 +404,28 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
                   >
                     {selected.subject}
                   </h2>
-                  <button
-                    onClick={() => setReplyTo(selected)}
-                    className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5 flex-shrink-0"
-                  >
-                    <Reply size={12} />
-                    Reply
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setReplyTo(selected)}
+                      className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
+                    >
+                      <Reply size={12} />
+                      Reply
+                    </button>
+                    <button
+                      onClick={() => handleTrash(selected.id)}
+                      disabled={trashingId === selected.id}
+                      title="Move to trash"
+                      className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
+                      style={{ color: '#f87171' }}
+                    >
+                      {trashingId === selected.id
+                        ? <RefreshCw size={12} className="animate-spin" />
+                        : <Trash2 size={12} />
+                      }
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
                 {/* Sender / recipient meta */}

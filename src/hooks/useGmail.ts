@@ -32,7 +32,7 @@ declare global {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CLIENT_ID = '8551940265-5t2rjjtb495tvbdj519d569vq4aa57ge.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify';
 const TOKEN_KEY = 'gmail_token';
 const EXPIRY_KEY = 'gmail_token_expiry';
 const SUPABASE_KEY = 'jarvis:gmail_auth';
@@ -99,7 +99,9 @@ export function useGmail() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── On login: restore Gmail token from Supabase if still valid ──
+  const silentReconnectRef = useRef(false);
+
+  // ── On login: restore Gmail token from Supabase, or silently re-auth if expired ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user.id;
@@ -114,13 +116,47 @@ export function useGmail() {
           if (!data?.value) return;
           const auth = data.value as GmailAuth;
           if (Date.now() < auth.expires_at) {
+            // Token still valid — restore immediately
             localStorage.setItem(TOKEN_KEY, auth.access_token);
             localStorage.setItem(EXPIRY_KEY, String(auth.expires_at));
             setToken(auth.access_token);
+          } else {
+            // Token expired — attempt silent re-auth once GIS is ready
+            silentReconnectRef.current = true;
+            attemptSilentReconnect();
           }
         });
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const attemptSilentReconnect = () => {
+    // Poll for GIS to load (it's a script tag loaded async in index.html)
+    let attempts = 0;
+    const maxAttempts = 20; // 10 seconds
+    const poll = setInterval(() => {
+      attempts++;
+      if (window.google?.accounts?.oauth2) {
+        clearInterval(poll);
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: (response: TokenResponse) => {
+            if (response.error || !silentReconnectRef.current) return;
+            const expiresAt = Date.now() + response.expires_in * 1000;
+            localStorage.setItem(TOKEN_KEY, response.access_token);
+            localStorage.setItem(EXPIRY_KEY, String(expiresAt));
+            setToken(response.access_token);
+            saveTokenToSupabase(response.access_token, expiresAt);
+          },
+        });
+        // prompt: '' = silent if user has previously authorized; shows popup only if needed
+        client.requestAccessToken({ prompt: '' });
+      } else if (attempts >= maxAttempts) {
+        clearInterval(poll);
+      }
+    }, 500);
+  };
 
   const saveTokenToSupabase = (accessToken: string, expiresAt: number) => {
     const uid = userIdRef.current;
@@ -542,6 +578,20 @@ export function useGmail() {
     [getToken]
   );
 
+  // ─── Trash email ──────────────────────────────────────────────────────────────
+
+  const trashEmail = useCallback(async (messageId: string): Promise<void> => {
+    const accessToken = await getToken();
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/trash`,
+      { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as any)?.error?.message ?? `Trash failed: ${res.status}`);
+    }
+  }, [getToken]);
+
   return {
     isConnected,
     isLoading,
@@ -551,5 +601,6 @@ export function useGmail() {
     fetchThreads,
     fetchInbox,
     downloadAttachment,
+    trashEmail,
   };
 }
