@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Globe, Network, X, Filter, Search, Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Globe, Network, X, Filter, Search, Clock, ChevronUp, ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
 import type {
   Contact,
   Project,
@@ -49,7 +49,8 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
   );
   const [filters,        setFilters]        = useState<MapFilters>(DEFAULT_FILTERS);
   const [showFilters,    setShowFilters]    = useState(false);
-  const [sortPanelOpen,  setSortPanelOpen]  = useState(() => new URLSearchParams(window.location.search).get('sortPanel') === 'true');
+  const [sortPanelOpen,   setSortPanelOpen]   = useState(() => new URLSearchParams(window.location.search).get('sortPanel') === 'true');
+  const [graphFullscreen, setGraphFullscreen] = useState(false);
 
   // ─── DERIVED DATA ───────────────────────────────────────────────────────────
 
@@ -57,6 +58,20 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
     () => applyFilters(contacts, projects, mapState, filters),
     [contacts, projects, mapState, filters],
   );
+
+  // Clear ?sortPanel URL param once panel is open
+  useEffect(() => {
+    if (sortPanelOpen) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('sortPanel');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [sortPanelOpen]);
+
+  // Exit fullscreen when switching away from graph view
+  useEffect(() => {
+    if (mapState.activeView !== 'network') setGraphFullscreen(false);
+  }, [mapState.activeView]);
 
   // Ventures = projects linked to at least one contact
   const linkedProjectIds = useMemo(() => {
@@ -259,6 +274,22 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
           </button>
         </div>
 
+        {/* Fullscreen toggle (graph view only) */}
+        {mapState.activeView === 'network' && (
+          <button
+            onClick={() => setGraphFullscreen(f => !f)}
+            title={graphFullscreen ? 'Exit fullscreen' : 'Fullscreen graph'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs flex-shrink-0 transition-colors"
+            style={{
+              backgroundColor: graphFullscreen ? 'var(--bg-elevated)' : 'var(--bg-card)',
+              borderColor: graphFullscreen ? 'var(--border-strong)' : 'var(--border)',
+              color: graphFullscreen ? 'var(--text-primary)' : 'var(--text-muted)',
+            }}
+          >
+            {graphFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+        )}
+
         {/* Search */}
         <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg border flex-1 min-w-0"
           style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border)' }}>
@@ -411,6 +442,45 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onAddContact={addContact}
               onNavigateToCRM={onNavigateToCRM}
             />
+          ) : graphFullscreen ? (
+            /* Fullscreen graph overlay */
+            <div style={{
+              position: 'fixed', inset: 0, zIndex: 80,
+              background: 'var(--bg)',
+            }}>
+              {/* Exit fullscreen button */}
+              <button
+                onClick={() => setGraphFullscreen(false)}
+                style={{
+                  position: 'absolute', top: 14, right: 14, zIndex: 90,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 8, padding: '6px 12px', color: 'var(--text-muted)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  fontSize: 12, fontFamily: 'system-ui,sans-serif',
+                }}
+                title="Exit fullscreen"
+              >
+                <Minimize2 size={13} /> Exit fullscreen
+              </button>
+              <NetworkView3D
+                contacts={contacts}
+                projects={projects}
+                mapState={mapState}
+                filteredIds={filteredIds}
+                onUpdateMapData={updateMapData}
+                onUpdateContact={updateContact}
+                onToggleAutoConnections={toggleAutoConnections}
+                onSaveManualConnection={saveManualConnection}
+                onDeleteManualConnection={deleteManualConnection}
+                onUpdateNodePositions={updateNodePositions}
+                onNavigateToCRM={onNavigateToCRM}
+                onAddContact={(contact) => setContacts(prev => [...prev, contact])}
+                onUpdateOrgs={updateOrgs}
+                buildings={mapState.buildings}
+                onBuildingsReady={handleBuildingsReady}
+                onUpdateBuildings={updateBuildings}
+              />
+            </div>
           ) : (
             <NetworkView3D
               contacts={contacts}

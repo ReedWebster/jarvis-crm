@@ -1968,12 +1968,12 @@ export default function NetworkView3D({
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       <div ref={labelRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
-      {/* Click-to-explore overlay */}
+      {/* Click-to-explore overlay — sits above all HUD elements */}
       {!isLocked && !selectedContact && (
         <div
           onClick={() => canvasRef.current?.requestPointerLock()}
           style={{
-            position: 'absolute', inset: 0,
+            position: 'absolute', inset: 0, zIndex: 100,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(0,0,0,0.5)', cursor: 'pointer',
           }}
@@ -2113,8 +2113,8 @@ export default function NetworkView3D({
         </div>
       )}
 
-      {/* Top search/filter bar */}
-      <div style={{
+      {/* Top search/filter bar — only visible when locked */}
+      {isLocked && <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 12px',
         background: 'rgba(0,0,0,0.68)', backdropFilter: 'blur(8px)',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -2177,15 +2177,17 @@ export default function NetworkView3D({
         >
           {isRaining ? '🌧' : '☀️'}
         </button>
-      </div>
+      </div>}
 
-      {/* Minimap */}
-      <div style={{
-        position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
-        boxShadow: '0 0 0 2px rgba(100,180,255,0.35)', zIndex: 10,
-      }}>
-        <canvas ref={minimapRef} width={180} height={180} style={{ display: 'block' }} />
-      </div>
+      {/* Minimap — only visible when locked */}
+      {isLocked && (
+        <div style={{
+          position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
+          boxShadow: '0 0 0 2px rgba(100,180,255,0.35)', zIndex: 10,
+        }}>
+          <canvas ref={minimapRef} width={180} height={180} style={{ display: 'block' }} />
+        </div>
+      )}
 
       {/* Contact detail panel */}
       {selectedContact && selectedMapData && (
