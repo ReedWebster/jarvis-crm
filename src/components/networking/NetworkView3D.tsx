@@ -80,12 +80,12 @@ interface DistrictDef {
 }
 
 const DISTRICTS: DistrictDef[] = [
-  { id: 'byu',          name: 'BYU District',   cx:   0, cz: -80, w: 60, d: 50, mmColor: '#9B9EC8' },
-  { id: 'vanta',        name: 'Vanta HQ',        cx:  80, cz:   0, w: 60, d: 50, mmColor: '#7B9EC8' },
-  { id: 'rockcanyonai', name: 'Rock Canyon AI',  cx:  60, cz:  80, w: 60, d: 50, mmColor: '#9BBCD8' },
-  { id: 'neighborhood', name: 'Neighborhood',    cx: -80, cz:   0, w: 60, d: 50, mmColor: '#B8C8D8' },
-  { id: 'chapel',       name: 'Chapel District', cx: -60, cz: -70, w: 50, d: 40, mmColor: '#C8D8E8' },
-  { id: 'outskirts',    name: 'Outskirts',        cx:   0, cz:  80, w: 70, d: 55, mmColor: '#A8B8C8' },
+  { id: 'byu',          name: 'BYU District',   cx:   0, cz: -65, w: 60, d: 50, mmColor: '#9B9EC8' },
+  { id: 'vanta',        name: 'Vanta HQ',        cx:  65, cz:   0, w: 60, d: 50, mmColor: '#7B9EC8' },
+  { id: 'rockcanyonai', name: 'Rock Canyon AI',  cx:  50, cz:  65, w: 60, d: 50, mmColor: '#9BBCD8' },
+  { id: 'neighborhood', name: 'Neighborhood',    cx: -65, cz:   0, w: 60, d: 50, mmColor: '#B8C8D8' },
+  { id: 'chapel',       name: 'Chapel District', cx: -50, cz: -55, w: 50, d: 40, mmColor: '#C8D8E8' },
+  { id: 'outskirts',    name: 'Outskirts',        cx:   0, cz:  65, w: 70, d: 55, mmColor: '#A8B8C8' },
 ];
 
 function assignDistrict(c: Contact): string {
@@ -156,6 +156,7 @@ interface Props {
   onUpdateOrgs:            (orgs: NetworkOrg[]) => void;
   buildings?:              CityBuilding[];
   onBuildingsReady?:       (buildings: CityBuilding[]) => void;
+  onUpdateBuildings?:      (buildings: CityBuilding[]) => void;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -557,37 +558,58 @@ function buildArchetype(
 }
 
 const BUILDING_DEFS: Record<string, Array<{ id: string; offsetX: number; offsetZ: number; archetype: CityBuildingArchetype; name: string }>> = {
-  byu:          [
+  byu: [
     { id: 'byu-0', offsetX:   0, offsetZ:   0, archetype: 'campus',      name: 'BYU Main' },
-    { id: 'byu-1', offsetX: -14, offsetZ:   0, archetype: 'midrise',     name: 'East Hall' },
-    { id: 'byu-2', offsetX:  14, offsetZ:   3, archetype: 'midrise',     name: 'West Hall' },
-    { id: 'byu-3', offsetX:   5, offsetZ: -12, archetype: 'spire',       name: 'Bell Tower' },
+    { id: 'byu-1', offsetX: -13, offsetZ:  -2, archetype: 'midrise',     name: 'Richards Hall' },
+    { id: 'byu-2', offsetX:  13, offsetZ:  -2, archetype: 'midrise',     name: 'Tanner Building' },
+    { id: 'byu-3', offsetX:   5, offsetZ: -14, archetype: 'spire',       name: 'Bell Tower' },
+    { id: 'byu-4', offsetX:  -6, offsetZ:  13, archetype: 'midrise',     name: 'Kimball Tower' },
+    { id: 'byu-5', offsetX:   7, offsetZ:  13, archetype: 'residential', name: 'Heritage Halls' },
+    { id: 'byu-6', offsetX: -13, offsetZ: -14, archetype: 'midrise',     name: 'JFSB' },
+    { id: 'byu-7', offsetX:  13, offsetZ: -14, archetype: 'midrise',     name: 'Maeser Building' },
   ],
-  vanta:        [
-    { id: 'vanta-0', offsetX:   0, offsetZ:  0, archetype: 'podiumTower', name: 'Vanta HQ' },
-    { id: 'vanta-1', offsetX: -14, offsetZ: -5, archetype: 'tower',       name: 'North Tower' },
-    { id: 'vanta-2', offsetX:  12, offsetZ:  8, archetype: 'tower',       name: 'East Tower' },
+  vanta: [
+    { id: 'vanta-0', offsetX:   0, offsetZ:   0, archetype: 'podiumTower', name: 'Vanta HQ' },
+    { id: 'vanta-1', offsetX: -13, offsetZ:  -4, archetype: 'tower',       name: 'North Tower' },
+    { id: 'vanta-2', offsetX:  13, offsetZ:   4, archetype: 'tower',       name: 'East Tower' },
+    { id: 'vanta-3', offsetX:   0, offsetZ: -14, archetype: 'midrise',     name: 'Annex' },
+    { id: 'vanta-4', offsetX: -13, offsetZ:  13, archetype: 'slab',        name: 'Operations Center' },
+    { id: 'vanta-5', offsetX:  13, offsetZ: -14, archetype: 'midrise',     name: 'Partner Hub' },
+    { id: 'vanta-6', offsetX:  13, offsetZ:  13, archetype: 'midrise',     name: 'Investor Suite' },
   ],
   rockcanyonai: [
-    { id: 'rcai-0', offsetX:   0, offsetZ:  0, archetype: 'slab',    name: 'Tech Campus' },
-    { id: 'rcai-1', offsetX: -12, offsetZ: -5, archetype: 'midrise', name: 'Innovation Hall' },
-    { id: 'rcai-2', offsetX:  12, offsetZ: -8, archetype: 'campus',  name: 'Research Lab' },
+    { id: 'rcai-0', offsetX:   0, offsetZ:   0, archetype: 'slab',    name: 'Tech Campus' },
+    { id: 'rcai-1', offsetX: -13, offsetZ:  -4, archetype: 'midrise', name: 'Innovation Hall' },
+    { id: 'rcai-2', offsetX:  13, offsetZ:  -4, archetype: 'campus',  name: 'Research Lab' },
+    { id: 'rcai-3', offsetX:   0, offsetZ: -14, archetype: 'tower',   name: 'AI Tower' },
+    { id: 'rcai-4', offsetX: -13, offsetZ:  12, archetype: 'midrise', name: 'Dev Studio' },
+    { id: 'rcai-5', offsetX:  13, offsetZ:  12, archetype: 'midrise', name: 'Data Center' },
+    { id: 'rcai-6', offsetX: -13, offsetZ: -14, archetype: 'midrise', name: 'Robotics Lab' },
   ],
   neighborhood: [
-    { id: 'nb-0', offsetX:   0, offsetZ: -12, archetype: 'residential', name: 'Oak House' },
-    { id: 'nb-1', offsetX: -11, offsetZ:   4, archetype: 'residential', name: 'Maple Cottage' },
-    { id: 'nb-2', offsetX:  10, offsetZ:   8, archetype: 'residential', name: 'Cedar Home' },
-    { id: 'nb-3', offsetX:  -2, offsetZ:  14, archetype: 'midrise',     name: 'Park Lofts' },
+    { id: 'nb-0', offsetX:   0, offsetZ: -10, archetype: 'residential', name: 'Oak House' },
+    { id: 'nb-1', offsetX: -11, offsetZ: -10, archetype: 'residential', name: 'Maple Cottage' },
+    { id: 'nb-2', offsetX:  11, offsetZ: -10, archetype: 'residential', name: 'Cedar Home' },
+    { id: 'nb-3', offsetX:   0, offsetZ:   2, archetype: 'midrise',     name: 'Park Lofts' },
+    { id: 'nb-4', offsetX: -11, offsetZ:  10, archetype: 'residential', name: 'Birch House' },
+    { id: 'nb-5', offsetX:  11, offsetZ:  10, archetype: 'residential', name: 'Elm Place' },
+    { id: 'nb-6', offsetX: -11, offsetZ:   2, archetype: 'residential', name: 'Aspen Flat' },
   ],
-  chapel:       [
-    { id: 'ch-0', offsetX:   0, offsetZ:  0, archetype: 'spire',   name: 'Chapel' },
-    { id: 'ch-1', offsetX: -12, offsetZ:  5, archetype: 'midrise', name: 'Parish Hall' },
-    { id: 'ch-2', offsetX:  10, offsetZ: -6, archetype: 'midrise', name: 'Community Center' },
+  chapel: [
+    { id: 'ch-0', offsetX:   0, offsetZ:   0, archetype: 'spire',       name: 'Chapel' },
+    { id: 'ch-1', offsetX: -12, offsetZ:  -4, archetype: 'midrise',     name: 'Parish Hall' },
+    { id: 'ch-2', offsetX:  12, offsetZ:  -4, archetype: 'midrise',     name: 'Community Center' },
+    { id: 'ch-3', offsetX:   0, offsetZ: -14, archetype: 'campus',      name: 'Rec Center' },
+    { id: 'ch-4', offsetX: -10, offsetZ:  12, archetype: 'residential', name: 'Clergy House' },
+    { id: 'ch-5', offsetX:  12, offsetZ:  12, archetype: 'midrise',     name: 'Youth Hall' },
   ],
-  outskirts:    [
-    { id: 'os-0', offsetX:   0, offsetZ:  8, archetype: 'warehouse', name: 'Warehouse A' },
-    { id: 'os-1', offsetX:  18, offsetZ:  2, archetype: 'warehouse', name: 'Warehouse B' },
-    { id: 'os-2', offsetX: -16, offsetZ: -6, archetype: 'slab',      name: 'Industrial Slab' },
+  outskirts: [
+    { id: 'os-0', offsetX:   0, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse A' },
+    { id: 'os-1', offsetX:  20, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse B' },
+    { id: 'os-2', offsetX: -20, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse C' },
+    { id: 'os-3', offsetX:   0, offsetZ: -12, archetype: 'slab',      name: 'Industrial Slab' },
+    { id: 'os-4', offsetX:  20, offsetZ: -12, archetype: 'midrise',   name: 'Office Block' },
+    { id: 'os-5', offsetX: -20, offsetZ: -12, archetype: 'midrise',   name: 'Depot Office' },
   ],
 };
 
@@ -739,6 +761,7 @@ export default function NetworkView3D({
   onUpdateOrgs,
   buildings,
   onBuildingsReady,
+  onUpdateBuildings,
 }: Props) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
@@ -773,15 +796,48 @@ export default function NetworkView3D({
   const nameplateMapRef    = useRef<Map<string, THREE.Sprite>>(new Map());
   const buildingLabelRef   = useRef<Array<{ group: THREE.Group; div: HTMLDivElement; id: string }>>([]);
   const buildingsRef       = useRef(buildings);
-  const onUpdateMapDataRef = useRef(onUpdateMapData);
-  const tabNearestBldRef   = useRef<string | null>(null);
+  const matsRef            = useRef<ArchMats | null>(null);
+  const onUpdateMapDataRef    = useRef(onUpdateMapData);
+  const onUpdateBuildingsRef  = useRef(onUpdateBuildings);
+  const tabNearestBldRef      = useRef<string | null>(null);
+  const [tabToast, setTabToast] = useState<string | null>(null);
 
   useEffect(() => { filteredRef.current       = filteredIds;    }, [filteredIds]);
   useEffect(() => { searchRef.current         = search;         }, [search]);
   useEffect(() => { districtFilterRef.current = districtFilter; }, [districtFilter]);
   useEffect(() => { isRainingRef.current      = isRaining;      }, [isRaining]);
   useEffect(() => { buildingsRef.current       = buildings;         }, [buildings]);
-  useEffect(() => { onUpdateMapDataRef.current = onUpdateMapData;  }, [onUpdateMapData]);
+  useEffect(() => { onUpdateMapDataRef.current   = onUpdateMapData;   }, [onUpdateMapData]);
+  useEffect(() => { onUpdateBuildingsRef.current = onUpdateBuildings; }, [onUpdateBuildings]);
+
+  // Dynamically spawn buildings added after initial mount (user-created buildings)
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const mats  = matsRef.current;
+    if (!scene || !mats || !buildings) return;
+    const existingIds = new Set(buildingLabelRef.current.map(e => e.id));
+    for (const b of buildings) {
+      if (existingIds.has(b.id)) continue;
+      const contactShare = b.contactIds.length;
+      const result = buildArchetype(b.archetype, b.position.x, b.position.z, contactShare, mats, []);
+      result.group.userData.buildingId   = b.id;
+      result.group.userData.districtId   = b.districtId;
+      result.group.userData.buildingName = b.name;
+      scene.add(result.group);
+      // Label
+      const bLabelDiv = document.createElement('div');
+      bLabelDiv.style.cssText = [
+        'color:#D4AF37', 'font-size:10px', 'font-family:system-ui,sans-serif',
+        'white-space:nowrap', 'pointer-events:none',
+        'text-shadow:0 1px 3px rgba(255,255,255,0.9)', 'opacity:0', 'transition:opacity 0.3s',
+      ].join(';');
+      bLabelDiv.textContent = b.name;
+      const bLabelObj = new CSS2DObject(bLabelDiv);
+      bLabelObj.position.set(0, result.height + 1.8, 0);
+      result.group.add(bLabelObj);
+      buildingLabelRef.current.push({ group: result.group, div: bLabelDiv, id: b.id });
+    }
+  }, [buildings]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1135,10 +1191,13 @@ export default function NetworkView3D({
 
     const autoCityBuildings: CityBuilding[] = [];
 
+    // Shared arch materials — stored in matsRef for dynamic building spawn
+    const mats = makeArchMats();
+    matsRef.current = mats;
+
     for (const dist of DISTRICTS) {
       const dcs = distContactMap.get(dist.id) ?? [];
       const defs = BUILDING_DEFS[dist.id] ?? [];
-      const mats = makeArchMats();
 
       // District ground patch
       const dGround = new THREE.Mesh(
@@ -1965,6 +2024,15 @@ export default function NetworkView3D({
         </div>
       )}
 
+      {/* Tab toast confirmation */}
+      {tabToast && (
+        <div style={{
+          position: 'absolute', bottom: '15%', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(16,185,129,0.92)', borderRadius: 8, padding: '6px 18px',
+          color: '#fff', fontSize: 12, fontWeight: 600, pointerEvents: 'none', zIndex: 50,
+        }}>{tabToast}</div>
+      )}
+
       {/* Tab hint when near a building */}
       {isLocked && tabNearestBldRef.current && !tabOverlayOpen && !selectedContact && (
         <div style={{
@@ -2013,6 +2081,22 @@ export default function NetworkView3D({
                 <button
                   onClick={() => {
                     onUpdateMapDataRef.current(c.id, { buildingId: tabNearestBldId });
+                    // Sync buildings.contactIds
+                    const prev = buildingsRef.current ?? [];
+                    const prevBldId = mapState.contactData[c.id]?.buildingId;
+                    const updated = prev.map(b => {
+                      let ids = b.contactIds.filter(id => id !== c.id);
+                      if (b.id === tabNearestBldId) ids = [...ids, c.id];
+                      return { ...b, contactIds: ids };
+                    });
+                    onUpdateBuildingsRef.current?.(updated);
+                    void prevBldId;
+                    // Toast + auto-close
+                    const bldName = buildingsRef.current?.find(b => b.id === tabNearestBldId)?.name ?? 'building';
+                    setTabToast(`✓ ${c.name} → ${bldName}`);
+                    setTimeout(() => setTabToast(null), 1800);
+                    const remaining = contacts.filter(cx => !mapState.contactData[cx.id]?.buildingId && cx.id !== c.id).length;
+                    if (remaining === 0) setTabOverlayOpen(false);
                   }}
                   style={{
                     background: '#1d4ed8', border: 'none', borderRadius: 6,

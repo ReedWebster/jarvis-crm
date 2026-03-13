@@ -428,6 +428,7 @@ export function NetworkingMap({ contacts, setContacts, projects, onNavigateToCRM
               onUpdateOrgs={updateOrgs}
               buildings={mapState.buildings}
               onBuildingsReady={handleBuildingsReady}
+              onUpdateBuildings={updateBuildings}
             />
           )}
 
