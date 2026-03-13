@@ -315,7 +315,7 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
               {note.isMeetingNote && (
                 <Badge label="Meeting" size="xs" />
               )}
-              <h3 className="text-white font-semibold text-sm leading-tight">
+              <h3 className="font-semibold text-sm leading-tight" style={{ color: 'var(--text-primary)' }}>
                 {note.title || <span className=" italic">Untitled</span>}
               </h3>
             </div>
