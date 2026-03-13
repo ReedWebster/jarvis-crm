@@ -883,8 +883,8 @@ export default function NetworkView3D({
   useEffect(() => {
     const canvas   = canvasRef.current!;
     const labelDiv = labelRef.current!;
-    const mmCanvas = minimapRef.current!;
-    if (!canvas || !labelDiv || !mmCanvas) return;
+    if (!canvas || !labelDiv) return;
+    const mmCanvas = minimapRef.current;
 
     const W = canvas.clientWidth  || 800;
     const H = canvas.clientHeight || 600;
@@ -1424,11 +1424,12 @@ export default function NetworkView3D({
     resizeObs.observe(canvas);
 
     // ── Minimap ──
-    mmCanvas.width = 180; mmCanvas.height = 180;
-    const mmCtx     = mmCanvas.getContext('2d')!;
+    if (mmCanvas) { mmCanvas.width = 180; mmCanvas.height = 180; }
+    const mmCtx     = mmCanvas?.getContext('2d') ?? null;
     const WORLD_SCL = 90 / 180;
 
     function drawMinimap() {
+      if (!mmCtx) return;
       mmCtx.clearRect(0, 0, 180, 180);
       mmCtx.beginPath();
       mmCtx.arc(90, 90, 88, 0, Math.PI * 2);
@@ -2179,15 +2180,14 @@ export default function NetworkView3D({
         </button>
       </div>}
 
-      {/* Minimap — only visible when locked */}
-      {isLocked && (
-        <div style={{
-          position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
-          boxShadow: '0 0 0 2px rgba(100,180,255,0.35)', zIndex: 10,
-        }}>
-          <canvas ref={minimapRef} width={180} height={180} style={{ display: 'block' }} />
-        </div>
-      )}
+      {/* Minimap — always in DOM so ref is available on mount; hidden when not locked */}
+      <div style={{
+        position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
+        boxShadow: '0 0 0 2px rgba(100,180,255,0.35)', zIndex: 10,
+        display: isLocked ? 'block' : 'none',
+      }}>
+        <canvas ref={minimapRef} width={180} height={180} style={{ display: 'block' }} />
+      </div>
 
       {/* Contact detail panel */}
       {selectedContact && selectedMapData && (
