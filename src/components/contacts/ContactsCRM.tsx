@@ -34,6 +34,7 @@ import { Modal } from '../shared/Modal';
 import { Badge } from '../shared/Badge';
 import { EmailComposeModal } from '../email/EmailComposeModal';
 import { EmailThread } from '../email/EmailThread';
+import { useGoogleContacts } from '../../hooks/useGoogleContacts';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
@@ -1418,6 +1419,40 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 export default function ContactsCRM({ contacts, setContacts, onNavigateToNetworking }: Props) {
   const toast = useToast();
+  const { syncContacts, autoSync } = useGoogleContacts();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // One-time dedup of existing contacts on mount
+  useEffect(() => {
+    if (!contacts.length) return;
+    const seenEmails = new Set<string>();
+    const seenNames  = new Set<string>();
+    const deduped = contacts.filter(c => {
+      const emailKey = c.email?.trim().toLowerCase();
+      const nameKey  = c.name.trim().toLowerCase();
+      if (emailKey) {
+        if (seenEmails.has(emailKey)) return false;
+        seenEmails.add(emailKey);
+      } else {
+        if (seenNames.has(nameKey)) return false;
+      }
+      seenNames.add(nameKey);
+      return true;
+    });
+    if (deduped.length < contacts.length) {
+      setContacts(deduped);
+      toast.success(`Removed ${contacts.length - deduped.length} duplicate contact${contacts.length - deduped.length !== 1 ? 's' : ''}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-sync Google Contacts on page load (silent, incremental)
+  useEffect(() => {
+    autoSync().then(fetched => {
+      if (fetched && fetched.length > 0) finalizeImport(fetched, 0);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
   const [filterFollowUp, setFilterFollowUp] = useState(false);
@@ -1458,6 +1493,16 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
   // CRUD helpers
   const handleAdd = (data: ContactFormData) => {
+    const emailKey = data.email?.trim().toLowerCase();
+    const nameKey  = data.name.trim().toLowerCase();
+    const duplicate = contacts.find(c =>
+      (emailKey && c.email?.trim().toLowerCase() === emailKey) ||
+      c.name.trim().toLowerCase() === nameKey
+    );
+    if (duplicate) {
+      toast.error(`"${duplicate.name}" already exists in your contacts`);
+      return;
+    }
     const newContact: Contact = {
       id: generateId(),
       ...data,
@@ -1604,12 +1649,18 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
   // ── Shared import finalizer ───────────────────────────────────────────────
   const finalizeImport = (newContacts: Contact[], totalSkipped: number) => {
-    const existing = new Set(contacts.map(c => c.email?.toLowerCase()).filter(Boolean));
+    const existingEmails = new Set(contacts.map(c => c.email?.trim().toLowerCase()).filter(Boolean));
+    const existingNames  = new Set(contacts.map(c => c.name.trim().toLowerCase()));
     const deduped = newContacts.filter(c => {
-      if (!c.email) return true;
-      const key = c.email.toLowerCase();
-      if (existing.has(key)) return false;
-      existing.add(key);
+      const emailKey = c.email?.trim().toLowerCase();
+      const nameKey  = c.name.trim().toLowerCase();
+      if (emailKey) {
+        if (existingEmails.has(emailKey)) return false;
+        existingEmails.add(emailKey);
+      } else {
+        if (existingNames.has(nameKey)) return false;
+      }
+      existingNames.add(nameKey);
       return true;
     });
     const skipped = totalSkipped + (newContacts.length - deduped.length);
@@ -1635,12 +1686,32 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
     if (ext === 'vcf' || ext === 'vcard') {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = ev.target?.result as string;
+      reader.onload = async (ev) => {
+        let text = ev.target?.result as string;
         if (!text) { toast.error('Could not read .vcf file'); return; }
-        const parsed = parseVCardText(text);
-        if (!parsed.length) { toast.error('No contacts found in this .vcf file'); return; }
-        finalizeImport(parsed, 0);
+
+        // Strip embedded base64 blobs (PHOTO, LOGO, SOUND, KEY) that can make
+        // Apple Contacts exports enormous and crash the parser.
+        // These fields span multiple folded lines — remove them all at once.
+        text = text.replace(/^(PHOTO|LOGO|SOUND|KEY)[^\r\n]*(\r?\n[ \t][^\r\n]*)*/gim, '');
+
+        // Split into individual vCards
+        const cards = text.split(/BEGIN:VCARD/i).slice(1);
+        if (!cards.length) { toast.error('No contacts found in this .vcf file'); return; }
+
+        // Process in batches of 200 so the UI stays responsive on large exports
+        const BATCH = 200;
+        const all: Contact[] = [];
+        for (let i = 0; i < cards.length; i += BATCH) {
+          const chunk = cards.slice(i, i + BATCH);
+          const parsed = parseVCardText('BEGIN:VCARD' + chunk.join('BEGIN:VCARD'));
+          all.push(...parsed);
+          // Yield to the browser between batches
+          await new Promise(r => setTimeout(r, 0));
+        }
+
+        if (!all.length) { toast.error('No contacts found in this .vcf file'); return; }
+        finalizeImport(all, 0);
       };
       reader.readAsText(file, 'utf-8');
       return;
@@ -1721,6 +1792,21 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
     setThreadModalOpen(true);
   };
 
+  const handleGoogleContactsSync = async () => {
+    setIsSyncing(true);
+    try {
+      const fetched = await syncContacts();
+      finalizeImport(fetched, 0);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (!msg.includes('popup_closed') && !msg.includes('access_denied')) {
+        toast.error(`Google Contacts sync failed: ${msg}`);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6 transition-colors duration-300">
       {/* Header */}
@@ -1739,6 +1825,20 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             className="hidden"
             onChange={handleContactImport}
           />
+          <button
+            onClick={handleGoogleContactsSync}
+            disabled={isSyncing}
+            className="caesar-btn-ghost flex items-center gap-2"
+            title="Sync contacts from Google Contacts"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            {isSyncing ? 'Syncing…' : 'Sync Google'}
+          </button>
           <button
             onClick={() => csvInputRef.current?.click()}
             className="caesar-btn-ghost flex items-center gap-2"

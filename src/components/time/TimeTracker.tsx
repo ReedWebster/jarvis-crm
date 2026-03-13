@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Bell,
+  RefreshCw,
 } from 'lucide-react';
 import {
   format,
@@ -34,6 +35,8 @@ import { Modal } from '../shared/Modal';
 import { TimeSelect } from '../shared/TimeSelect';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import { useCalendarNotifications } from '../../hooks/useCalendarNotifications';
+import { useGoogleCalendar } from '../../hooks/useGoogleCalendar';
+import { useToast } from '../shared/Toast';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -842,6 +845,21 @@ export function TimeTracker({
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const toast = useToast();
+  const { syncToGoogle, isSyncing } = useGoogleCalendar();
+
+  const handleGoogleCalendarSync = async () => {
+    try {
+      await syncToGoogle(timeBlocks, timeCategories);
+      toast.success('Synced to Google Calendar');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (!msg.includes('popup_closed') && !msg.includes('access_denied')) {
+        toast.error(`Google Calendar sync failed: ${msg}`);
+      }
+    }
+  };
+
   // ─── Calendar event notifications ───────────────────────────────────────────
   const { permissionState: notifPermission, requestPermission } =
     useCalendarNotifications(timeBlocks, timeCategories, 10, 'J.A.R.V.I.S.');
@@ -1025,6 +1043,14 @@ export function TimeTracker({
               </button>
             ))}
           </div>
+          <button
+            onClick={handleGoogleCalendarSync}
+            disabled={isSyncing}
+            className="caesar-btn-ghost p-1.5"
+            title="Sync to Google Calendar (and Apple Calendar)"
+          >
+            <RefreshCw size={15} className={isSyncing ? 'animate-spin' : ''} />
+          </button>
           <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-1.5" title="Manage calendars">
             <Settings size={15} />
           </button>
