@@ -213,7 +213,6 @@ export function Sidebar({
           borderRight: '1px solid var(--border)',
           paddingTop: 'env(safe-area-inset-top)',
           paddingBottom: 'env(safe-area-inset-bottom)',
-          position: 'relative',
         }}
       >
         {/* Beacon scanline sweep */}
