@@ -75,7 +75,7 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
 
   return (
     <div
-      className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all duration-300"
+      className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium"
       style={{
         backgroundColor: 'var(--bg-card)',
         borderColor: 'var(--border)',
@@ -83,7 +83,10 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         boxShadow: 'var(--shadow-card)',
         color: 'var(--text-primary)',
         opacity: visible ? 1 : 0,
-        transform: visible ? 'translateX(0)' : 'translateX(1rem)',
+        transform: visible ? 'translateX(0) scale(1)' : 'translateX(2rem) scale(0.92)',
+        transition: visible
+          ? 'opacity 0.35s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)'
+          : 'opacity 0.2s ease, transform 0.2s ease',
         minWidth: '220px',
         maxWidth: '320px',
       }}

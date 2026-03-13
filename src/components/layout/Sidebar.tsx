@@ -3,8 +3,9 @@ import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
   DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
   CheckSquare, Network, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
-  Share2, Inbox,
+  Share2, Inbox, Flame,
 } from 'lucide-react';
+import type { Theme } from '../../hooks/useTheme';
 import {
   DndContext,
   closestCenter,
@@ -119,7 +120,7 @@ function SortableNavItem({
       >
         {isActive && !isEditing && (
           <div
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r"
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full"
             style={{ backgroundColor: 'var(--text-primary)' }}
           />
         )}
@@ -162,13 +163,14 @@ interface SidebarProps {
   onNavOrderChange: (order: NavSection[]) => void;
   onThemeToggle?: () => void;
   isDark?: boolean;
+  theme?: Theme;
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 
 export function Sidebar({
   active, onNavigate, onSearch, mobileOpen, onMobileClose,
-  navOrder, onNavOrderChange, onThemeToggle, isDark,
+  navOrder, onNavOrderChange, onThemeToggle, isDark, theme,
 }: SidebarProps) {
   const [isEditing, setIsEditing] = useState(false);
 
@@ -211,12 +213,16 @@ export function Sidebar({
           borderRight: '1px solid var(--border)',
           paddingTop: 'env(safe-area-inset-top)',
           paddingBottom: 'env(safe-area-inset-bottom)',
+          position: 'relative',
         }}
       >
-        <div className="flex flex-col h-full">
+        {/* Beacon scanline sweep */}
+        <div className="sidebar-scanline" />
+
+        <div className="flex flex-col h-full" style={{ position: 'relative', zIndex: 1 }}>
           {/* Logo */}
           <div className="p-4 transition-colors duration-300 flex items-center gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
-            <img src="/favicon.svg" alt="LITEHOUSE" className="w-9 h-9 rounded-full flex-shrink-0" style={{ border: '1px solid var(--border)' }} />
+            <img src="/favicon.svg" alt="LITEHOUSE" className="beacon-logo-pulse w-9 h-9 rounded-full flex-shrink-0" style={{ border: '1px solid var(--border)' }} />
             <div>
               <div className="text-sm font-bold tracking-widest transition-colors duration-300" style={{ color: 'var(--text-primary)', fontFamily: "'Times New Roman', Times, serif", letterSpacing: '0.15em' }}>
                 LITEHOUSE
@@ -231,14 +237,14 @@ export function Sidebar({
           <div className="p-3 transition-colors duration-300" style={{ borderBottom: '1px solid var(--border)' }}>
             <button
               onClick={() => { onSearch(); onMobileClose(); }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200"
-              style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 hover:border-[var(--border-strong)]"
+              style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
             >
-              <Search size={14} />
-              <span>Search...</span>
-              <span className="ml-auto text-xs font-mono" style={{ color: 'var(--text-muted)' }}>⌘K</span>
+              <Search size={13} />
+              <span className="flex-1 text-left text-xs">Quick search...</span>
+              <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>⌘K</kbd>
             </button>
           </div>
 
@@ -290,10 +296,14 @@ export function Sidebar({
                 <button
                   onClick={onThemeToggle}
                   className="sm:hidden flex items-center justify-center w-8 h-8 rounded-lg border transition-colors"
-                  style={{ backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-                  title={isDark ? 'Light mode' : 'Dark mode'}
+                  style={{
+                    backgroundColor: theme === 'beacon' ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+                    borderColor: theme === 'beacon' ? 'var(--border-strong)' : 'var(--border)',
+                    color: theme === 'beacon' ? '#d97706' : 'var(--text-muted)',
+                  }}
+                  title={theme === 'dark' ? 'Switch to Light' : theme === 'light' ? 'Switch to Beacon' : 'Switch to Dark'}
                 >
-                  {isDark ? <Sun size={13} /> : <Moon size={13} />}
+                  {theme === 'dark' ? <Sun size={13} /> : theme === 'light' ? <Flame size={13} /> : <Moon size={13} />}
                 </button>
               )}
               <button

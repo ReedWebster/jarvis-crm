@@ -37,6 +37,35 @@
   --sb-thumb-hover:   #999999;
 }
 
+/* ─── CSS Variables — Beacon (deep navy + amber) ───────────────────────────── */
+.beacon {
+  --bg:               #060c18;
+  --bg-card:          #091528;
+  --bg-sidebar:       #07101f;
+  --bg-elevated:      #0e1e34;
+  --bg-input:         #091528;
+  --bg-hover:         #132340;
+  --border:           #1a2e4a;
+  --border-strong:    #d97706;
+  --text-primary:     #f5f0e8;
+  --text-secondary:   #a89a8a;
+  --text-muted:       #3d5872;
+  --text-placeholder: #243650;
+  --shadow-card:      0 2px 16px rgba(0,0,0,0.75);
+  --priority-high:    #ef4444;
+  --priority-medium:  #d97706;
+  --priority-low:     #6b7280;
+  --status-active:    #22c55e;
+  --status-on-hold:   #d97706;
+  --status-done:      #6b7280;
+  --health-green:     #22c55e;
+  --health-yellow:    #d97706;
+  --health-red:       #ef4444;
+  --sb-track:         #07101f;
+  --sb-thumb:         #1a2e4a;
+  --sb-thumb-hover:   #d97706;
+}
+
 /* ─── CSS Variables — Dark ──────────────────────────────────────────────────── */
 .dark {
   --bg:               #080808;
@@ -104,13 +133,23 @@
     background-color: var(--bg-card);
     border: 1px solid var(--border);
     box-shadow: var(--shadow-card);
-    @apply rounded-xl p-5 transition-colors duration-300;
+    @apply rounded-xl p-5 transition-all duration-200;
+  }
+  .caesar-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card), 0 4px 16px rgba(0,0,0,0.08);
   }
   .caesar-card-sm {
     background-color: var(--bg-card);
     border: 1px solid var(--border);
     box-shadow: var(--shadow-card);
-    @apply rounded-lg p-4 transition-colors duration-300;
+    @apply rounded-lg p-4 transition-all duration-200;
+  }
+  .caesar-card-sm:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card), 0 4px 12px rgba(0,0,0,0.06);
   }
 
   /* Inputs */
@@ -158,7 +197,22 @@
   .caesar-btn-primary {
     background-color: var(--text-primary);
     color: var(--bg);
+    position: relative;
+    overflow: hidden;
     @apply caesar-btn hover:opacity-80;
+  }
+  .caesar-btn-primary::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    width: 0; height: 0;
+    background: rgba(255,255,255,0.25);
+    transform: translate(-50%, -50%);
+    top: 50%; left: 50%;
+    pointer-events: none;
+  }
+  .caesar-btn-primary:active::after {
+    animation: rippleExpand 0.45s ease-out forwards;
   }
   .caesar-btn-gold {
     background-color: var(--bg-elevated);
@@ -248,6 +302,114 @@
       min-height: 44px;
     }
   }
+}
+
+/* ─── Card lift on hover ────────────────────────────────────────────────────── */
+.caesar-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.3s, border-color 0.3s;
+}
+.caesar-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+}
+.dark .caesar-card:hover   { box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
+.beacon .caesar-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.55), 0 0 0 1px rgba(217,119,6,0.14); }
+
+/* ─── Stagger-in list items ─────────────────────────────────────────────────── */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stagger-item {
+  animation: staggerIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger-i, 0) * 45ms);
+}
+
+/* ─── Beacon: amber pulse on logo ───────────────────────────────────────────── */
+@keyframes beaconPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0), 0 0 0 1px var(--border); }
+  50%       { box-shadow: 0 0 0 5px rgba(217,119,6,0.18), 0 0 0 1px var(--border-strong); }
+}
+.beacon .beacon-logo-pulse {
+  animation: beaconPulse 3.5s ease-in-out infinite;
+}
+
+/* ─── Beacon: scanline sweep on sidebar ─────────────────────────────────────── */
+@keyframes scanlineSweep {
+  from { transform: translateY(-100px); }
+  to   { transform: translateY(100vh); }
+}
+.sidebar-scanline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+.beacon .sidebar-scanline::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, transparent 0%, rgba(217,119,6,0.06) 50%, transparent 100%);
+  animation: scanlineSweep 7s linear infinite;
+}
+
+/* ─── Status dot heartbeat (available) ──────────────────────────────────────── */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14%       { transform: scale(1.6); }
+  28%       { transform: scale(1); }
+  42%       { transform: scale(1.4); }
+  70%       { transform: scale(1); }
+}
+.status-heartbeat {
+  animation: heartbeat 2s ease-in-out infinite;
+}
+
+/* ─── Button ripple ──────────────────────────────────────────────────────────── */
+@keyframes rippleExpand {
+  from { width: 0; height: 0; opacity: 0.45; }
+  to   { width: 220px; height: 220px; opacity: 0; }
+}
+.ripple-btn {
+  position: relative;
+  overflow: hidden;
+}
+.ripple-btn::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  width: 0; height: 0;
+  background: rgba(255,255,255,0.3);
+  transform: translate(-50%, -50%);
+  top: 50%; left: 50%;
+  pointer-events: none;
+}
+.ripple-btn:active::after {
+  animation: rippleExpand 0.45s ease-out forwards;
+}
+
+/* ─── Confetti particle burst ───────────────────────────────────────────────── */
+@keyframes confettiParticle {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(calc(-50% + var(--tx, 0px)), calc(-50% + var(--ty, -60px))) rotate(var(--rot, 180deg)) scale(0.4);
+    opacity: 0;
+  }
+}
+
+/* ─── Progress bar shimmer ───────────────────────────────────────────────────── */
+@keyframes progressShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.progress-shimmer {
+  background-size: 200% auto;
+  animation: progressShimmer 2.2s linear infinite;
 }
 
 /* ─── Keyframes ─────────────────────────────────────────────────────────────── */

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
-export type Theme = 'dark' | 'light';
+export type Theme = 'dark' | 'light' | 'beacon';
 
 export interface ChartColors {
   text: string;
@@ -17,6 +17,15 @@ export interface ThemeContextValue {
   toggle: () => void;
   chartColors: ChartColors;
 }
+
+const BEACON_CHART: ChartColors = {
+  text:         '#a89a8a',
+  grid:         '#1a2e4a',
+  tooltipBg:    '#091528',
+  tooltipText:  '#f5f0e8',
+  tooltipBorder:'#d97706',
+  axisLine:     '#1a2e4a',
+};
 
 const DARK_CHART: ChartColors = {
   text:         '#9ca3af',
@@ -51,7 +60,7 @@ export function useTheme(): ThemeContextValue {
 export function getInitialTheme(): Theme {
   try {
     const override = localStorage.getItem('jarvis-theme-override');
-    if (override === 'light' || override === 'dark') return override;
+    if (override === 'light' || override === 'dark' || override === 'beacon') return override;
     if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
   } catch { /* SSR guard */ }
   return 'dark';
@@ -60,11 +69,9 @@ export function getInitialTheme(): Theme {
 /** Apply theme to <html> element */
 export function applyThemeToDOM(theme: Theme): void {
   const root = document.documentElement;
-  if (theme === 'dark') {
-    root.classList.add('dark');
-  } else {
-    root.classList.remove('dark');
-  }
+  root.classList.remove('dark', 'beacon');
+  if (theme === 'dark') root.classList.add('dark');
+  if (theme === 'beacon') root.classList.add('beacon');
 }
 
 /** Build ThemeContextValue for a given theme string */
@@ -72,11 +79,15 @@ export function buildThemeValue(
   theme: Theme,
   toggle: () => void
 ): ThemeContextValue {
+  const chartColors =
+    theme === 'dark' ? DARK_CHART :
+    theme === 'beacon' ? BEACON_CHART :
+    LIGHT_CHART;
   return {
     theme,
-    isDark: theme === 'dark',
+    isDark: theme !== 'light',
     toggle,
-    chartColors: theme === 'dark' ? DARK_CHART : LIGHT_CHART,
+    chartColors,
   };
 }
 
@@ -90,8 +101,13 @@ export function useThemeState() {
     try { localStorage.setItem('jarvis-theme-override', theme); } catch { /* ignore */ }
   }, [theme]);
 
+  // Cycles: dark → light → beacon → dark
   const toggle = useCallback(() => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    setTheme(prev =>
+      prev === 'dark' ? 'light' :
+      prev === 'light' ? 'beacon' :
+      'dark'
+    );
   }, []);
 
   return { theme, toggle };

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { useCountUp } from '../../hooks/useCountUp';
 import {
   CheckSquare, Square, Plus, Edit3, Trash2, Link2,
   Calendar, ChevronDown, Circle, X,
@@ -11,6 +12,15 @@ import type {
 import { generateId, todayStr } from '../../utils';
 import { Modal } from '../shared/Modal';
 import { useToast } from '../shared/Toast';
+
+function AnimatedStat({ value, warn }: { value: number; warn?: boolean }) {
+  const animated = useCountUp(value);
+  return (
+    <p className="text-2xl font-bold" style={{ color: warn ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+      {animated}
+    </p>
+  );
+}
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
@@ -561,9 +571,7 @@ export function TodoList({
           { label: 'Overdue',   value: stats.overdue, warn: stats.overdue > 0 },
         ].map(s => (
           <div key={s.label} className="caesar-card text-center py-3 transition-colors duration-300">
-            <p className="text-2xl font-bold" style={{ color: s.warn ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
-              {s.value}
-            </p>
+            <AnimatedStat value={s.value} warn={s.warn} />
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
           </div>
         ))}

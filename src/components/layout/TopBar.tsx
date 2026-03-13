@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Zap, Sun, Moon, Menu, LogOut, Bell, Users } from 'lucide-react';
+import { Zap, Sun, Moon, Flame, Menu, LogOut, Bell, Users } from 'lucide-react';
 import type { StatusMode, Identity } from '../../types';
+import type { Theme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
 
 const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
-  'deep-work': { label: 'Deep Work', color: '#737373', glow: 'rgba(115,115,115,0.2)' },
-  available:   { label: 'Available', color: 'var(--text-secondary)', glow: 'rgba(90,138,90,0.2)'  },
-  break:       { label: 'Break',     color: '#737373', glow: 'rgba(115,115,115,0.2)' },
-  out:         { label: 'Out',       color: '#555555', glow: 'rgba(85,85,85,0.2)'   },
+  'deep-work': { label: 'Deep Work', color: '#6366f1', glow: 'rgba(99,102,241,0.2)' },
+  available:   { label: 'Available', color: '#22c55e', glow: 'rgba(34,197,94,0.2)'  },
+  break:       { label: 'Break',     color: '#f59e0b', glow: 'rgba(245,158,11,0.2)' },
+  out:         { label: 'Out',       color: '#6b7280', glow: 'rgba(107,114,128,0.2)' },
 };
 
 interface TopBarProps {
@@ -17,12 +18,13 @@ interface TopBarProps {
   onStatusChange: (status: StatusMode) => void;
   onThemeToggle: () => void;
   isDark: boolean;
+  theme?: Theme;
   onMenuOpen: () => void;
   urgentCount?: number;
   onNotificationClick?: () => void;
 }
 
-export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, onMenuOpen, urgentCount = 0, onNotificationClick }: TopBarProps) {
+export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, theme, onMenuOpen, urgentCount = 0, onNotificationClick }: TopBarProps) {
   const now = new Date();
   const statusCfg = STATUS_CONFIG[identity.status];
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -71,7 +73,10 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
         >
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: statusCfg.color }} />
+          <span
+            className={`w-2 h-2 rounded-full flex-shrink-0${identity.status === 'available' ? ' status-heartbeat' : ''}`}
+            style={{ backgroundColor: statusCfg.color }}
+          />
           <span className="text-xs font-medium hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>
             {statusCfg.label}
           </span>
@@ -102,29 +107,38 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         )}
       </div>
 
+      {/* Divider */}
+      <div className="hidden sm:block w-px h-6 flex-shrink-0" style={{ backgroundColor: 'var(--border)' }} />
+
       {/* Theme toggle — hidden on mobile (accessible in sidebar) */}
       <button
         onClick={onThemeToggle}
-        className="hidden sm:flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
-        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-        title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        className="hidden sm:flex items-center justify-center w-9 h-9 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          borderColor: theme === 'beacon' ? 'var(--border-strong)' : 'var(--border)',
+          color: theme === 'beacon' ? '#d97706' : 'var(--text-muted)',
+        }}
+        title={theme === 'dark' ? 'Switch to Light' : theme === 'light' ? 'Switch to Beacon' : 'Switch to Dark'}
       >
-        {isDark ? <Sun size={15} /> : <Moon size={15} />}
+        {theme === 'dark' ? <Sun size={14} /> : theme === 'light' ? <Flame size={14} /> : <Moon size={14} />}
       </button>
 
       {/* Notification bell */}
       <button
         onClick={onNotificationClick}
-        className="relative flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="relative flex items-center justify-center w-9 h-9 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title="Notifications"
       >
-        <Bell size={15} />
+        <Bell size={14} />
         {urgentCount > 0 && (
           <span
-            className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
-            style={{ backgroundColor: '#ef4444' }}
-          />
+            className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[10px] font-bold leading-none"
+            style={{ backgroundColor: '#ef4444', color: '#fff' }}
+          >
+            {urgentCount > 9 ? '9+' : urgentCount}
+          </span>
         )}
       </button>
 
@@ -133,23 +147,26 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
         href="/?view=team"
         target="_blank"
         rel="noopener noreferrer"
-        className="hidden md:flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="hidden md:flex items-center justify-center w-9 h-9 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title="Open team page"
       >
-        <Users size={15} />
+        <Users size={14} />
       </a>
+
+      {/* Divider */}
+      <div className="hidden sm:block w-px h-6 flex-shrink-0" style={{ backgroundColor: 'var(--border)' }} />
 
       {/* Power indicator — desktop only */}
       <div className="hidden sm:flex items-center gap-1.5">
-        <Zap size={14} className="fill-current" style={{ color: 'var(--text-muted)' }} />
+        <Zap size={13} className="fill-current" style={{ color: 'var(--text-muted)' }} />
         <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-muted)' }}>ONLINE</span>
       </div>
 
       {/* Logout */}
       <button
         onClick={() => supabase.auth.signOut()}
-        className="flex items-center justify-center w-11 h-11 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        className="flex items-center justify-center w-9 h-9 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
         title="Sign out"
       >

@@ -29,6 +29,7 @@ import type { Goal, GoalPeriod, GoalStatus, LifeArea, WeeklyReview, DecisionLog,
 import { generateId, todayStr, formatDate, daysUntil } from '../../utils';
 import { Modal } from '../shared/Modal';
 import { Badge, StatusBadge } from '../shared/Badge';
+import { ConfettiBurst } from '../shared/ConfettiBurst';
 
 // ─── PROPS ───────────────────────────────────────────────────────────────────
 
@@ -224,15 +225,19 @@ function GoalCard({
             <div className="mb-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Progress</span>
-                <span className="text-xs font-medium" style={{ color: area.color }}>{goal.progress}%</span>
+                <div className="relative">
+                  <span className="text-xs font-medium" style={{ color: area.color }}>{goal.progress}%</span>
+                  <ConfettiBurst trigger={goal.progress >= 100} />
+                </div>
               </div>
               <div className="relative h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-elevated)' }}>
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500${goal.progress > 0 && goal.progress < 100 ? ' progress-shimmer' : ''}`}
                   style={{
                     width: `${goal.progress}%`,
-                    backgroundColor: area.color,
-                    
+                    background: goal.progress > 0 && goal.progress < 100
+                      ? `linear-gradient(90deg, ${area.color}, ${area.color}cc, ${area.color})`
+                      : area.color,
                   }}
                 />
               </div>

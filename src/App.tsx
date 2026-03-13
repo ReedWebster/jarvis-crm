@@ -433,6 +433,7 @@ function MainApp() {
           onNavOrderChange={order => setNavOrder(() => order)}
           onThemeToggle={toggle}
           isDark={theme === 'dark'}
+          theme={theme}
         />
 
         <TopBar
@@ -441,6 +442,7 @@ function MainApp() {
           onStatusChange={handleStatusChange}
           onThemeToggle={toggle}
           isDark={theme === 'dark'}
+          theme={theme}
           onMenuOpen={() => setMobileSidebarOpen(true)}
           urgentCount={urgentCount}
           onNotificationClick={() => { requestPermission(); setInsightsPanelOpen(true); }}

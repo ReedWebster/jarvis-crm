@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useCountUp } from '../../hooks/useCountUp';
 import {
   Sun,
   Calendar,
@@ -317,6 +318,7 @@ export default function DailyCommandBrief({
   }
 
   const completedHabits = habits.filter((h) => todayHabits.habits[h.id]).length;
+  const animatedHabits = useCountUp(completedHabits);
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -473,7 +475,7 @@ export default function DailyCommandBrief({
                       : { color: 'var(--text-primary)' }
                   }
                 >
-                  {completedHabits}
+                  {animatedHabits}
                 </span>
                 <span className="transition-colors duration-300" style={{ color: 'var(--text-muted)' }}>/{habits.length}</span>
                 {' '}habits complete
@@ -483,13 +485,13 @@ export default function DailyCommandBrief({
             {habits.length > 0 && (
               <div className="w-full rounded-full h-1.5 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-elevated)' }}>
                 <div
-                  className="h-1.5 rounded-full transition-all duration-500"
+                  className={`h-1.5 rounded-full transition-all duration-500${completedHabits > 0 && completedHabits < habits.length ? ' progress-shimmer' : ''}`}
                   style={{
                     width: `${habits.length > 0 ? (completedHabits / habits.length) * 100 : 0}%`,
                     background:
                       completedHabits === habits.length
-                        ? 'var(--text-secondary)'
-                        : 'var(--text-muted)',
+                        ? 'linear-gradient(90deg, var(--text-secondary), var(--text-muted), var(--text-secondary))'
+                        : 'linear-gradient(90deg, var(--text-muted), var(--border-strong), var(--text-muted))',
                   }}
                 />
               </div>
