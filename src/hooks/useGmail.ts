@@ -578,6 +578,23 @@ export function useGmail() {
     [getToken]
   );
 
+  // ─── Helper: handle API errors, auto-disconnect on scope issues ──────────────
+
+  const handleApiError = useCallback(async (res: Response, fallback: string): Promise<never> => {
+    const err = await res.json().catch(() => ({}));
+    const msg: string = (err as any)?.error?.message ?? fallback;
+    if (res.status === 401 || (res.status === 403 && msg.toLowerCase().includes('scope'))) {
+      // Token is missing required scopes or is invalid — clear it so user re-authorizes
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(EXPIRY_KEY);
+      setToken(null);
+      tokenClientRef.current = null;
+      clearTokenFromSupabase();
+      throw new Error('Gmail needs to be reconnected to enable new permissions. Please click "Connect Gmail".');
+    }
+    throw new Error(msg);
+  }, []);
+
   // ─── Trash email ──────────────────────────────────────────────────────────────
 
   const trashEmail = useCallback(async (messageId: string): Promise<void> => {
@@ -586,11 +603,23 @@ export function useGmail() {
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/trash`,
       { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as any)?.error?.message ?? `Trash failed: ${res.status}`);
-    }
-  }, [getToken]);
+    if (!res.ok) await handleApiError(res, `Trash failed: ${res.status}`);
+  }, [getToken, handleApiError]);
+
+  // ─── Mark as read ─────────────────────────────────────────────────────────────
+
+  const markAsRead = useCallback(async (messageId: string): Promise<void> => {
+    const accessToken = await getToken();
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeLabelIds: ['UNREAD'] }),
+      }
+    );
+    if (!res.ok) await handleApiError(res, `Mark as read failed: ${res.status}`);
+  }, [getToken, handleApiError]);
 
   return {
     isConnected,
@@ -602,5 +631,6 @@ export function useGmail() {
     fetchInbox,
     downloadAttachment,
     trashEmail,
+    markAsRead,
   };
 }

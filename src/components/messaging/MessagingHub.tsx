@@ -91,7 +91,7 @@ interface MessagingHubProps {
 }
 
 export function MessagingHub({ contacts = [] }: MessagingHubProps) {
-  const { fetchInbox, isConnected, connect, isLoading, downloadAttachment, trashEmail } = useGmail();
+  const { fetchInbox, isConnected, connect, isLoading, downloadAttachment, trashEmail, markAsRead } = useGmail();
 
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [selected, setSelected] = useState<GmailMessage | null>(null);
@@ -137,6 +137,13 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const handleSelectMessage = (msg: GmailMessage) => {
     setSelected(msg);
     setShowDetail(true);
+    // Mark as read optimistically and call API in background
+    if (!msg.isRead) {
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, isRead: true } : m));
+      markAsRead(msg.id).catch(() => {
+        // Silently ignore — not worth surfacing a toast for this
+      });
+    }
   };
 
   const handleBack = () => {
