@@ -638,6 +638,53 @@ function getSkyConfig(hour: number): SkyConfig {
   };
 }
 
+// ─── FLOOR PLAN DIAGRAM ───────────────────────────────────────────────────────
+
+function drawFloorPlan(ctx: CanvasRenderingContext2D, arch: string, zoneColor: string) {
+  const W = 158, H = 80;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#080E1A'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = zoneColor + '99'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(3, 3, W - 6, H - 6);
+  ctx.strokeStyle = zoneColor + '55'; ctx.lineWidth = 1;
+  if (arch === 'tower' || arch === 'spire') {
+    // Central elevator core
+    const cw = W * 0.28, ch = H * 0.38;
+    ctx.strokeRect((W - cw) / 2, (H - ch) / 2, cw, ch);
+    // Corner rooms
+    ctx.strokeRect(3, 3, W*0.3, H*0.35);
+    ctx.strokeRect(W - W*0.3 - 3, 3, W*0.3, H*0.35);
+    ctx.strokeRect(3, H - H*0.35 - 3, W*0.3, H*0.35);
+    ctx.strokeRect(W - W*0.3 - 3, H - H*0.35 - 3, W*0.3, H*0.35);
+  } else if (arch === 'slab') {
+    // Long row of offices with central corridor
+    ctx.beginPath(); ctx.moveTo(3, H/2); ctx.lineTo(W-3, H/2); ctx.stroke();
+    for (let i = 1; i < 5; i++) { const x = 3 + (W-6) * i / 5; ctx.beginPath(); ctx.moveTo(x, 3); ctx.lineTo(x, H-3); ctx.stroke(); }
+  } else if (arch === 'warehouse') {
+    // 2 large bays + loading dock
+    ctx.beginPath(); ctx.moveTo(W/2, 3); ctx.lineTo(W/2, H-3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, H-20); ctx.lineTo(W-3, H-20); ctx.stroke();
+    for (let i = 0; i < 4; i++) { const x = 3 + (W-6) * i / 4; ctx.strokeRect(x + 2, H-18, (W-6)/4 - 4, 14); }
+  } else if (arch === 'residential') {
+    // 2x2 unit grid
+    ctx.beginPath(); ctx.moveTo(W/2, 3); ctx.lineTo(W/2, H-3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, H/2); ctx.lineTo(W-3, H/2); ctx.stroke();
+    // Small windows in each unit
+    [[W*0.25-4, H*0.25-3],[W*0.75-4, H*0.25-3],[W*0.25-4, H*0.75-3],[W*0.75-4, H*0.75-3]].forEach(([x,y]) => ctx.strokeRect(x, y, 8, 6));
+  } else if (arch === 'campus') {
+    // 3 buildings
+    ctx.strokeRect(3, 3, W*0.3, H-6);
+    ctx.strokeRect(W*0.35, 3, W*0.3, H*0.55);
+    ctx.strokeRect(W*0.7, 3, W*0.27, H-6);
+  } else {
+    // midrise / default: 2 rooms + corridor
+    ctx.beginPath(); ctx.moveTo(3, H*0.45); ctx.lineTo(W-3, H*0.45); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, H*0.55); ctx.lineTo(W-3, H*0.55); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2, 3); ctx.lineTo(W/2, H*0.45); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2, H*0.55); ctx.lineTo(W/2, H-3); ctx.stroke();
+  }
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function WorldView() {
@@ -673,6 +720,16 @@ export function WorldView() {
   const cityLightRef   = useRef({ sunI: 2.5, hemiI: 0.5, fogColor: 0xe8f0f8, fogDensity: 0.0014 });
   // Minimap teleport target (lerped each frame)
   const minimapPanRef  = useRef<THREE.Vector3 | null>(null);
+  // Minimap pulse on teleport click
+  const mmPulseRef     = useRef<{ px: number; pz: number; t: number } | null>(null);
+  // Bird's eye fly-to target
+  const birdEyeTargetRef = useRef<{ phi: number; radius: number } | null>(null);
+  // Floor plan canvas ref (building info card)
+  const floorPlanRef   = useRef<HTMLCanvasElement>(null);
+
+  // District HUD
+  const [districtLabel, setDistrictLabel] = useState<string | null>(null);
+  const districtLabelRef = useRef<string | null>(null);
 
   // Callback refs — set inside useEffect so they close over orbit vars
   const enterBuildingCallbackRef = useRef<((block: BlockInfo) => void) | null>(null);
@@ -760,6 +817,12 @@ export function WorldView() {
     const hemi = new THREE.HemisphereLight('#C8D8F0', '#E8EEE4', 0.5);
     scene.add(hemi);
 
+    // Night light meshes (populated during building loop)
+    const nightLightMeshes: THREE.Mesh[] = [];
+    const nightAmbient = new THREE.PointLight('#FF9030', 0, 700);
+    nightAmbient.position.set(0, 50, 0);
+    scene.add(nightAmbient);
+
     // ── Time of day ───────────────────────────────────────────────────────────
     function applyTimeOfDay() {
       const now = new Date();
@@ -772,6 +835,14 @@ export function WorldView() {
       hemi.intensity = cfg.hemiIntensity;
       scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
+      // Bloom by time of day
+      const hr = now.getHours() + now.getMinutes() / 60;
+      const isDay2 = hr >= 6 && hr < 18;
+      bloom.intensity = !isDay2 ? 1.2 : (hr < 7.5 || hr >= 16.5) ? 0.5 : 0.12;
+      // Night lights (come on at dusk 4:30pm, off after dawn 7:30am)
+      const showNight = hr >= 16.5 || hr < 7.5;
+      for (const m of nightLightMeshes) m.visible = showNight;
+      nightAmbient.intensity = showNight ? 0.55 : 0;
     }
     applyTimeOfDay();
     const todInterval = setInterval(applyTimeOfDay, 60_000);
@@ -895,7 +966,17 @@ export function WorldView() {
     }
 
     const parkMat  = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
-    const waterMat = new THREE.MeshStandardMaterial({ color: '#4A90C8', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.82 });
+    const waterMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform float uTime; varying vec2 vUv;
+        void main() {
+          float w = sin(vUv.x*8.0 + uTime*0.9) * sin(vUv.y*6.0 + uTime*0.7) * 0.5 + 0.5;
+          vec3 c = mix(vec3(0.22,0.44,0.62), vec3(0.35,0.62,0.80), w);
+          gl_FragColor = vec4(c, 0.82 + w*0.06);
+        }`,
+    });
 
     for (let row = -HALF; row <= HALF; row++) {
       for (let col = -HALF; col <= HALF; col++) {
@@ -1014,6 +1095,32 @@ export function WorldView() {
             }
           });
           cityGroup.add(group);
+
+          // Night window lights (NYC-style scattered lit windows)
+          const archH = blockArchetypeMapRef.current.get(`${col},${row}`)?.height ?? 6;
+          const nlW = p.arch === 'slab' ? 16 : p.arch === 'warehouse' ? 18 : 8;
+          const nlD = p.arch === 'slab' ? 7  : p.arch === 'warehouse' ? 12 : 8;
+          const nlRng = seededRandom(`nl-${p.arch}-${col}-${row}`);
+          const nlN = 8 + Math.floor(nlRng() * 14);
+          const nlColors = ['#FFE88A', '#FFD060', '#FFF0B0', '#FFE0A0', '#E8F0FF', '#FFDCA0'];
+          for (let li = 0; li < nlN; li++) {
+            const side = Math.floor(nlRng() * 4);
+            const wy = 0.8 + nlRng() * Math.max(1, archH - 1.5);
+            let wx = 0, wz = 0, rotY = 0;
+            if (side === 0) { wx = (nlRng()-0.5)*nlW*0.8; wz = nlD/2+0.06; rotY = 0; }
+            else if (side === 1) { wx = (nlRng()-0.5)*nlW*0.8; wz = -nlD/2-0.06; rotY = Math.PI; }
+            else if (side === 2) { wx = nlW/2+0.06; wz = (nlRng()-0.5)*nlD*0.8; rotY = Math.PI/2; }
+            else { wx = -nlW/2-0.06; wz = (nlRng()-0.5)*nlD*0.8; rotY = -Math.PI/2; }
+            const nlM = new THREE.Mesh(
+              new THREE.PlaneGeometry(0.52, 0.42),
+              new THREE.MeshBasicMaterial({ color: nlColors[Math.floor(nlRng()*nlColors.length)], transparent: true, opacity: 0.88 })
+            );
+            nlM.position.set(cx + wx, wy, cz + wz);
+            nlM.rotation.y = rotY;
+            nlM.visible = false;
+            cityGroup.add(nlM);
+            nightLightMeshes.push(nlM);
+          }
         }
 
         const treeRng = seededRandom(`trees-${col}-${row}`);
@@ -1027,12 +1134,24 @@ export function WorldView() {
       }
     }
 
+    // Apply night lights for current real time (after loop populates array)
+    { const hn = new Date().getHours() + new Date().getMinutes()/60;
+      const sn = hn >= 16.5 || hn < 7.5;
+      for (const m of nightLightMeshes) m.visible = sn;
+      nightAmbient.intensity = sn ? 0.55 : 0; }
+
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
     let isDragging = false, isPanning = false;
     let lastX = 0, lastY = 0, clickStartX = 0, clickStartY = 0;
     const clickPt  = new THREE.Vector2();
-    const raycaster = new THREE.Raycaster();
+    const raycaster     = new THREE.Raycaster();
+    const hoverRaycaster = new THREE.Raycaster();
+    const zoomRaycaster  = new THREE.Raycaster();
+    const zoomPlane      = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     let selectedBlockState: BlockInfo | null = null;
+    let hoveredBlock: BlockInfo | null = null;
+    const hoveredMeshes: THREE.Mesh[] = [];
+    let zoomVelocity = 0;
 
     const onMouseDown = (e: MouseEvent) => {
       lastX = e.clientX; lastY = e.clientY;
@@ -1043,22 +1162,45 @@ export function WorldView() {
     canvas.addEventListener('mousedown', onMouseDown);
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      if (isPanning && viewModeRef.current === 'city') {
-        const panSpeed = orbitRadius * 0.0012;
-        const right = new THREE.Vector3();
-        right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
-        const fwd = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
-        orbitTarget.addScaledVector(right, -dx * panSpeed);
-        orbitTarget.addScaledVector(fwd,    dy * panSpeed);
-        orbitTarget.y = 0;
-      } else {
-        orbitTheta += dx * 0.005;
+      if (isDragging) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        if (isPanning && viewModeRef.current === 'city') {
+          const panSpeed = orbitRadius * 0.0012;
+          const right = new THREE.Vector3();
+          right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
+          const fwd = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(right, -dx * panSpeed);
+          orbitTarget.addScaledVector(fwd,    dy * panSpeed);
+          orbitTarget.y = 0;
+        } else {
+          orbitTheta += dx * 0.005;
+        }
+        updateCameraOrbit();
+      } else if (viewModeRef.current === 'city') {
+        // Hover highlight
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        hoverRaycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
+        const hits = hoverRaycaster.intersectObjects(allBuildingMeshes, false);
+        const newBlock = hits.length > 0 ? (blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null) : null;
+        if (newBlock !== hoveredBlock) {
+          for (const m of hoveredMeshes) (m.material as THREE.MeshStandardMaterial).emissive?.setHex(0x000000);
+          hoveredMeshes.length = 0;
+          hoveredBlock = newBlock;
+          if (newBlock) {
+            for (const [mesh, info] of blockMeshMap) {
+              if (info === newBlock) {
+                (mesh.material as THREE.MeshStandardMaterial).emissive?.setHex(0x1A2A3A);
+                hoveredMeshes.push(mesh);
+              }
+            }
+          }
+        }
+        canvas.style.cursor = newBlock ? 'pointer' : 'default';
       }
-      updateCameraOrbit();
     };
     document.addEventListener('mousemove', onMouseMove);
 
@@ -1101,10 +1243,22 @@ export function WorldView() {
       e.preventDefault();
       if (viewModeRef.current === 'interior') {
         orbitRadius = Math.max(4, Math.min(28, orbitRadius + e.deltaY * 0.06));
+        updateCameraOrbit();
       } else {
-        orbitRadius = Math.max(60, Math.min(500, orbitRadius + e.deltaY * 0.35));
+        // Smooth zoom easing via velocity
+        zoomVelocity += e.deltaY * 0.35;
+        // Zoom-to-cursor: move orbit target toward world point under mouse
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        zoomRaycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
+        const worldPt = new THREE.Vector3();
+        if (zoomRaycaster.ray.intersectPlane(zoomPlane, worldPt)) {
+          const t = Math.abs(e.deltaY * 0.35) / Math.max(orbitRadius, 1) * 0.55;
+          orbitTarget.lerp(worldPt, e.deltaY < 0 ? t : -t * 0.3);
+          orbitTarget.y = 0;
+        }
       }
-      updateCameraOrbit();
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
@@ -1185,6 +1339,15 @@ export function WorldView() {
       mmCtx.fillStyle = 'rgba(255,255,255,0.65)';
       mmCtx.font = 'bold 9px system-ui'; mmCtx.textAlign = 'center';
       mmCtx.fillText('N', 80, 12);
+      // Pulse ring on teleport
+      const pulse = mmPulseRef.current;
+      if (pulse) {
+        const pr = (1 - pulse.t) * 32;
+        mmCtx.beginPath(); mmCtx.arc(pulse.px, pulse.pz, pr, 0, Math.PI * 2);
+        mmCtx.strokeStyle = `rgba(255,255,255,${pulse.t * 0.9})`; mmCtx.lineWidth = 1.5; mmCtx.stroke();
+        pulse.t -= 0.04;
+        if (pulse.t <= 0) mmPulseRef.current = null;
+      }
       mmCtx.restore();
     }
 
@@ -1200,6 +1363,8 @@ export function WorldView() {
         0,
         Math.max(-bound, Math.min(bound, wz)),
       );
+      // Pulse ring at clicked pixel
+      mmPulseRef.current = { px: e.clientX - rect.left, pz: e.clientY - rect.top, t: 1.0 };
     };
     mmCanvas?.addEventListener('click', onMinimapClick);
 
@@ -1271,8 +1436,10 @@ export function WorldView() {
 
     // ── Animate ───────────────────────────────────────────────────────────────
     let rafId = 0;
+    let frameCount = 0;
     function animate() {
       rafId = requestAnimationFrame(animate);
+      frameCount++;
 
       // Fade transition
       const tr = transitionRef.current;
@@ -1349,6 +1516,45 @@ export function WorldView() {
         updateCameraOrbit();
       }
 
+      // Smooth zoom easing (city only)
+      if (viewModeRef.current === 'city' && Math.abs(zoomVelocity) > 0.05) {
+        const prev = orbitRadius;
+        orbitRadius = Math.max(60, Math.min(500, orbitRadius + zoomVelocity));
+        if (orbitRadius === prev) zoomVelocity = 0;
+        zoomVelocity *= 0.82;
+        updateCameraOrbit();
+      }
+
+      // Bird's eye fly-to
+      if (birdEyeTargetRef.current && viewModeRef.current === 'city') {
+        orbitPhi    = orbitPhi    * 0.88 + birdEyeTargetRef.current.phi    * 0.12;
+        orbitRadius = orbitRadius * 0.88 + birdEyeTargetRef.current.radius * 0.12;
+        if (Math.abs(orbitPhi - birdEyeTargetRef.current.phi) < 0.002 &&
+            Math.abs(orbitRadius - birdEyeTargetRef.current.radius) < 0.5) {
+          orbitPhi    = birdEyeTargetRef.current.phi;
+          orbitRadius = birdEyeTargetRef.current.radius;
+          birdEyeTargetRef.current = null;
+        }
+        updateCameraOrbit();
+      }
+
+      // Water animation
+      (waterMat as THREE.ShaderMaterial).uniforms.uTime.value += 0.012;
+
+      // District name HUD (every 45 frames)
+      if (frameCount % 45 === 0 && viewModeRef.current === 'city') {
+        let nearest: BlockInfo | null = null, minD = Infinity;
+        for (const b of blocks) {
+          const d = Math.hypot(b.cx - orbitTarget.x, b.cz - orbitTarget.z);
+          if (d < minD) { minD = d; nearest = b; }
+        }
+        const lbl = nearest ? nearest.label : null;
+        if (lbl !== districtLabelRef.current) {
+          districtLabelRef.current = lbl;
+          setDistrictLabel(lbl);
+        }
+      }
+
       composer.render();
       if (viewModeRef.current === 'city') drawMinimap();
     }
@@ -1372,6 +1578,15 @@ export function WorldView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Draw floor plan when selected building changes
+  useEffect(() => {
+    if (!selectedBlock || !floorPlanRef.current) return;
+    const ctx = floorPlanRef.current.getContext('2d');
+    if (!ctx) return;
+    const archData = blockArchetypeMapRef.current.get(`${selectedBlock.col},${selectedBlock.row}`);
+    drawFloorPlan(ctx, archData?.arch ?? 'midrise', ZONE_COLORS[selectedBlock.zone]);
+  }, [selectedBlock]);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden' }}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
@@ -1386,6 +1601,29 @@ export function WorldView() {
       {/* ── CITY MODE UI ── */}
       {viewMode === 'city' && (
         <>
+          {/* District name HUD */}
+          {districtLabel && (
+            <div key={districtLabel} style={{
+              position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
+              color: 'rgba(220,235,255,0.85)', fontSize: 13, fontWeight: 600,
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              textShadow: '0 1px 8px rgba(0,0,0,0.8)',
+              animation: 'fadeIn 0.4s ease-out', pointerEvents: 'none', zIndex: 10,
+            }}>{districtLabel}</div>
+          )}
+
+          {/* Bird's eye button */}
+          <button
+            onClick={() => { birdEyeTargetRef.current = { phi: 0.06, radius: 220 }; }}
+            title="Bird's eye view"
+            style={{
+              position: 'absolute', top: 16, right: 16, zIndex: 10,
+              background: 'rgba(10,15,30,0.8)', border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 8, padding: '6px 10px', color: '#94a3b8',
+              cursor: 'pointer', fontSize: 11, backdropFilter: 'blur(8px)',
+            }}
+          >⬆ Top</button>
+
           {/* Controls hint */}
           <div style={{
             position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
@@ -1407,12 +1645,13 @@ export function WorldView() {
             }}>
               <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }`}</style>
               <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{selectedBlock.label}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: ZONE_COLORS[selectedBlock.zone] }} />
                 <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>
                   {selectedBlock.zone} zone
                 </span>
               </div>
+              <canvas ref={floorPlanRef} width={158} height={80} style={{ display: 'block', marginBottom: 10, borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)' }} />
               <button
                 onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}
                 style={{
