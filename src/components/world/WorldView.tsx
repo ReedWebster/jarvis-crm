@@ -835,11 +835,8 @@ export function WorldView() {
       hemi.intensity = cfg.hemiIntensity;
       scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
-      // Bloom by time of day
-      const hr = now.getHours() + now.getMinutes() / 60;
-      const isDay2 = hr >= 6 && hr < 18;
-      bloom.intensity = !isDay2 ? 1.2 : (hr < 7.5 || hr >= 16.5) ? 0.5 : 0.12;
       // Night lights (come on at dusk 4:30pm, off after dawn 7:30am)
+      const hr = now.getHours() + now.getMinutes() / 60;
       const showNight = hr >= 16.5 || hr < 7.5;
       for (const m of nightLightMeshes) m.visible = showNight;
       nightAmbient.intensity = showNight ? 0.55 : 0;
@@ -1440,6 +1437,12 @@ export function WorldView() {
     function animate() {
       rafId = requestAnimationFrame(animate);
       frameCount++;
+
+      // Bloom intensity by time of day (update every ~45s; bloom is always initialized here)
+      if (frameCount % 2700 === 1) {
+        const hr = new Date().getHours() + new Date().getMinutes() / 60;
+        bloom.intensity = hr < 6 || hr >= 18 ? 1.2 : (hr < 7.5 || hr >= 16.5) ? 0.5 : 0.12;
+      }
 
       // Fade transition
       const tr = transitionRef.current;
