@@ -527,7 +527,7 @@ export interface AppState {
   timeCategories: TimeCategory[];
   timeBlocks: TimeBlock[];
   contacts: Contact[];
-  contactTags: string[];
+  contactTags: Array<{ name: string; color: string }>;
   courses: Course[];
   financialEntries: FinancialEntry[];
   savingsGoals: SavingsGoal[];

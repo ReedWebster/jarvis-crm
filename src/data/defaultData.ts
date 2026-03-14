@@ -112,8 +112,16 @@ export const DEFAULT_STATE: AppState = {
   timeBlocks: [],
 
   contactTags: [
-    'Investor', 'Professor', 'Partner', 'Friend', 'Recruit',
-    'Mentor', 'Client', 'Colleague', 'Family', 'Other',
+    { name: 'Investor',  color: '#60a5fa' },
+    { name: 'Professor', color: '#34d399' },
+    { name: 'Partner',   color: '#f472b6' },
+    { name: 'Friend',    color: '#fb923c' },
+    { name: 'Recruit',   color: '#a78bfa' },
+    { name: 'Mentor',    color: '#facc15' },
+    { name: 'Client',    color: '#38bdf8' },
+    { name: 'Colleague', color: '#4ade80' },
+    { name: 'Family',    color: '#f87171' },
+    { name: 'Other',     color: '#6b7280' },
   ],
 
   contacts: [
