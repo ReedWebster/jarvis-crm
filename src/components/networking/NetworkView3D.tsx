@@ -24,17 +24,16 @@ import { ContactMapPopup } from './ContactMapPopup';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-const PLAYER_HEIGHT  = 1.8;
-const PLAYER_SPEED   = 10;
-const PLAYER_RUN     = 1.6;
-const PLAYER_RADIUS  = 0.5;
-const MOUSE_SENS     = 0.0018;
-const NPC_INTERACT   = 2.8;
-const NPC_LOOK_DIST  = 10;
-const NPC_FADE_DIST  = 15;
-const HEAD_BOB_SPEED = 5;
-const HEAD_BOB_AMP   = 0.06;
-const DAY_CYCLE      = 600;
+// ─── ISOMETRIC CAMERA DEFAULTS ────────────────────────────────────────────────
+const ISO_RADIUS_DEFAULT = 180;
+const ISO_RADIUS_MIN     = 50;
+const ISO_RADIUS_MAX     = 380;
+const ISO_PHI            = 1.08;   // ~62° from zenith — matches reference image
+const NPC_LOOK_DIST      = 80;     // NPCs turn to face camera (large for iso view)
+const NPC_FADE_DIST      = 120;    // NPC label fade distance
+
+// ─── SOLAR / WEATHER ──────────────────────────────────────────────────────────
+const RAIN_TOGGLE_INTERVAL = 300; // seconds between weather changes
 const RAIN_COUNT     = 2500;
 const FOUNTAIN_COUNT = 140;
 
@@ -80,17 +79,25 @@ interface DistrictDef {
 }
 
 const DISTRICTS: DistrictDef[] = [
-  { id: 'byu',          name: 'BYU District',   cx:   0, cz: -65, w: 60, d: 50, mmColor: '#9B9EC8' },
-  { id: 'vanta',        name: 'Vanta HQ',        cx:  65, cz:   0, w: 60, d: 50, mmColor: '#7B9EC8' },
-  { id: 'rockcanyonai', name: 'Rock Canyon AI',  cx:  50, cz:  65, w: 60, d: 50, mmColor: '#9BBCD8' },
-  { id: 'neighborhood', name: 'Neighborhood',    cx: -65, cz:   0, w: 60, d: 50, mmColor: '#B8C8D8' },
-  { id: 'chapel',       name: 'Chapel District', cx: -50, cz: -55, w: 50, d: 40, mmColor: '#C8D8E8' },
-  { id: 'outskirts',    name: 'Outskirts',        cx:   0, cz:  65, w: 70, d: 55, mmColor: '#A8B8C8' },
+  // Core districts (original 6, repositioned for larger world)
+  { id: 'byu',          name: 'BYU District',     cx:   0, cz: -90,  w: 80,  d: 70,  mmColor: '#9B9EC8' },
+  { id: 'vanta',        name: 'Vanta HQ',          cx:  95, cz:   0,  w: 80,  d: 70,  mmColor: '#7B9EC8' },
+  { id: 'rockcanyonai', name: 'Rock Canyon AI',    cx:  75, cz:  95,  w: 80,  d: 70,  mmColor: '#9BBCD8' },
+  { id: 'neighborhood', name: 'Neighborhood',      cx: -95, cz:   0,  w: 80,  d: 70,  mmColor: '#B8C8D8' },
+  { id: 'chapel',       name: 'Chapel District',   cx: -75, cz: -80,  w: 70,  d: 60,  mmColor: '#C8D8E8' },
+  { id: 'outskirts',    name: 'Outskirts',          cx:   0, cz:  95,  w: 90,  d: 70,  mmColor: '#A8B8C8' },
+  // New districts filling the expanded world
+  { id: 'financial',    name: 'Financial District', cx:  40, cz: -190, w: 80,  d: 60,  mmColor: '#8AB0C8' },
+  { id: 'port',         name: 'Harbor & Port',      cx: -40, cz: -270, w: 100, d: 60,  mmColor: '#7098B8' },
+  { id: 'arts',         name: 'Arts District',      cx: -95, cz:  95,  w: 80,  d: 70,  mmColor: '#B8A8C8' },
+  { id: 'techcampus',   name: 'Tech Campus',        cx:  95, cz: -90,  w: 80,  d: 70,  mmColor: '#88B8C8' },
+  { id: 'suburbs',      name: 'Suburbs',            cx: -200, cz: 50,  w: 100, d: 80,  mmColor: '#C8D8C8' },
+  { id: 'midtown',      name: 'Midtown',            cx:   0, cz:   0,  w: 60,  d: 60,  mmColor: '#D0D8E8' },
 ];
 
 function assignDistrict(c: Contact): string {
-  const co  = (c.company      ?? '').toLowerCase();
-  const rel = (c.relationship ?? '').toLowerCase();
+  const co   = (c.company      ?? '').toLowerCase();
+  const rel  = (c.relationship ?? '').toLowerCase();
   const tags = c.tags as string[];
   if (co.includes('byu') || co.includes('brigham') || rel.includes('school') || rel.includes('university'))
     return 'byu';
@@ -104,6 +111,16 @@ function assignDistrict(c: Contact): string {
   if (tags.includes('church') || rel.includes('church') || rel.includes('lds') || rel.includes('bishop') ||
       co.includes('church') || co.includes('lds'))
     return 'chapel';
+  if (co.includes('finance') || co.includes('bank') || co.includes('invest') || tags.includes('Investor'))
+    return 'financial';
+  if (co.includes('port') || co.includes('ship') || co.includes('logistics') || co.includes('warehouse'))
+    return 'port';
+  if (co.includes('art') || co.includes('design') || co.includes('creative') || tags.includes('Creative'))
+    return 'arts';
+  if (co.includes('startup') || co.includes('venture') || rel.includes('mentor') || tags.includes('Mentor'))
+    return 'techcampus';
+  if (rel.includes('neighbor') || tags.includes('Neighbor') || tags.includes('Local'))
+    return 'suburbs';
   return 'outskirts';
 }
 
@@ -559,57 +576,176 @@ function buildArchetype(
 
 const BUILDING_DEFS: Record<string, Array<{ id: string; offsetX: number; offsetZ: number; archetype: CityBuildingArchetype; name: string }>> = {
   byu: [
-    { id: 'byu-0', offsetX:   0, offsetZ:   0, archetype: 'campus',      name: 'BYU Main' },
-    { id: 'byu-1', offsetX: -13, offsetZ:  -2, archetype: 'midrise',     name: 'Richards Hall' },
-    { id: 'byu-2', offsetX:  13, offsetZ:  -2, archetype: 'midrise',     name: 'Tanner Building' },
-    { id: 'byu-3', offsetX:   5, offsetZ: -14, archetype: 'spire',       name: 'Bell Tower' },
-    { id: 'byu-4', offsetX:  -6, offsetZ:  13, archetype: 'midrise',     name: 'Kimball Tower' },
-    { id: 'byu-5', offsetX:   7, offsetZ:  13, archetype: 'residential', name: 'Heritage Halls' },
-    { id: 'byu-6', offsetX: -13, offsetZ: -14, archetype: 'midrise',     name: 'JFSB' },
-    { id: 'byu-7', offsetX:  13, offsetZ: -14, archetype: 'midrise',     name: 'Maeser Building' },
+    { id: 'byu-0',  offsetX:   0, offsetZ:   0,  archetype: 'campus',      name: 'BYU Main' },
+    { id: 'byu-1',  offsetX: -18, offsetZ:  -3,  archetype: 'midrise',     name: 'Richards Hall' },
+    { id: 'byu-2',  offsetX:  18, offsetZ:  -3,  archetype: 'midrise',     name: 'Tanner Building' },
+    { id: 'byu-3',  offsetX:   5, offsetZ: -18,  archetype: 'spire',       name: 'Bell Tower' },
+    { id: 'byu-4',  offsetX:  -7, offsetZ:  18,  archetype: 'midrise',     name: 'Kimball Tower' },
+    { id: 'byu-5',  offsetX:   8, offsetZ:  18,  archetype: 'residential', name: 'Heritage Halls' },
+    { id: 'byu-6',  offsetX: -18, offsetZ: -18,  archetype: 'midrise',     name: 'JFSB' },
+    { id: 'byu-7',  offsetX:  18, offsetZ: -18,  archetype: 'midrise',     name: 'Maeser Building' },
+    { id: 'byu-8',  offsetX: -30, offsetZ:   0,  archetype: 'campus',      name: 'Engineering' },
+    { id: 'byu-9',  offsetX:  30, offsetZ:   0,  archetype: 'midrise',     name: 'Business Center' },
+    { id: 'byu-10', offsetX:   0, offsetZ:  28,  archetype: 'residential', name: 'Dorms A' },
+    { id: 'byu-11', offsetX: -16, offsetZ:  28,  archetype: 'residential', name: 'Dorms B' },
+    { id: 'byu-12', offsetX:  16, offsetZ:  28,  archetype: 'residential', name: 'Dorms C' },
+    { id: 'byu-13', offsetX: -30, offsetZ: -18,  archetype: 'midrise',     name: 'Library' },
+    { id: 'byu-14', offsetX:  30, offsetZ: -18,  archetype: 'midrise',     name: 'Science Hall' },
   ],
   vanta: [
-    { id: 'vanta-0', offsetX:   0, offsetZ:   0, archetype: 'podiumTower', name: 'Vanta HQ' },
-    { id: 'vanta-1', offsetX: -13, offsetZ:  -4, archetype: 'tower',       name: 'North Tower' },
-    { id: 'vanta-2', offsetX:  13, offsetZ:   4, archetype: 'tower',       name: 'East Tower' },
-    { id: 'vanta-3', offsetX:   0, offsetZ: -14, archetype: 'midrise',     name: 'Annex' },
-    { id: 'vanta-4', offsetX: -13, offsetZ:  13, archetype: 'slab',        name: 'Operations Center' },
-    { id: 'vanta-5', offsetX:  13, offsetZ: -14, archetype: 'midrise',     name: 'Partner Hub' },
-    { id: 'vanta-6', offsetX:  13, offsetZ:  13, archetype: 'midrise',     name: 'Investor Suite' },
+    { id: 'vanta-0',  offsetX:   0, offsetZ:   0,  archetype: 'podiumTower', name: 'Vanta HQ' },
+    { id: 'vanta-1',  offsetX: -18, offsetZ:  -5,  archetype: 'tower',       name: 'North Tower' },
+    { id: 'vanta-2',  offsetX:  18, offsetZ:   5,  archetype: 'tower',       name: 'East Tower' },
+    { id: 'vanta-3',  offsetX:   0, offsetZ: -18,  archetype: 'midrise',     name: 'Annex' },
+    { id: 'vanta-4',  offsetX: -18, offsetZ:  18,  archetype: 'slab',        name: 'Operations Center' },
+    { id: 'vanta-5',  offsetX:  18, offsetZ: -18,  archetype: 'midrise',     name: 'Partner Hub' },
+    { id: 'vanta-6',  offsetX:  18, offsetZ:  18,  archetype: 'midrise',     name: 'Investor Suite' },
+    { id: 'vanta-7',  offsetX: -32, offsetZ:   0,  archetype: 'tower',       name: 'West Tower' },
+    { id: 'vanta-8',  offsetX:  32, offsetZ:   0,  archetype: 'midrise',     name: 'Client Center' },
+    { id: 'vanta-9',  offsetX:   0, offsetZ:  28,  archetype: 'slab',        name: 'Conference Block' },
+    { id: 'vanta-10', offsetX: -32, offsetZ: -18,  archetype: 'midrise',     name: 'Sales Floor' },
+    { id: 'vanta-11', offsetX:  32, offsetZ: -18,  archetype: 'tower',       name: 'Finance Tower' },
+    { id: 'vanta-12', offsetX: -18, offsetZ: -28,  archetype: 'midrise',     name: 'HR Building' },
+    { id: 'vanta-13', offsetX:  18, offsetZ: -28,  archetype: 'midrise',     name: 'Legal Suite' },
   ],
   rockcanyonai: [
-    { id: 'rcai-0', offsetX:   0, offsetZ:   0, archetype: 'slab',    name: 'Tech Campus' },
-    { id: 'rcai-1', offsetX: -13, offsetZ:  -4, archetype: 'midrise', name: 'Innovation Hall' },
-    { id: 'rcai-2', offsetX:  13, offsetZ:  -4, archetype: 'campus',  name: 'Research Lab' },
-    { id: 'rcai-3', offsetX:   0, offsetZ: -14, archetype: 'tower',   name: 'AI Tower' },
-    { id: 'rcai-4', offsetX: -13, offsetZ:  12, archetype: 'midrise', name: 'Dev Studio' },
-    { id: 'rcai-5', offsetX:  13, offsetZ:  12, archetype: 'midrise', name: 'Data Center' },
-    { id: 'rcai-6', offsetX: -13, offsetZ: -14, archetype: 'midrise', name: 'Robotics Lab' },
+    { id: 'rcai-0',  offsetX:   0, offsetZ:   0,  archetype: 'slab',    name: 'Tech Campus' },
+    { id: 'rcai-1',  offsetX: -18, offsetZ:  -5,  archetype: 'midrise', name: 'Innovation Hall' },
+    { id: 'rcai-2',  offsetX:  18, offsetZ:  -5,  archetype: 'campus',  name: 'Research Lab' },
+    { id: 'rcai-3',  offsetX:   0, offsetZ: -18,  archetype: 'tower',   name: 'AI Tower' },
+    { id: 'rcai-4',  offsetX: -18, offsetZ:  16,  archetype: 'midrise', name: 'Dev Studio' },
+    { id: 'rcai-5',  offsetX:  18, offsetZ:  16,  archetype: 'midrise', name: 'Data Center' },
+    { id: 'rcai-6',  offsetX: -18, offsetZ: -18,  archetype: 'midrise', name: 'Robotics Lab' },
+    { id: 'rcai-7',  offsetX:  32, offsetZ:   0,  archetype: 'tower',   name: 'Cloud Tower' },
+    { id: 'rcai-8',  offsetX: -32, offsetZ:   0,  archetype: 'slab',    name: 'Server Farm' },
+    { id: 'rcai-9',  offsetX:   0, offsetZ:  28,  archetype: 'campus',  name: 'AI Park' },
+    { id: 'rcai-10', offsetX:  18, offsetZ: -28,  archetype: 'midrise', name: 'GPU Lab' },
+    { id: 'rcai-11', offsetX: -18, offsetZ: -28,  archetype: 'midrise', name: 'ML Center' },
+    { id: 'rcai-12', offsetX:  32, offsetZ:  16,  archetype: 'midrise', name: 'Incubator' },
+    { id: 'rcai-13', offsetX: -32, offsetZ:  16,  archetype: 'midrise', name: 'Accelerator' },
   ],
   neighborhood: [
-    { id: 'nb-0', offsetX:   0, offsetZ: -10, archetype: 'residential', name: 'Oak House' },
-    { id: 'nb-1', offsetX: -11, offsetZ: -10, archetype: 'residential', name: 'Maple Cottage' },
-    { id: 'nb-2', offsetX:  11, offsetZ: -10, archetype: 'residential', name: 'Cedar Home' },
-    { id: 'nb-3', offsetX:   0, offsetZ:   2, archetype: 'midrise',     name: 'Park Lofts' },
-    { id: 'nb-4', offsetX: -11, offsetZ:  10, archetype: 'residential', name: 'Birch House' },
-    { id: 'nb-5', offsetX:  11, offsetZ:  10, archetype: 'residential', name: 'Elm Place' },
-    { id: 'nb-6', offsetX: -11, offsetZ:   2, archetype: 'residential', name: 'Aspen Flat' },
+    { id: 'nb-0',  offsetX:   0, offsetZ: -14,  archetype: 'residential', name: 'Oak House' },
+    { id: 'nb-1',  offsetX: -14, offsetZ: -14,  archetype: 'residential', name: 'Maple Cottage' },
+    { id: 'nb-2',  offsetX:  14, offsetZ: -14,  archetype: 'residential', name: 'Cedar Home' },
+    { id: 'nb-3',  offsetX:   0, offsetZ:   2,  archetype: 'midrise',     name: 'Park Lofts' },
+    { id: 'nb-4',  offsetX: -14, offsetZ:  14,  archetype: 'residential', name: 'Birch House' },
+    { id: 'nb-5',  offsetX:  14, offsetZ:  14,  archetype: 'residential', name: 'Elm Place' },
+    { id: 'nb-6',  offsetX: -14, offsetZ:   2,  archetype: 'residential', name: 'Aspen Flat' },
+    { id: 'nb-7',  offsetX:  14, offsetZ:   2,  archetype: 'residential', name: 'Pine Ave' },
+    { id: 'nb-8',  offsetX: -28, offsetZ: -14,  archetype: 'residential', name: 'Walnut St' },
+    { id: 'nb-9',  offsetX:  28, offsetZ: -14,  archetype: 'residential', name: 'Chestnut Row' },
+    { id: 'nb-10', offsetX:   0, offsetZ: -28,  archetype: 'residential', name: 'Sycamore Lane' },
+    { id: 'nb-11', offsetX: -28, offsetZ:  14,  archetype: 'residential', name: 'Willow Way' },
+    { id: 'nb-12', offsetX:  28, offsetZ:  14,  archetype: 'residential', name: 'Poplar Path' },
+    { id: 'nb-13', offsetX: -28, offsetZ:   2,  archetype: 'residential', name: 'Grove House' },
+    { id: 'nb-14', offsetX:  28, offsetZ:   2,  archetype: 'residential', name: 'Meadow View' },
   ],
   chapel: [
-    { id: 'ch-0', offsetX:   0, offsetZ:   0, archetype: 'spire',       name: 'Chapel' },
-    { id: 'ch-1', offsetX: -12, offsetZ:  -4, archetype: 'midrise',     name: 'Parish Hall' },
-    { id: 'ch-2', offsetX:  12, offsetZ:  -4, archetype: 'midrise',     name: 'Community Center' },
-    { id: 'ch-3', offsetX:   0, offsetZ: -14, archetype: 'campus',      name: 'Rec Center' },
-    { id: 'ch-4', offsetX: -10, offsetZ:  12, archetype: 'residential', name: 'Clergy House' },
-    { id: 'ch-5', offsetX:  12, offsetZ:  12, archetype: 'midrise',     name: 'Youth Hall' },
+    { id: 'ch-0',  offsetX:   0, offsetZ:   0,  archetype: 'spire',       name: 'Chapel' },
+    { id: 'ch-1',  offsetX: -16, offsetZ:  -5,  archetype: 'midrise',     name: 'Parish Hall' },
+    { id: 'ch-2',  offsetX:  16, offsetZ:  -5,  archetype: 'midrise',     name: 'Community Center' },
+    { id: 'ch-3',  offsetX:   0, offsetZ: -18,  archetype: 'campus',      name: 'Rec Center' },
+    { id: 'ch-4',  offsetX: -14, offsetZ:  16,  archetype: 'residential', name: 'Clergy House' },
+    { id: 'ch-5',  offsetX:  16, offsetZ:  16,  archetype: 'midrise',     name: 'Youth Hall' },
+    { id: 'ch-6',  offsetX: -28, offsetZ:   0,  archetype: 'residential', name: 'Bishop Residence' },
+    { id: 'ch-7',  offsetX:  28, offsetZ:   0,  archetype: 'midrise',     name: 'Meetinghouse' },
+    { id: 'ch-8',  offsetX:   0, offsetZ:  24,  archetype: 'campus',      name: 'Family Center' },
+    { id: 'ch-9',  offsetX: -16, offsetZ: -18,  archetype: 'midrise',     name: 'Relief Society' },
+    { id: 'ch-10', offsetX:  16, offsetZ: -18,  archetype: 'residential', name: 'Mission Home' },
   ],
   outskirts: [
-    { id: 'os-0', offsetX:   0, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse A' },
-    { id: 'os-1', offsetX:  20, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse B' },
-    { id: 'os-2', offsetX: -20, offsetZ:   5, archetype: 'warehouse', name: 'Warehouse C' },
-    { id: 'os-3', offsetX:   0, offsetZ: -12, archetype: 'slab',      name: 'Industrial Slab' },
-    { id: 'os-4', offsetX:  20, offsetZ: -12, archetype: 'midrise',   name: 'Office Block' },
-    { id: 'os-5', offsetX: -20, offsetZ: -12, archetype: 'midrise',   name: 'Depot Office' },
+    { id: 'os-0',  offsetX:   0, offsetZ:   5,  archetype: 'warehouse', name: 'Warehouse A' },
+    { id: 'os-1',  offsetX:  24, offsetZ:   5,  archetype: 'warehouse', name: 'Warehouse B' },
+    { id: 'os-2',  offsetX: -24, offsetZ:   5,  archetype: 'warehouse', name: 'Warehouse C' },
+    { id: 'os-3',  offsetX:   0, offsetZ: -16,  archetype: 'slab',      name: 'Industrial Slab' },
+    { id: 'os-4',  offsetX:  24, offsetZ: -16,  archetype: 'midrise',   name: 'Office Block' },
+    { id: 'os-5',  offsetX: -24, offsetZ: -16,  archetype: 'midrise',   name: 'Depot Office' },
+    { id: 'os-6',  offsetX:   0, offsetZ:  25,  archetype: 'warehouse', name: 'Cold Storage' },
+    { id: 'os-7',  offsetX:  24, offsetZ:  25,  archetype: 'midrise',   name: 'Distribution' },
+    { id: 'os-8',  offsetX: -24, offsetZ:  25,  archetype: 'warehouse', name: 'Freight Hub' },
+    { id: 'os-9',  offsetX:  38, offsetZ:   0,  archetype: 'midrise',   name: 'East Block' },
+    { id: 'os-10', offsetX: -38, offsetZ:   0,  archetype: 'midrise',   name: 'West Block' },
+  ],
+  // ── New districts ──────────────────────────────────────────────────────────
+  financial: [
+    { id: 'fin-0',  offsetX:   0, offsetZ:   0,  archetype: 'podiumTower', name: 'Exchange Tower' },
+    { id: 'fin-1',  offsetX: -18, offsetZ:  -4,  archetype: 'tower',       name: 'Capital One' },
+    { id: 'fin-2',  offsetX:  18, offsetZ:   4,  archetype: 'tower',       name: 'Meridian Bank' },
+    { id: 'fin-3',  offsetX:   0, offsetZ: -16,  archetype: 'tower',       name: 'Reserve Plaza' },
+    { id: 'fin-4',  offsetX: -18, offsetZ:  16,  archetype: 'midrise',     name: 'Brokerage Row' },
+    { id: 'fin-5',  offsetX:  18, offsetZ: -16,  archetype: 'midrise',     name: 'Securities Bldg' },
+    { id: 'fin-6',  offsetX:  18, offsetZ:  16,  archetype: 'slab',        name: 'Trading Floor' },
+    { id: 'fin-7',  offsetX: -32, offsetZ:   0,  archetype: 'tower',       name: 'Vault Tower' },
+    { id: 'fin-8',  offsetX:  32, offsetZ:   0,  archetype: 'midrise',     name: 'Compliance Wing' },
+    { id: 'fin-9',  offsetX:   0, offsetZ:  24,  archetype: 'midrise',     name: 'Wealth Mgmt' },
+    { id: 'fin-10', offsetX: -18, offsetZ: -24,  archetype: 'tower',       name: 'Central Tower' },
+    { id: 'fin-11', offsetX:  18, offsetZ: -24,  archetype: 'midrise',     name: 'Advisory Suite' },
+  ],
+  port: [
+    { id: 'port-0', offsetX:   0, offsetZ:  10,  archetype: 'warehouse', name: 'Terminal A' },
+    { id: 'port-1', offsetX:  28, offsetZ:  10,  archetype: 'warehouse', name: 'Terminal B' },
+    { id: 'port-2', offsetX: -28, offsetZ:  10,  archetype: 'warehouse', name: 'Terminal C' },
+    { id: 'port-3', offsetX:   0, offsetZ: -10,  archetype: 'slab',      name: 'Port Authority' },
+    { id: 'port-4', offsetX:  28, offsetZ: -10,  archetype: 'midrise',   name: 'Customs Office' },
+    { id: 'port-5', offsetX: -28, offsetZ: -10,  archetype: 'warehouse', name: 'Container Yard' },
+    { id: 'port-6', offsetX:  44, offsetZ:   0,  archetype: 'warehouse', name: 'Dry Dock' },
+    { id: 'port-7', offsetX: -44, offsetZ:   0,  archetype: 'warehouse', name: 'Cargo Hub' },
+    { id: 'port-8', offsetX:  14, offsetZ:  24,  archetype: 'midrise',   name: 'Harbor Master' },
+    { id: 'port-9', offsetX: -14, offsetZ:  24,  archetype: 'warehouse', name: 'Ship Supplies' },
+  ],
+  arts: [
+    { id: 'arts-0',  offsetX:   0, offsetZ:   0,  archetype: 'spire',       name: 'Art Museum' },
+    { id: 'arts-1',  offsetX: -18, offsetZ:  -4,  archetype: 'slab',        name: 'Gallery Row' },
+    { id: 'arts-2',  offsetX:  18, offsetZ:  -4,  archetype: 'campus',      name: 'Design School' },
+    { id: 'arts-3',  offsetX:   0, offsetZ: -16,  archetype: 'midrise',     name: 'Studio Complex' },
+    { id: 'arts-4',  offsetX: -18, offsetZ:  16,  archetype: 'residential', name: 'Artist Lofts' },
+    { id: 'arts-5',  offsetX:  18, offsetZ:  16,  archetype: 'midrise',     name: 'Theater Hall' },
+    { id: 'arts-6',  offsetX: -30, offsetZ:   0,  archetype: 'midrise',     name: 'Music Conservatory' },
+    { id: 'arts-7',  offsetX:  30, offsetZ:   0,  archetype: 'slab',        name: 'Cinema Block' },
+    { id: 'arts-8',  offsetX:   0, offsetZ:  26,  archetype: 'residential', name: 'Bohemian Row' },
+    { id: 'arts-9',  offsetX: -18, offsetZ: -22,  archetype: 'midrise',     name: 'Workshop Hub' },
+    { id: 'arts-10', offsetX:  18, offsetZ: -22,  archetype: 'campus',      name: 'Innovation Lab' },
+  ],
+  techcampus: [
+    { id: 'tc-0',  offsetX:   0, offsetZ:   0,  archetype: 'slab',        name: 'HQ Building' },
+    { id: 'tc-1',  offsetX: -18, offsetZ:  -5,  archetype: 'campus',      name: 'R&D Center' },
+    { id: 'tc-2',  offsetX:  18, offsetZ:  -5,  archetype: 'tower',       name: 'Product Tower' },
+    { id: 'tc-3',  offsetX:   0, offsetZ: -18,  archetype: 'midrise',     name: 'Coworking Space' },
+    { id: 'tc-4',  offsetX: -18, offsetZ:  18,  archetype: 'slab',        name: 'Maker Space' },
+    { id: 'tc-5',  offsetX:  18, offsetZ:  18,  archetype: 'midrise',     name: 'Pitch Deck HQ' },
+    { id: 'tc-6',  offsetX: -32, offsetZ:   0,  archetype: 'campus',      name: 'Accelerator' },
+    { id: 'tc-7',  offsetX:  32, offsetZ:   0,  archetype: 'midrise',     name: 'VC Office' },
+    { id: 'tc-8',  offsetX:   0, offsetZ:  28,  archetype: 'slab',        name: 'Demo Day Hall' },
+    { id: 'tc-9',  offsetX:  18, offsetZ: -28,  archetype: 'midrise',     name: 'Tech Hub' },
+    { id: 'tc-10', offsetX: -18, offsetZ: -28,  archetype: 'midrise',     name: 'Startup Row' },
+  ],
+  suburbs: [
+    { id: 'sub-0',  offsetX:   0, offsetZ: -20,  archetype: 'residential', name: 'Elm Drive' },
+    { id: 'sub-1',  offsetX: -16, offsetZ: -20,  archetype: 'residential', name: 'Oak Lane' },
+    { id: 'sub-2',  offsetX:  16, offsetZ: -20,  archetype: 'residential', name: 'Pine Court' },
+    { id: 'sub-3',  offsetX:   0, offsetZ:   0,  archetype: 'midrise',     name: 'Town Square' },
+    { id: 'sub-4',  offsetX: -16, offsetZ:   0,  archetype: 'residential', name: 'Maple Circle' },
+    { id: 'sub-5',  offsetX:  16, offsetZ:   0,  archetype: 'residential', name: 'Birch Road' },
+    { id: 'sub-6',  offsetX:   0, offsetZ:  20,  archetype: 'residential', name: 'Cedar View' },
+    { id: 'sub-7',  offsetX: -16, offsetZ:  20,  archetype: 'residential', name: 'Willow Bend' },
+    { id: 'sub-8',  offsetX:  16, offsetZ:  20,  archetype: 'residential', name: 'Aspen Hill' },
+    { id: 'sub-9',  offsetX: -32, offsetZ: -10,  archetype: 'residential', name: 'Valley Home' },
+    { id: 'sub-10', offsetX:  32, offsetZ: -10,  archetype: 'residential', name: 'Summit House' },
+    { id: 'sub-11', offsetX: -32, offsetZ:  10,  archetype: 'residential', name: 'River Cottage' },
+    { id: 'sub-12', offsetX:  32, offsetZ:  10,  archetype: 'residential', name: 'Canyon Retreat' },
+    { id: 'sub-13', offsetX:   0, offsetZ: -35,  archetype: 'residential', name: 'Country Club' },
+  ],
+  midtown: [
+    { id: 'mt-0',  offsetX:   0, offsetZ:   0,  archetype: 'podiumTower', name: 'Central Plaza' },
+    { id: 'mt-1',  offsetX: -16, offsetZ:  -4,  archetype: 'tower',       name: 'North Spire' },
+    { id: 'mt-2',  offsetX:  16, offsetZ:   4,  archetype: 'tower',       name: 'South Spire' },
+    { id: 'mt-3',  offsetX:   0, offsetZ: -16,  archetype: 'midrise',     name: 'Civic Block' },
+    { id: 'mt-4',  offsetX: -16, offsetZ:  16,  archetype: 'slab',        name: 'Transit Hub' },
+    { id: 'mt-5',  offsetX:  16, offsetZ: -16,  archetype: 'midrise',     name: 'Hotel Row' },
+    { id: 'mt-6',  offsetX:  16, offsetZ:  16,  archetype: 'midrise',     name: 'Retail Block' },
+    { id: 'mt-7',  offsetX: -24, offsetZ:   0,  archetype: 'tower',       name: 'West Anchor' },
+    { id: 'mt-8',  offsetX:  24, offsetZ:   0,  archetype: 'tower',       name: 'East Anchor' },
   ],
 };
 
@@ -742,6 +878,7 @@ function spawnNPC(
   g.userData.strength    = strength;
   g.userData.labelDiv    = labelDiv;
   g.userData.spawnTime   = Date.now();
+  g.userData.contactId   = contact.id;   // for raycaster click-to-select
   g.scale.setScalar(0);
   g.userData.targetScale = 1;
 
@@ -767,8 +904,6 @@ export default function NetworkView3D({
   const labelRef   = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
 
-  const [isLocked,        setIsLocked]        = useState(false);
-  const [nearbyContact,   setNearbyContact]   = useState<Contact | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [search,          setSearch]          = useState('');
   const [districtFilter,  setDistrictFilter]  = useState('all');
@@ -777,13 +912,12 @@ export default function NetworkView3D({
   const [quality,         setQuality]         = useState<'low' | 'medium' | 'high'>('medium');
   const [tabOverlayOpen,  setTabOverlayOpen]  = useState(false);
   const [tabNearestBldId, setTabNearestBldId] = useState<string | null>(null);
+  const [solarInfo,       setSolarInfo]       = useState<string>('');  // e.g. "14:23 · 42° elevation"
 
   const filteredRef        = useRef(filteredIds);
   const searchRef          = useRef('');
   const districtFilterRef  = useRef('all');
   const isRainingRef       = useRef(false);
-  const isLockedRef        = useRef(false);
-  const nearbyRef          = useRef<Contact | null>(null);
   const selectedRef        = useRef<Contact | null>(null);
   const npcMeshesRef       = useRef<Map<string, NpcEntry>>(new Map());
 
@@ -841,19 +975,10 @@ export default function NetworkView3D({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'KeyE' && !selectedRef.current && nearbyRef.current) {
-        setSelectedContact(nearbyRef.current);
-        selectedRef.current = nearbyRef.current;
-      }
       if (e.code === 'Escape') {
         setSelectedContact(null);
         selectedRef.current = null;
         setTabOverlayOpen(false);
-      }
-      if (e.code === 'Tab' && tabNearestBldRef.current) {
-        e.preventDefault();
-        setTabOverlayOpen(prev => !prev);
-        setTabNearestBldId(tabNearestBldRef.current);
       }
     };
     window.addEventListener('keydown', onKey, true);
@@ -910,10 +1035,10 @@ export default function NetworkView3D({
     // ── Scene ──
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.fog = new THREE.FogExp2(0xe4eaf0, 0.002);
+    scene.fog = new THREE.FogExp2(0xe4eaf0, 0.0012); // lighter fog for large world
 
     // ── Custom gradient sky (architectural model look) ──
-    const skyGeo = new THREE.SphereGeometry(400, 32, 16);
+    const skyGeo = new THREE.SphereGeometry(900, 32, 16);
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {
@@ -951,9 +1076,9 @@ export default function NetworkView3D({
     for (let i = 0; i < 2000; i++) {
       const phi   = Math.acos(2 * Math.random() - 1);
       const theta = Math.random() * Math.PI * 2;
-      starPositions[i * 3]     = 275 * Math.sin(phi) * Math.cos(theta);
-      starPositions[i * 3 + 1] = 275 * Math.sin(phi) * Math.sin(theta);
-      starPositions[i * 3 + 2] = 275 * Math.cos(phi);
+      starPositions[i * 3]     = 700 * Math.sin(phi) * Math.cos(theta);
+      starPositions[i * 3 + 1] = 700 * Math.sin(phi) * Math.sin(theta);
+      starPositions[i * 3 + 2] = 700 * Math.cos(phi);
     }
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
@@ -968,11 +1093,11 @@ export default function NetworkView3D({
     sun.castShadow = true;
     sun.shadow.mapSize.set(8192, 8192);
     sun.shadow.camera.near   = 0.5;
-    sun.shadow.camera.far    = 400;
-    sun.shadow.camera.left   = -160;
-    sun.shadow.camera.right  = 160;
-    sun.shadow.camera.top    = 160;
-    sun.shadow.camera.bottom = -160;
+    sun.shadow.camera.far    = 900;
+    sun.shadow.camera.left   = -400;
+    sun.shadow.camera.right  = 400;
+    sun.shadow.camera.top    = 400;
+    sun.shadow.camera.bottom = -400;
     sun.shadow.bias = -0.0003;
     (sun.shadow as THREE.DirectionalLightShadow & { radius?: number }).radius = 3;
     scene.add(sun);
@@ -980,9 +1105,48 @@ export default function NetworkView3D({
     const hemi = new THREE.HemisphereLight('#C8D8F0', '#E0E8F0', 0.4);
     scene.add(hemi);
 
-    // ── Camera ──
-    const camera = new THREE.PerspectiveCamera(75, W / H, 0.1, 550);
-    camera.position.set(0, PLAYER_HEIGHT, 5);
+    // ── Camera — isometric orbit ──
+    const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1200);
+
+    // ── Solar position helper ──
+    function calcSunPosition(lat: number, lng: number, date: Date): { elevation: number; azimuth: number } {
+      void lng;
+      const doy    = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+      const decl   = -23.45 * Math.cos((2 * Math.PI / 365) * (doy + 10)) * (Math.PI / 180);
+      const hour   = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+      const ha     = (hour - 12) * 15 * (Math.PI / 180);
+      const latR   = lat * (Math.PI / 180);
+      const sinEl  = Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(ha);
+      const el     = Math.asin(Math.max(-1, Math.min(1, sinEl))) * (180 / Math.PI);
+      const cosAz  = (Math.sin(decl) - Math.sin(latR) * sinEl) / (Math.cos(latR) * Math.cos(Math.max(0.001, Math.abs(el)) * Math.PI / 180));
+      const az     = (hour >= 12 ? 1 : -1) * Math.acos(Math.max(-1, Math.min(1, cosAz))) * (180 / Math.PI);
+      return { elevation: el, azimuth: az };
+    }
+
+    // Geolocation — default to Utah (BYU area)
+    let userLat = 40.25, userLng = -111.65;
+    navigator.geolocation?.getCurrentPosition(pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+    });
+
+    // ── Orbit state ──
+    let orbitTarget = new THREE.Vector3(0, 0, 0);
+    let orbitRadius = ISO_RADIUS_DEFAULT;
+    let orbitTheta  = Math.PI / 4;   // azimuth — 45° NW angle like reference image
+    const orbitPhi  = ISO_PHI;       // fixed elevation
+
+    function updateCameraOrbit() {
+      const sinP = Math.sin(orbitPhi), cosP = Math.cos(orbitPhi);
+      const sinT = Math.sin(orbitTheta), cosT = Math.cos(orbitTheta);
+      camera.position.set(
+        orbitTarget.x + orbitRadius * sinP * sinT,
+        orbitTarget.y + orbitRadius * cosP,
+        orbitTarget.z + orbitRadius * sinP * cosT,
+      );
+      camera.lookAt(orbitTarget);
+    }
+    updateCameraOrbit();
 
     // ── Post-processing ──
     const composer = new EffectComposer(renderer);
@@ -997,82 +1161,162 @@ export default function NetworkView3D({
       bloomPass.enabled = q !== 'low';
     };
 
-    // ── Ground ──
+    // ── Ground (expanded world) ──
     const groundMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(400, 400),
+      new THREE.PlaneGeometry(1400, 1400),
       new THREE.MeshStandardMaterial({ color: '#E4EAF0', roughness: 0.95, metalness: 0 })
     );
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
 
-    // ── Roads ──
+    // ── Harbor / Water body (north edge) ──
+    const harborMat = new THREE.MeshStandardMaterial({
+      color: '#4A90C8', roughness: 0.05, metalness: 0.25, transparent: true, opacity: 0.82,
+    });
+    const harborMesh = new THREE.Mesh(new THREE.PlaneGeometry(800, 280), harborMat);
+    harborMesh.rotation.x = -Math.PI / 2;
+    harborMesh.position.set(0, -0.3, -470);
+    scene.add(harborMesh);
+
+    // Harbor seawall
+    const seawallMat = new THREE.MeshStandardMaterial({ color: '#C8CEDD', roughness: 0.85 });
+    const seawall = new THREE.Mesh(new THREE.BoxGeometry(800, 1.2, 2.5), seawallMat);
+    seawall.position.set(0, 0.6, -330);
+    seawall.castShadow = true;
+    scene.add(seawall);
+
+    // Animate harbor wave UV
+    const harborTex = (() => {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 256;
+      const ctx2 = cv.getContext('2d')!;
+      ctx2.fillStyle = '#4A90C8';
+      ctx2.fillRect(0, 0, 256, 256);
+      for (let i = 0; i < 20; i++) {
+        const grd = ctx2.createRadialGradient(
+          Math.random() * 256, Math.random() * 256, 4,
+          Math.random() * 256, Math.random() * 256, 40
+        );
+        grd.addColorStop(0, 'rgba(180,220,255,0.18)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx2.fillStyle = grd;
+        ctx2.fillRect(0, 0, 256, 256);
+      }
+      const t = new THREE.CanvasTexture(cv);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(6, 2);
+      return t;
+    })();
+    harborMat.map = harborTex;
+
+    // ── Manhattan-style street grid ──
     const roadMat  = new THREE.MeshStandardMaterial({ color: '#1C1C1E', roughness: 0.97, metalness: 0 });
     const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.9 });
+    const curbMat  = new THREE.MeshStandardMaterial({ color: '#C8CDD3', roughness: 0.85 });
+    const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.6 });
 
-    function addRoad(cx: number, cz: number, width: number, length: number, rotY = 0) {
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(width, length), roadMat);
+    // Major avenues (N-S, wide, every 50 units)
+    const MAJOR_AVENUES_X  = [-200, -150, -100, -50, 0, 50, 100, 150, 200];
+    const MINOR_STREETS_X  = [-175, -125, -75, -25, 25, 75, 125, 175];
+    // Major cross streets (E-W)
+    const MAJOR_STREETS_Z  = [-250, -200, -150, -100, -50, 0, 50, 100, 150];
+    const MINOR_STREETS_Z  = [-225, -175, -125, -75, -25, 25, 75, 125];
+
+    const GRID_EXTENT = 300; // how far roads extend
+
+    function addGridRoad(cx: number, cz: number, width: number, length: number, isNS: boolean) {
+      const geo = new THREE.PlaneGeometry(isNS ? width : length, isNS ? length : width);
+      const road = new THREE.Mesh(geo, roadMat);
       road.rotation.x = -Math.PI / 2;
-      road.rotation.z = rotY;
       road.position.set(cx, 0.01, cz);
       road.receiveShadow = true;
       scene.add(road);
+      // Sidewalks on each side
       for (const side of [-1, 1]) {
-        const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.5, length), swalkMat);
+        const swOff = (width / 2 + 1.2) * side;
+        const sw = new THREE.Mesh(
+          new THREE.PlaneGeometry(isNS ? 2.0 : length, isNS ? length : 2.0),
+          swalkMat
+        );
         sw.rotation.x = -Math.PI / 2;
-        sw.rotation.z = rotY;
-        const off = (width / 2 + 0.75) * side;
-        sw.position.set(cx + Math.cos(rotY) * off, 0.02, cz + Math.sin(rotY) * off);
+        sw.position.set(isNS ? cx + swOff : cx, 0.02, isNS ? cz : cz + swOff);
         sw.receiveShadow = true;
         scene.add(sw);
-        // Curb
-        const curbW = Math.abs(Math.cos(rotY)) > 0.7 ? 0.2 : length;
-        const curbL = Math.abs(Math.cos(rotY)) > 0.7 ? length : 0.2;
+        // Curb strip
         const curb = new THREE.Mesh(
-          new THREE.BoxGeometry(curbW, 0.14, curbL),
-          new THREE.MeshStandardMaterial({ color: '#C8CDD3', roughness: 0.85 })
+          new THREE.BoxGeometry(isNS ? 0.22 : length, 0.12, isNS ? length : 0.22),
+          curbMat
         );
-        const curbOff = (width / 2 + 0.05) * side;
-        curb.position.set(cx + Math.cos(rotY) * curbOff, 0.07, cz + Math.sin(rotY) * curbOff);
+        curb.position.set(isNS ? cx + (width / 2 + 0.08) * side : cx, 0.06,
+                          isNS ? cz : cz + (width / 2 + 0.08) * side);
         scene.add(curb);
+      }
+      // Center dash markings on major roads
+      if (width >= 8) {
+        const step = 5, dashLen = 2.2;
+        const lineCount = Math.floor(length / step);
+        for (let i = 0; i < lineCount; i++) {
+          const offset = -length / 2 + i * step + step / 2;
+          const d = new THREE.Mesh(
+            new THREE.PlaneGeometry(isNS ? 0.2 : dashLen, isNS ? dashLen : 0.2),
+            dashMat
+          );
+          d.rotation.x = -Math.PI / 2;
+          d.position.set(isNS ? cx : cx + offset, 0.015, isNS ? cz + offset : cz);
+          scene.add(d);
+        }
       }
     }
 
-    addRoad(0, 0, 8, 260);
-    addRoad(0, 0, 260, 8, Math.PI / 2);
-    addRoad(0,   -44, 6, 50);
-    addRoad(0,    44, 6, 50);
-    addRoad( 44,   0, 6, 50, Math.PI / 2);
-    addRoad(-44,   0, 6, 50, Math.PI / 2);
-    addRoad(-32, -38, 5, 80, Math.PI * 0.22);
-    addRoad( 32,  38, 5, 80, Math.PI * 0.22);
+    for (const x of MAJOR_AVENUES_X)  addGridRoad(x, -GRID_EXTENT / 2, 9, GRID_EXTENT, true);
+    for (const x of MINOR_STREETS_X)  addGridRoad(x, -GRID_EXTENT / 2, 5, GRID_EXTENT, true);
+    for (const z of MAJOR_STREETS_Z)  addGridRoad(0, z, 9, GRID_EXTENT * 2, false);
+    for (const z of MINOR_STREETS_Z)  addGridRoad(0, z, 5, GRID_EXTENT * 2, false);
 
-    // ── Road markings ──
-    const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.6 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.6 });
+    // ── Parks & Green Spaces ──
+    const parkGroundMat = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
+    const darkGrassMat  = new THREE.MeshStandardMaterial({ color: '#B8CCAC', roughness: 0.95 });
 
-    // N-S center dashes
-    for (let z = -128; z < 128; z += 5) {
-      if (Math.abs(z) < 18) continue;
-      const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.4), dashMat);
-      d.rotation.x = -Math.PI / 2;
-      d.position.set(0, 0.015, z);
-      scene.add(d);
+    function addPark(cx: number, cz: number, w: number, d: number, mat = parkGroundMat) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      p.rotation.x = -Math.PI / 2;
+      p.position.set(cx, 0.02, cz);
+      p.receiveShadow = true;
+      scene.add(p);
+      // Scatter trees
+      const rng = seededRandom(`park-${cx}-${cz}`);
+      const treeCount = Math.floor((w * d) / 120);
+      for (let i = 0; i < treeCount; i++) {
+        const tx = cx + (rng() - 0.5) * (w - 6);
+        const tz = cz + (rng() - 0.5) * (d - 6);
+        const tree = makeTree(tx, tz, seededRandom(`ptree-${i}-${cx}`), 'park');
+        scene.add(tree);
+      }
     }
-    // E-W center dashes
-    for (let x = -128; x < 128; x += 5) {
-      if (Math.abs(x) < 18) continue;
-      const d = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.18), dashMat);
-      d.rotation.x = -Math.PI / 2;
-      d.position.set(x, 0.015, 0);
-      scene.add(d);
-    }
-    // Crosswalk stripes at center intersection
-    for (let i = -3; i <= 3; i++) {
-      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 0.48), whiteMat);
-      stripe.rotation.x = -Math.PI / 2;
-      stripe.position.set(0, 0.016, 5.5 + i * 0.72);
-      scene.add(stripe);
+
+    // Central Park (large, between midtown and BYU district)
+    addPark(0, -40, 50, 30, darkGrassMat);
+    // Waterfront park (along harbor)
+    addPark(-80, -310, 120, 30, parkGroundMat);
+    addPark(80,  -310, 120, 30, parkGroundMat);
+    // Arts district plaza
+    addPark(-95, 130, 40, 25, darkGrassMat);
+    // Neighborhood park
+    addPark(-110, 20, 30, 20, parkGroundMat);
+    // Suburb green
+    addPark(-200, 80, 50, 35, parkGroundMat);
+
+    // ── Tree-lined major avenues ──
+    const avenueTreeRng = seededRandom('avenue-trees');
+    for (const x of [-100, 0, 100]) {
+      for (let z = -260; z < 160; z += 12) {
+        if (Math.abs(z) < 20) continue; // skip plaza area
+        for (const side of [-1, 1]) {
+          const tree = makeTree(x + side * 7.5, z + avenueTreeRng() * 3 - 1.5, seededRandom(`avtree-${x}-${z}-${side}`), 'avenue');
+          scene.add(tree);
+        }
+      }
     }
 
     // ── Central Plaza ──
@@ -1373,42 +1617,116 @@ export default function NetworkView3D({
     const rainMat = new THREE.PointsMaterial({ color: '#aaccff', size: 0.12, transparent: true, opacity: 0 });
     scene.add(new THREE.Points(rainGeo, rainMat));
 
-    // ── Player state ──
-    const keys: Record<string, boolean> = {};
-    let yaw = 0, pitch = 0, headBobT = 0, isMoving = false;
+    // ── Orbit + Pan + Zoom mouse controls ──
+    let isDragging   = false;
+    let isPanning    = false;
+    let lastMouseX   = 0, lastMouseY = 0;
+    const clickPointer = new THREE.Vector2();
+    const raycaster    = new THREE.Raycaster();
 
-    // ── Pointer lock ──
-    const onCanvasClick = () => { if (!isLockedRef.current) canvas.requestPointerLock(); };
-    canvas.addEventListener('click', onCanvasClick);
-
-    const onLockChange = () => {
-      const locked = document.pointerLockElement === canvas;
-      isLockedRef.current = locked;
-      setIsLocked(locked);
+    const onMouseDown = (e: MouseEvent) => {
+      lastMouseX = e.clientX; lastMouseY = e.clientY;
+      if (e.button === 2 || e.button === 1) { isDragging = true; isPanning = e.button === 1; }
+      else if (e.button === 0) { isDragging = true; isPanning = false; }
     };
-    document.addEventListener('pointerlockchange', onLockChange);
+    canvas.addEventListener('mousedown', onMouseDown);
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement !== canvas) return;
+    const onMouseMoveOrbit = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      lastMouseX = e.clientX; lastMouseY = e.clientY;
+      if (isPanning || e.button === 1) {
+        // Pan — move orbit target in camera-local XZ plane
+        const panSpeed = orbitRadius * 0.0012;
+        const rightVec = new THREE.Vector3();
+        const upVec    = new THREE.Vector3(0, 1, 0);
+        rightVec.crossVectors(camera.getWorldDirection(new THREE.Vector3()), upVec).normalize();
+        const fwdFlat = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+        orbitTarget.addScaledVector(rightVec, -dx * panSpeed);
+        orbitTarget.addScaledVector(fwdFlat,   dy * panSpeed);
+        orbitTarget.y = 0;
+      } else {
+        // Rotate azimuth only (pitch locked to ISO_PHI)
+        orbitTheta += dx * 0.005;
+      }
+      updateCameraOrbit();
+    };
+    document.addEventListener('mousemove', onMouseMoveOrbit);
+
+    const onMouseUp = (e: MouseEvent) => {
+      // Only register click if not dragging
+      const totalDelta = Math.abs(e.clientX - lastMouseX) + Math.abs(e.clientY - lastMouseY);
+      isDragging = false; isPanning = false;
+      if (e.button !== 0 || totalDelta > 4) return;
       if (selectedRef.current) return;
-      yaw   -= e.movementX * MOUSE_SENS;
-      pitch -= e.movementY * MOUSE_SENS;
-      pitch  = Math.max(-Math.PI / 2.4, Math.min(Math.PI / 2.4, pitch));
+      // Raycast to NPCs
+      const rect = canvas.getBoundingClientRect();
+      clickPointer.set(
+        ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+        -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(clickPointer, camera);
+      const npcObjects: THREE.Object3D[] = [];
+      for (const [, entry] of npcMeshesRef.current) {
+        if (entry.group.visible) entry.group.traverse(ch => { if (ch instanceof THREE.Mesh) npcObjects.push(ch); });
+      }
+      const hits = raycaster.intersectObjects(npcObjects, false);
+      if (hits.length > 0) {
+        // Walk up to find NPC group
+        let obj: THREE.Object3D | null = hits[0].object;
+        while (obj && !obj.userData.contactId) { obj = obj.parent; }
+        const contactId = obj?.userData.contactId as string | undefined;
+        if (contactId) {
+          const entry = npcMeshesRef.current.get(contactId);
+          if (entry) {
+            setSelectedContact(entry.contact);
+            selectedRef.current = entry.contact;
+          }
+        }
+      }
     };
-    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    // Prevent context menu on right-click
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    const onKeyDown = (e: KeyboardEvent) => { keys[e.code] = true; };
-    const onKeyUp   = (e: KeyboardEvent) => { keys[e.code] = false; };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup',   onKeyUp);
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      orbitRadius = Math.max(ISO_RADIUS_MIN, Math.min(ISO_RADIUS_MAX, orbitRadius + e.deltaY * 0.3));
+      updateCameraOrbit();
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
 
-    // ── Collision ──
-    const collRay = new THREE.Raycaster();
-    collRay.far   = PLAYER_RADIUS + 0.4;
-    function blocked(pos: THREE.Vector3, dir: THREE.Vector3): boolean {
-      collRay.set(new THREE.Vector3(pos.x, PLAYER_HEIGHT * 0.5, pos.z), dir.normalize());
-      return collRay.intersectObjects(collidables).some(h => !h.object.userData.isBuildingEntrance);
-    }
+    // Touch support (pinch-zoom + one-finger pan)
+    let lastTouchDist = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+      } else if (e.touches.length === 1) {
+        lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        orbitRadius = Math.max(ISO_RADIUS_MIN, Math.min(ISO_RADIUS_MAX, orbitRadius - (dist - lastTouchDist) * 0.5));
+        lastTouchDist = dist;
+        updateCameraOrbit();
+      } else if (e.touches.length === 1) {
+        const ddx = e.touches[0].clientX - lastMouseX;
+        const ddy = e.touches[0].clientY - lastMouseY;
+        lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY;
+        orbitTheta += ddx * 0.005;
+        updateCameraOrbit();
+      }
+    };
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
 
 
     // ── Resize ──
@@ -1455,16 +1773,13 @@ export default function NetworkView3D({
         mmCtx.rect(mx - rw / 2, mz - rd / 2, rw, rd);
         mmCtx.fill(); mmCtx.stroke();
       }
-      const px = 90 + camera.position.x * WORLD_SCL;
-      const pz = 90 + camera.position.z * WORLD_SCL;
-      mmCtx.save();
-      mmCtx.translate(px, pz);
-      mmCtx.rotate(-yaw);
-      mmCtx.fillStyle = '#ffffff';
-      mmCtx.beginPath();
-      mmCtx.moveTo(0, -7); mmCtx.lineTo(4, 5); mmCtx.lineTo(0, 2); mmCtx.lineTo(-4, 5);
-      mmCtx.closePath(); mmCtx.fill();
-      mmCtx.restore();
+      // Draw orbit target crosshair (where the camera is looking)
+      const tx = 90 + orbitTarget.x * WORLD_SCL;
+      const tz = 90 + orbitTarget.z * WORLD_SCL;
+      mmCtx.strokeStyle = '#ffffff';
+      mmCtx.lineWidth   = 2;
+      mmCtx.beginPath(); mmCtx.moveTo(tx - 5, tz); mmCtx.lineTo(tx + 5, tz); mmCtx.stroke();
+      mmCtx.beginPath(); mmCtx.moveTo(tx, tz - 5); mmCtx.lineTo(tx, tz + 5); mmCtx.stroke();
       mmCtx.fillStyle = 'rgba(255,255,255,0.7)';
       mmCtx.font = 'bold 10px system-ui'; mmCtx.textAlign = 'center';
       mmCtx.fillText('N', 90, 13);
@@ -1540,97 +1855,97 @@ export default function NetworkView3D({
         const shared = entry.contact.linkedProjects.some(p => selectedC.linkedProjects.includes(p));
         if (!shared) continue;
         const pts = [
-          selEntry.group.position.clone().setY(PLAYER_HEIGHT * 0.8),
-          entry.group.position.clone().setY(PLAYER_HEIGHT * 0.8),
+          selEntry.group.position.clone().setY(2.0),
+          entry.group.position.clone().setY(2.0),
         ];
         const geo  = new THREE.BufferGeometry().setFromPoints(pts);
         connGroup.add(new THREE.Line(geo, lineMat));
       }
     };
 
-    // ── Day/night ──
-    let dayTime      = 0.35;
-    let weatherTimer = (3 + Math.random() * 5) * 60;
-    let fogDensity   = 0.008;
+    // ── Real-time solar lighting ──
+    let fogDensity   = 0.002;
     let prevLampI    = 0;
+    let weatherTimer = (3 + Math.random() * 5) * RAIN_TOGGLE_INTERVAL;
+    let lastSolarUpdate = -60; // force immediate update
 
-    function updateDayNight(t: number, dt: number) {
+    function updateSolarLighting(dt: number) {
+      const now = new Date();
+      const elapsed = now.getTime() / 1000;
+
+      // Recalculate sun position once per minute (or on first frame)
       let sunC: THREE.Color;
-      let sunI: number, ambI: number, lampI: number;
+      let sunI: number, lampI: number;
       let fogC: THREE.Color;
 
-      // Sun elevation for Sky shader
-      let sunElevation: number;
-      if (t < 0.2)       sunElevation = -0.5;
-      else if (t < 0.5)  sunElevation = lerpN(-0.5, 1.05, (t - 0.2) / 0.3);
-      else if (t < 0.65) sunElevation = lerpN(1.05, 0.7,  (t - 0.5) / 0.15);
-      else if (t < 0.8)  sunElevation = lerpN(0.7, -0.5,  (t - 0.65) / 0.15);
-      else               sunElevation = -0.5;
+      if (elapsed - lastSolarUpdate >= 60) {
+        lastSolarUpdate = elapsed;
+        const { elevation, azimuth } = calcSunPosition(userLat, userLng, now);
 
-      sunVec.setFromSphericalCoords(1, Math.PI / 2 - sunElevation, 1.5);
-      skyMat.uniforms.uSunDir.value.copy(sunVec);
+        // Convert solar elevation + azimuth to Three.js directional light position
+        const elRad = elevation * (Math.PI / 180);
+        const azRad = azimuth   * (Math.PI / 180);
+        const lx = Math.cos(elRad) * Math.sin(azRad);
+        const ly = Math.sin(elRad);
+        const lz = Math.cos(elRad) * Math.cos(azRad);
+        sunVec.set(lx, ly, lz).normalize();
+        sun.position.set(lx * 200, ly * 200, lz * 200);
+        skyMat.uniforms.uSunDir.value.copy(sunVec);
 
-      // Compute light values for current time — cool blue palette
-      if (t < 0.2) {
-        sunC = new THREE.Color('#000820'); sunI = 0; ambI = 0; lampI = 2.2;
+        // Update solar info display
+        const h   = now.getHours().toString().padStart(2, '0');
+        const m   = now.getMinutes().toString().padStart(2, '0');
+        setSolarInfo(`${h}:${m} · ${Math.round(elevation)}° el`);
+      }
+
+      // Derive lighting values from current sun elevation
+      const elDeg = Math.asin(Math.max(-1, Math.min(1, sunVec.y))) * (180 / Math.PI);
+
+      if (elDeg < -5) {
+        // Night
+        sunC = new THREE.Color('#000820'); sunI = 0; lampI = 2.2;
         fogC = new THREE.Color('#0a0e18');
-        hemi.color.set('#0a0e2a'); hemi.groundColor.set('#0e1418'); hemi.intensity = 0.15;
+        hemi.color.set('#0a0e2a'); hemi.groundColor.set('#0e1418'); hemi.intensity = 0.12;
         skyMat.uniforms.uHorizon.value.set('#1a2030');
         skyMat.uniforms.uZenith.value.set('#0a0e1a');
-      } else if (t < 0.3) {
-        const tt = (t - 0.2) / 0.1;
-        sunC = new THREE.Color('#EEE8D8');
-        sunI = tt * 1.2; ambI = 0; lampI = lerpN(2.2, 0, tt);
-        fogC = lerpColor(new THREE.Color('#0a0e18'), new THREE.Color('#D0DCE8'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#0a0e2a'), new THREE.Color('#C8D8F0'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#0e1418'), new THREE.Color('#E0E8F0'), tt));
-        hemi.intensity = lerpN(0.15, 0.4, tt);
-        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#1a2030'), new THREE.Color('#E8F0F8'), tt));
-        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#0a0e1a'), new THREE.Color('#7BB8D4'), tt));
-      } else if (t < 0.5) {
-        const tt = (t - 0.3) / 0.2;
-        sunC = lerpColor(new THREE.Color('#EEE8D8'), new THREE.Color('#ffffff'), tt);
-        sunI = lerpN(1.2, 2.5, tt); ambI = 0; lampI = 0;
-        fogC = lerpColor(new THREE.Color('#D0DCE8'), new THREE.Color('#E4EAF0'), tt);
-        hemi.color.set('#C8D8F0'); hemi.groundColor.set('#E0E8F0'); hemi.intensity = lerpN(0.4, 0.4, tt);
-        skyMat.uniforms.uHorizon.value.set('#E8F0F8');
-        skyMat.uniforms.uZenith.value.set('#7BB8D4');
-      } else if (t < 0.65) {
-        sunC = new THREE.Color('#ffffff'); sunI = 2.5; ambI = 0; lampI = 0;
+      } else if (elDeg < 10) {
+        // Sunrise / sunset (golden hour)
+        const tt = (elDeg + 5) / 15;
+        sunC = lerpColor(new THREE.Color('#000820'), new THREE.Color('#FFB060'), tt);
+        sunI = lerpN(0, 1.4, tt); lampI = lerpN(2.2, 0, tt);
+        fogC = lerpColor(new THREE.Color('#0a0e18'), new THREE.Color('#D0C8A8'), tt);
+        hemi.color.set(lerpColor(new THREE.Color('#0a0e2a'), new THREE.Color('#E8C898'), tt));
+        hemi.groundColor.set(lerpColor(new THREE.Color('#0e1418'), new THREE.Color('#D8B888'), tt));
+        hemi.intensity = lerpN(0.12, 0.35, tt);
+        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#1a1010'), new THREE.Color('#FFB878'), tt));
+        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#0a0e1a'), new THREE.Color('#6898C8'), tt));
+      } else if (elDeg < 30) {
+        // Morning / late afternoon
+        const tt = (elDeg - 10) / 20;
+        sunC = lerpColor(new THREE.Color('#FFB060'), new THREE.Color('#FFF8E8'), tt);
+        sunI = lerpN(1.4, 2.2, tt); lampI = 0;
+        fogC = lerpColor(new THREE.Color('#D0C8A8'), new THREE.Color('#E4EAF0'), tt);
+        hemi.color.set(lerpColor(new THREE.Color('#E8C898'), new THREE.Color('#C8D8F0'), tt));
+        hemi.groundColor.set(lerpColor(new THREE.Color('#D8B888'), new THREE.Color('#E0E8F0'), tt));
+        hemi.intensity = lerpN(0.35, 0.4, tt);
+        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#FFB878'), new THREE.Color('#E8F0F8'), tt));
+        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#6898C8'), new THREE.Color('#7BB8D4'), tt));
+      } else {
+        // Full daytime (elevation ≥ 30°)
+        sunC = new THREE.Color('#ffffff'); sunI = 2.5; lampI = 0;
         fogC = new THREE.Color('#E4EAF0');
         hemi.color.set('#C8D8F0'); hemi.groundColor.set('#E0E8F0'); hemi.intensity = 0.4;
         skyMat.uniforms.uHorizon.value.set('#E8F0F8');
         skyMat.uniforms.uZenith.value.set('#7BB8D4');
-      } else if (t < 0.8) {
-        const tt = (t - 0.65) / 0.15;
-        sunC = lerpColor(new THREE.Color('#ffffff'), new THREE.Color('#EED8B8'), tt);
-        sunI = lerpN(2.5, 0.3, tt); ambI = 0; lampI = lerpN(0, 2.2, tt);
-        fogC = lerpColor(new THREE.Color('#E4EAF0'), new THREE.Color('#C8D0D8'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#C8D8F0'), new THREE.Color('#8899BB'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#E0E8F0'), new THREE.Color('#7888AA'), tt));
-        hemi.intensity = lerpN(0.4, 0.15, tt);
-        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#E8F0F8'), new THREE.Color('#1a2030'), tt));
-        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#7BB8D4'), new THREE.Color('#0a0e1a'), tt));
-      } else {
-        const tt = (t - 0.8) / 0.2;
-        sunC = new THREE.Color('#000820'); sunI = lerpN(0.3, 0, tt); ambI = 0; lampI = 2.2;
-        fogC = lerpColor(new THREE.Color('#C8D0D8'), new THREE.Color('#0a0e18'), tt);
-        hemi.color.set(lerpColor(new THREE.Color('#8899BB'), new THREE.Color('#0a0e2a'), tt));
-        hemi.groundColor.set(lerpColor(new THREE.Color('#7888AA'), new THREE.Color('#0e1418'), tt));
-        hemi.intensity = lerpN(0.15, 0.15, tt);
-        skyMat.uniforms.uHorizon.value.copy(lerpColor(new THREE.Color('#1a2030'), new THREE.Color('#1a2030'), tt));
-        skyMat.uniforms.uZenith.value.copy(lerpColor(new THREE.Color('#0a0e1a'), new THREE.Color('#0a0e1a'), tt));
       }
 
       (scene.fog as THREE.FogExp2).color = fogC;
-      sun.color = sunC;
+      sun.color    = sunC;
       sun.intensity = sunI;
-      void ambI; // no separate ambient light in Phase 4
 
-      // Sun direction light position (matches sky shader)
-      sun.position.set(sunVec.x * 120, sunVec.y * 120, sunVec.z * 120);
+      void windows; void vantaLedMats;
 
-      // Lamps
+      // Lamps on at night
       for (const lamp of lampGroups) {
         const lh = lamp.userData.lampHead  as THREE.Mesh;
         const ll = lamp.userData.lampLight as THREE.PointLight;
@@ -1640,13 +1955,7 @@ export default function NetworkView3D({
         if (ll) ll.intensity = lampI;
       }
 
-      // Windows — no emissive in white aesthetic (glass panels rely on sun/shadow)
-      void windows;
-
-      // Edge trim strips (subtle, no emissive in white aesthetic)
-      void vantaLedMats;
-
-      // Car lights
+      // Car lights at night
       const carOn = lampI > 0.5;
       for (const car of carGroups) {
         const hlMat = car.userData.hlMat as THREE.MeshStandardMaterial | undefined;
@@ -1655,13 +1964,9 @@ export default function NetworkView3D({
         if (tlMat) tlMat.emissiveIntensity = carOn ? 0.8 : 0;
       }
 
-      // Fountain night light
       fountainLight.intensity = lampI > 0.5 ? 0.8 : 0;
-
-      // Stars
       starMat.opacity = lerpN(starMat.opacity, lampI > 1.0 ? 0.6 : 0, dt * 0.8);
 
-      // Fog density — lighter in white aesthetic
       const fogTarget = isRainingRef.current ? 0.010
         : lampI > 1.5 ? 0.006
         : lampI > 0.3 ? 0.004
@@ -1696,9 +2001,8 @@ export default function NetworkView3D({
       const delta = Math.min((now - lastTime) / 1000, 0.1);
       lastTime    = now;
 
-      // Day/night
-      dayTime = (dayTime + delta / DAY_CYCLE) % 1;
-      updateDayNight(dayTime, delta);
+      // Solar lighting (real-time)
+      updateSolarLighting(delta);
 
       // Weather
       weatherTimer -= delta;
@@ -1748,6 +2052,9 @@ export default function NetworkView3D({
       // Water UV scroll
       waterTex.offset.x += delta * 0.04;
       waterTex.offset.y += delta * 0.015;
+      // Harbor UV scroll
+      harborTex.offset.x += delta * 0.008;
+      harborTex.offset.y += delta * 0.004;
 
       // Traffic signals
       for (const sig of trafficSignals) {
@@ -1763,42 +2070,7 @@ export default function NetworkView3D({
         }
       }
 
-      // Player movement
-      if (isLockedRef.current) {
-        const spd  = (keys['ShiftLeft'] || keys['ShiftRight']) ? PLAYER_SPEED * PLAYER_RUN : PLAYER_SPEED;
-        const mv   = new THREE.Vector3();
-        if (keys['KeyW'] || keys['ArrowUp'])    mv.z -= 1;
-        if (keys['KeyS'] || keys['ArrowDown'])  mv.z += 1;
-        if (keys['KeyA'] || keys['ArrowLeft'])  mv.x -= 1;
-        if (keys['KeyD'] || keys['ArrowRight']) mv.x += 1;
-        isMoving = mv.lengthSq() > 0;
-        if (isMoving) {
-          mv.normalize().applyEuler(new THREE.Euler(0, yaw, 0));
-          const mxDir = new THREE.Vector3(Math.sign(mv.x), 0, 0);
-          const mzDir = new THREE.Vector3(0, 0, Math.sign(mv.z));
-          if (Math.abs(mv.x) > 0.01 && !blocked(camera.position, mxDir))
-            camera.position.x += mv.x * spd * delta;
-          if (Math.abs(mv.z) > 0.01 && !blocked(camera.position, mzDir))
-            camera.position.z += mv.z * spd * delta;
-          camera.position.x = Math.max(-180, Math.min(180, camera.position.x));
-          camera.position.z = Math.max(-180, Math.min(180, camera.position.z));
-        }
-      } else { isMoving = false; }
-
-      camera.rotation.order = 'YXZ';
-      camera.rotation.y     = yaw;
-      camera.rotation.x     = pitch;
-
-      if (isMoving && isLockedRef.current) {
-        headBobT += delta * HEAD_BOB_SPEED;
-        camera.position.y = PLAYER_HEIGHT + Math.sin(headBobT) * HEAD_BOB_AMP;
-      } else {
-        camera.position.y = lerpN(camera.position.y, PLAYER_HEIGHT, delta * 8);
-      }
-
       // NPC loop
-      let closestDist    = Infinity;
-      let closestContact: Contact | null = null;
       const q     = searchRef.current.toLowerCase();
       const dFilt = districtFilterRef.current;
       const filt  = filteredRef.current;
@@ -1897,17 +2169,9 @@ export default function NetworkView3D({
           entry.headMat.transparent = targetOp < 1;
         }
 
-        // Proximity for interaction
-        if (g.visible && dist < NPC_INTERACT && dist < closestDist) {
-          closestDist    = dist;
-          closestContact = entry.contact;
-        }
       }
 
-      nearbyRef.current = closestContact;
-      setNearbyContact(closestContact);
-
-      // Track nearest building for Tab overlay
+      // Track nearest building for Tab overlay (not used in isometric mode but keep for data)
       let nearestBldId: string | null = null;
       let nearestBldDist = Infinity;
       for (const entry of buildingLabelRef.current) {
@@ -1943,11 +2207,12 @@ export default function NetworkView3D({
       renderer.dispose();
       composer.dispose();
       resizeObs.disconnect();
-      canvas.removeEventListener('click', onCanvasClick);
-      document.removeEventListener('pointerlockchange', onLockChange);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('keyup',   onKeyUp);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mousemove', onMouseMoveOrbit);
+      document.removeEventListener('mouseup', onMouseUp);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove',  onTouchMove);
       if (css2d.domElement.parentNode) css2d.domElement.parentNode.removeChild(css2d.domElement);
       syncNPCsRef.current        = null;
       updateConnLinesRef.current = null;
@@ -1969,59 +2234,15 @@ export default function NetworkView3D({
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       <div ref={labelRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
-      {/* Click-to-explore overlay — sits above all HUD elements */}
-      {!isLocked && !selectedContact && (
-        <div
-          onClick={() => canvasRef.current?.requestPointerLock()}
-          style={{
-            position: 'absolute', inset: 0, zIndex: 100,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(0,0,0,0.5)', cursor: 'pointer',
-          }}
-        >
-          <div style={{
-            background: 'rgba(10,15,30,0.92)', border: '1px solid rgba(255,255,255,0.18)',
-            borderRadius: 14, padding: '22px 40px', color: '#e2e8f0', textAlign: 'center',
-            backdropFilter: 'blur(12px)',
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>🏙️</div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Click to Explore</div>
-            <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.7 }}>
-              <b style={{ color: '#e2e8f0' }}>WASD</b> move &nbsp;·&nbsp;
-              <b style={{ color: '#e2e8f0' }}>Mouse</b> look &nbsp;·&nbsp;
-              <b style={{ color: '#e2e8f0' }}>Shift</b> run<br />
-              <b style={{ color: '#e2e8f0' }}>E</b> talk to contacts &nbsp;·&nbsp;
-              <b style={{ color: '#e2e8f0' }}>Esc</b> exit
-            </div>
-            <div style={{ marginTop: 14, display: 'flex', gap: 12, justifyContent: 'center', fontSize: 11 }}>
-              {[['hot','#FFD700','Hot'], ['warm','#4A90D9','Warm'], ['cold','#888','Cold'], ['personal','#9B59B6','Personal']].map(([, color, label]) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#94a3b8' }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: `0 0 5px ${color}` }} />
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Crosshair */}
-      {isLocked && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', pointerEvents: 'none' }}>
-          <div style={{ position: 'absolute', width: 18, height: 2, background: 'rgba(255,255,255,0.7)', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }} />
-          <div style={{ position: 'absolute', width: 2, height: 18, background: 'rgba(255,255,255,0.7)', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }} />
-        </div>
-      )}
-
-      {/* Interaction prompt */}
-      {isLocked && nearbyContact && !selectedContact && (
+      {/* Isometric controls hint — shown briefly, fades */}
+      {!selectedContact && (
         <div style={{
-          position: 'absolute', bottom: '28%', left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.72)', border: '1px solid rgba(255,255,255,0.25)',
-          borderRadius: 8, padding: '6px 18px', color: '#e2e8f0', fontSize: 13,
-          pointerEvents: 'none',
+          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 8, padding: '5px 14px', color: '#64748b', fontSize: 11,
+          pointerEvents: 'none', whiteSpace: 'nowrap',
         }}>
-          <span style={{ color: '#fbbf24', fontWeight: 700 }}>[E]</span> Talk to {nearbyContact.name}
+          Drag to rotate · Scroll to zoom · Right-drag to pan · Click contact to select
         </div>
       )}
 
@@ -2035,7 +2256,7 @@ export default function NetworkView3D({
       )}
 
       {/* Tab hint when near a building */}
-      {isLocked && tabNearestBldRef.current && !tabOverlayOpen && !selectedContact && (
+      {tabNearestBldRef.current && !tabOverlayOpen && !selectedContact && (
         <div style={{
           position: 'absolute', bottom: '22%', left: '50%', transform: 'translateX(-50%)',
           background: 'rgba(0,0,0,0.72)', border: '1px solid rgba(255,255,255,0.18)',
@@ -2114,8 +2335,8 @@ export default function NetworkView3D({
         </div>
       )}
 
-      {/* Top search/filter bar — only visible when locked */}
-      {isLocked && <div style={{
+      {/* Top search/filter bar */}
+      {<div style={{
         position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 12px',
         background: 'rgba(0,0,0,0.68)', backdropFilter: 'blur(8px)',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -2178,13 +2399,18 @@ export default function NetworkView3D({
         >
           {isRaining ? '🌧' : '☀️'}
         </button>
+
+        {solarInfo && (
+          <span style={{ color: '#64748b', fontSize: 10, marginLeft: 4, whiteSpace: 'nowrap' }}>
+            {solarInfo}
+          </span>
+        )}
       </div>}
 
-      {/* Minimap — always in DOM so ref is available on mount; hidden when not locked */}
+      {/* Minimap */}
       <div style={{
         position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
         boxShadow: '0 0 0 2px rgba(100,180,255,0.35)', zIndex: 10,
-        display: isLocked ? 'block' : 'none',
       }}>
         <canvas ref={minimapRef} width={180} height={180} style={{ display: 'block' }} />
       </div>
@@ -2220,7 +2446,7 @@ export default function NetworkView3D({
       )}
 
       {/* Legend + quality toggle (bottom-right) */}
-      {isLocked && (
+      {(
         <div style={{
           position: 'absolute', bottom: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 5,
           background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)',
