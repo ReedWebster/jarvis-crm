@@ -47,6 +47,7 @@ import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker'
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
 import { NetworkingMap } from './components/networking/NetworkingMap';
+import { WorldView } from './components/world/WorldView';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
@@ -83,6 +84,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
   networking: 'Networking Map',
+  world: 'World View',
   social: 'Social Command Center',
   dochub: 'Doc Hub',
   messaging: 'Messaging',
@@ -372,6 +374,8 @@ function MainApp() {
             onNavigateToCRM={() => setActiveSection('contacts')}
           />
         );
+      case 'world':
+        return <WorldView />;
       case 'social':
         return (
           <SocialHub
