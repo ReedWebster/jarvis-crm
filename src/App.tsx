@@ -206,6 +206,7 @@ function MainApp() {
   const [socialAccounts, setSocialAccounts] = useSupabaseStorage<SocialAccount[]>('jarvis:socialAccounts', []);
   const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
   const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
+  const [morningBriefing, setMorningBriefing] = useSupabaseStorage<import('./types').MorningBriefing | null>('jarvis:morning_briefing', null);
 
   // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
   useEffect(() => {
@@ -286,6 +287,8 @@ function MainApp() {
             setNotes={setNotes}
             todos={todos}
             setTodos={setTodos}
+            morningBriefing={morningBriefing}
+            onRefreshBriefing={setMorningBriefing}
           />
         );
       case 'identity':

@@ -519,6 +519,23 @@ export interface DocFile {
   content: string; // base64 data URL
 }
 
+// ─── MORNING BRIEFING ───────────────────────────────────────────────────────
+
+export interface MorningBriefing {
+  date: string;
+  generatedAt: string;
+  sections: {
+    executiveSummary: string;
+    priorityTasks: Array<{ title: string; reasoning: string; priority: string }>;
+    goalsCheckIn: Array<{ title: string; progress: number; note: string }>;
+    contactFollowUps: Array<{ name: string; reason: string }>;
+    habits: { yesterdayRate: number; focus: string[] };
+    strategicNotes: string[];
+    calendar: Array<{ time: string; title: string; prepNotes?: string }>;
+    emailDigest: Array<{ from: string; subject: string; summary: string; urgent: boolean }>;
+  };
+}
+
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
 
 export interface AppState {

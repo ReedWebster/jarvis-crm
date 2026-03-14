@@ -21,6 +21,7 @@ import type {
   HabitTracker,
   Note,
   TodoItem,
+  MorningBriefing,
 } from '../../types';
 import {
   getGreeting,
@@ -28,6 +29,7 @@ import {
   todayStr,
   generateId,
 } from '../../utils';
+import MorningBriefingCard from './MorningBriefingCard';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ interface Props {
   setNotes: (v: Note[] | ((p: Note[]) => Note[])) => void;
   todos: TodoItem[];
   setTodos: (v: TodoItem[] | ((p: TodoItem[]) => TodoItem[])) => void;
+  morningBriefing?: MorningBriefing | null;
+  onRefreshBriefing?: (newBriefing: MorningBriefing) => void;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -267,6 +271,8 @@ export default function DailyCommandBrief({
   setNotes,
   todos,
   setTodos,
+  morningBriefing,
+  onRefreshBriefing,
 }: Props) {
 
   const today = todayStr();
@@ -352,6 +358,12 @@ export default function DailyCommandBrief({
               </span>
             </div>
           </div>
+
+          {/* AI Morning Briefing */}
+          <MorningBriefingCard
+            briefing={morningBriefing ?? null}
+            onRefresh={onRefreshBriefing ?? (() => {})}
+          />
 
           {/* Today's Schedule — interactive snapshot */}
           <div className="caesar-card space-y-3">
