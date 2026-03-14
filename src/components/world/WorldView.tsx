@@ -361,20 +361,6 @@ function buildInteriorScene(
     for (const px of [-iW / 2 + ppW / 2, iW / 2 - ppW / 2]) {
       const p = new THREE.Mesh(new THREE.BoxGeometry(ppW, ppH, iD), ppMat.clone()); p.position.set(px, ppH / 2, 0); p.castShadow = true; group.add(p);
     }
-    // Panoramic skyline backdrops (4 sides)
-    const roofElev = buildingHeight / 4.0;
-    const bdH = 22, bdOff = 5;
-    const bdCfg: [number, number, number, number][] = [
-      [0, -iD/2 - bdOff, 0, iW * 1.7],
-      [0,  iD/2 + bdOff, Math.PI, iW * 1.7],
-      [-iW/2 - bdOff, 0,  Math.PI/2,  iD * 1.7],
-      [ iW/2 + bdOff, 0, -Math.PI/2,  iD * 1.7],
-    ];
-    for (const [bx, bz, bRot, bW] of bdCfg) {
-      const bdR = seededRandom(`roof-${bx.toFixed(0)}-${bz.toFixed(0)}-${block.col}-${block.row}`);
-      const bd = new THREE.Mesh(new THREE.PlaneGeometry(bW, bdH), new THREE.MeshBasicMaterial({ map: makeExteriorTexture(bdR, roofElev), side: THREE.DoubleSide }));
-      bd.position.set(bx, bdH / 2, bz); bd.rotation.y = bRot; group.add(bd);
-    }
     // ── Garden ─────────────────────────────────────────────────────────────────
     const soilMat  = new THREE.MeshStandardMaterial({ color: '#7A8A6C', roughness: 0.95 });
     const bedMat_  = new THREE.MeshStandardMaterial({ color: '#8A9A78', roughness: 0.9 });
@@ -1182,8 +1168,25 @@ export function WorldView() {
         );
         setTotalFloors(nFloors);
         const onRoof = floor === nFloors - 1;
+        const bHeight = archData?.height ?? 10;
         sun.intensity  = onRoof ? 1.8 : 0.3;
         hemi.intensity = onRoof ? 2.0 : 1.4;
+        if (onRoof) {
+          cityGroup.visible = true;
+          interiorGroupRef.current.position.set(block.cx, bHeight, block.cz);
+          orbitRadius = 60;
+          orbitPhi    = 1.05;
+          orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
+          scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+        } else {
+          cityGroup.visible = false;
+          interiorGroupRef.current.position.set(0, 0, 0);
+          orbitRadius = 18;
+          orbitPhi    = 1.25;
+          orbitTarget.set(0, 2.0, 0);
+          scene.fog = null;
+        }
+        updateCameraOrbit();
       }
       setCurrentFloor(floor);
       setInteriorSelection(null);
@@ -1206,8 +1209,6 @@ export function WorldView() {
           tr.alpha = 1;
           if (viewModeRef.current === 'interior') {
             // Switch to interior
-            cityGroup.visible = false;
-            interiorGroup.visible = true;
             const block = interiorBuildingRef.current!;
             const archData = blockArchetypeMapRef.current.get(`${block.col},${block.row}`);
             const nFloors = buildInteriorScene(
@@ -1216,18 +1217,33 @@ export function WorldView() {
               currentFloorRef.current, allInteriorMeshesRef
             );
             setTotalFloors(nFloors);
-            // Interior camera
-            orbitRadius = 18;
-            orbitPhi    = 1.25;
-            orbitTarget.set(0, 2.0, 0);
             const isRoof = currentFloorRef.current === nFloors - 1;
+            const bHeight = archData?.height ?? 10;
             sun.intensity  = isRoof ? 1.8 : 0.3;
             hemi.intensity = isRoof ? 2.0 : 1.4;
-            scene.fog = null;
+            if (isRoof) {
+              // Rooftop: show real city below, position garden on top of building
+              cityGroup.visible = true;
+              interiorGroup.visible = true;
+              interiorGroup.position.set(block.cx, bHeight, block.cz);
+              orbitRadius = 60;
+              orbitPhi    = 1.05;
+              orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
+              scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+            } else {
+              cityGroup.visible = false;
+              interiorGroup.visible = true;
+              interiorGroup.position.set(0, 0, 0);
+              orbitRadius = 18;
+              orbitPhi    = 1.25;
+              orbitTarget.set(0, 2.0, 0);
+              scene.fog = null;
+            }
           } else {
             // Restore city
             cityGroup.visible = true;
             interiorGroup.visible = false;
+            interiorGroup.position.set(0, 0, 0);
             const saved = savedCityCameraRef.current;
             orbitRadius = saved.radius;
             orbitTheta  = saved.theta;
