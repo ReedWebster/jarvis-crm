@@ -500,10 +500,10 @@ function FlashcardView({
       <div className="caesar-card flex flex-col items-center justify-center py-20 text-center">
         <CreditCard size={48} className="mb-4" style={{ color: 'var(--text-muted)' }} />
         <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
-          No contacts to show in flashcard view
+          All contacts have been tagged
         </p>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Adjust filters or add contacts, then try again.
+          Flashcard view only shows contacts with no tags assigned.
         </p>
         <button onClick={onBackToGrid} className="caesar-btn-ghost mt-4">
           Back to grid
@@ -1543,9 +1543,10 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
   }, [contacts, search, filterTag, filterFollowUp]);
 
   // Flashcard deck: filtered list, optionally shuffled
+  const untagged = useMemo(() => contacts.filter(c => c.tags.length === 0), [contacts]);
   const flashcardDeck = useMemo(
-    () => (flashcardShuffled ? shuffleArray([...filtered]) : filtered),
-    [filtered, flashcardShuffled]
+    () => (flashcardShuffled ? shuffleArray([...untagged]) : untagged),
+    [untagged, flashcardShuffled]
   );
 
   // CRUD helpers
@@ -2065,10 +2066,10 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
               color: viewMode === 'flashcard' ? 'var(--text-primary)' : 'var(--text-muted)',
               borderLeft: '1px solid var(--border)',
             }}
-            title="Flashcard view — flip through and sort"
+            title="Flashcard view — sort untagged contacts"
           >
             <CreditCard size={14} />
-            Flashcard
+            Flashcard {untagged.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs" style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>{untagged.length}</span>}
           </button>
         </div>
       </div>
