@@ -181,6 +181,7 @@ function MainApp() {
   const [timeBlocks, setTimeBlocks] = useSupabaseStorage<TimeBlock[]>('jarvis:timeBlocks', DEFAULT_STATE.timeBlocks);
   const [timeCategories, setTimeCategories] = useSupabaseStorage<TimeCategory[]>('jarvis:timeCategories', DEFAULT_STATE.timeCategories);
   const [contacts, setContacts] = useSupabaseStorage<Contact[]>('jarvis:contacts', DEFAULT_STATE.contacts);
+  const [contactTags, setContactTags] = useSupabaseStorage<string[]>('jarvis:contactTags', DEFAULT_STATE.contactTags);
   const [courses, setCourses] = useSupabaseStorage<Course[]>('jarvis:courses', DEFAULT_STATE.courses);
   const [financialEntries, setFinancialEntries] = useSupabaseStorage<FinancialEntry[]>('jarvis:financialEntries', DEFAULT_STATE.financialEntries);
   const [savingsGoals, setSavingsGoals] = useSupabaseStorage<SavingsGoal[]>('jarvis:savingsGoals', DEFAULT_STATE.savingsGoals);
@@ -308,6 +309,8 @@ function MainApp() {
           <ContactsCRM
             contacts={contacts}
             setContacts={setContacts}
+            contactTags={contactTags}
+            setContactTags={setContactTags}
             onNavigateToNetworking={() => setActiveSection('world')}
           />
         );

@@ -111,6 +111,11 @@ export const DEFAULT_STATE: AppState = {
 
   timeBlocks: [],
 
+  contactTags: [
+    'Investor', 'Professor', 'Partner', 'Friend', 'Recruit',
+    'Mentor', 'Client', 'Colleague', 'Family', 'Other',
+  ],
+
   contacts: [
     {
       id: 'ct-001',

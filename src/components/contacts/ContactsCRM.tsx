@@ -27,6 +27,9 @@ import {
   Linkedin,
   MapPin,
   X,
+  Tag,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
@@ -42,24 +45,17 @@ import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
-const TAG_COLORS: Record<ContactTag, string> = {
-  Investor: 'var(--text-muted)',
-  Professor: 'var(--text-muted)',
-  Resident: 'var(--text-muted)',
-  Partner: 'var(--text-muted)',
-  Friend: 'var(--text-secondary)',
-  Recruit: 'var(--text-muted)',
-  Mentor: 'var(--text-muted)',
-  Client: 'var(--text-muted)',
-  Colleague: 'var(--text-muted)',
-  Family: 'var(--text-secondary)',
-  Other: '#6b7280',
-};
-
-const ALL_TAGS: ContactTag[] = [
-  'Investor', 'Professor', 'Resident', 'Partner', 'Friend',
-  'Recruit', 'Mentor', 'Client', 'Colleague', 'Family', 'Other',
+// Palette for auto-assigning tag colors
+const TAG_PALETTE = [
+  '#60a5fa', '#34d399', '#f472b6', '#fb923c', '#a78bfa',
+  '#facc15', '#38bdf8', '#4ade80', '#f87171', '#e879f9',
+  '#fbbf24', '#2dd4bf', '#818cf8', '#fb7185', '#a3e635',
 ];
+
+function getTagColor(tag: string, allTags: string[]): string {
+  const idx = allTags.indexOf(tag);
+  return TAG_PALETTE[idx >= 0 ? idx % TAG_PALETTE.length : 0];
+}
 
 const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Text', 'LinkedIn'];
 
@@ -68,6 +64,8 @@ const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Text', 'LinkedIn'];
 interface Props {
   contacts: Contact[];
   setContacts: (v: Contact[] | ((p: Contact[]) => Contact[])) => void;
+  contactTags: string[];
+  setContactTags: (v: string[] | ((p: string[]) => string[])) => void;
   onNavigateToNetworking?: () => void;
 }
 
@@ -191,6 +189,7 @@ function StatsRow({ contacts }: { contacts: Contact[] }) {
 
 interface ContactCardProps {
   contact: Contact;
+  contactTags: string[];
   onEdit: () => void;
   onDelete: () => void;
   onDetail: () => void;
@@ -200,7 +199,7 @@ interface ContactCardProps {
   onUpdateTags: (tags: ContactTag[]) => void;
 }
 
-function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails, onUpdateTags }: ContactCardProps) {
+function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails, onUpdateTags }: ContactCardProps) {
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const health = calcRelationshipHealth(contact.lastContacted);
   const daysAgo = useMemo(() => {
@@ -286,9 +285,9 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
             onClick={(e) => { e.stopPropagation(); onUpdateTags(contact.tags.filter(t => t !== tag)); }}
             className="flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium transition-all"
             style={{
-              backgroundColor: `${TAG_COLORS[tag]}22`,
-              color: TAG_COLORS[tag],
-              border: `1px solid ${TAG_COLORS[tag]}55`,
+              backgroundColor: `${getTagColor(tag, contactTags)}22`,
+              color: getTagColor(tag, contactTags),
+              border: `1px solid ${getTagColor(tag, contactTags)}55`,
             }}
             title="Remove tag"
           >
@@ -311,17 +310,17 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
               onMouseLeave={() => setTagMenuOpen(false)}
             >
-              {ALL_TAGS.filter(t => !contact.tags.includes(t)).map(tag => (
+              {contactTags.filter(t => !contact.tags.includes(t)).map(tag => (
                 <button
                   key={tag}
                   onClick={(e) => { e.stopPropagation(); onUpdateTags([...contact.tags, tag]); setTagMenuOpen(false); }}
                   className="text-left text-xs px-2 py-1 rounded transition-colors hover:opacity-80"
-                  style={{ color: TAG_COLORS[tag] }}
+                  style={{ color: getTagColor(tag, contactTags) }}
                 >
                   {tag}
                 </button>
               ))}
-              {ALL_TAGS.filter(t => !contact.tags.includes(t)).length === 0 && (
+              {contactTags.filter(t => !contact.tags.includes(t)).length === 0 && (
                 <span className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>All tags added</span>
               )}
             </div>
@@ -410,6 +409,7 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
 
 interface FlashcardViewProps {
   deck: Contact[];
+  contactTags: string[];
   setContacts: (v: Contact[] | ((p: Contact[]) => Contact[])) => void;
   shuffled: boolean;
   onShuffleToggle: () => void;
@@ -418,6 +418,7 @@ interface FlashcardViewProps {
 
 function FlashcardView({
   deck,
+  contactTags,
   setContacts,
   shuffled,
   onShuffleToggle,
@@ -596,8 +597,8 @@ function FlashcardView({
                       className="px-2 py-0.5 rounded-md text-xs font-medium"
                       style={{
                         backgroundColor: 'var(--bg-elevated)',
-                        color: TAG_COLORS[tag],
-                        border: `1px solid ${TAG_COLORS[tag]}`,
+                        color: getTagColor(tag, contactTags),
+                        border: `1px solid ${getTagColor(tag, contactTags)}`,
                       }}
                     >
                       {tag}
@@ -613,16 +614,16 @@ function FlashcardView({
                 Set category
               </p>
               <div className="flex flex-wrap gap-2">
-                {ALL_TAGS.map((tag) => (
+                {contactTags.map((tag) => (
                   <button
                     key={tag}
                     type="button"
                     onClick={() => setTag(contact, tag)}
                     className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all border"
                     style={{
-                      borderColor: contact.tags.includes(tag) ? TAG_COLORS[tag] : 'var(--border)',
-                      backgroundColor: contact.tags.includes(tag) ? `${TAG_COLORS[tag]}20` : 'transparent',
-                      color: contact.tags.includes(tag) ? TAG_COLORS[tag] : 'var(--text-secondary)',
+                      borderColor: contact.tags.includes(tag) ? getTagColor(tag, contactTags) : 'var(--border)',
+                      backgroundColor: contact.tags.includes(tag) ? `${getTagColor(tag, contactTags)}20` : 'transparent',
+                      color: contact.tags.includes(tag) ? getTagColor(tag, contactTags) : 'var(--text-secondary)',
                     }}
                   >
                     {tag}
@@ -876,9 +877,10 @@ interface ContactFormModalProps {
   onSave: (data: ContactFormData) => void;
   initial?: Partial<ContactFormData>;
   title: string;
+  contactTags: string[];
 }
 
-function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFormModalProps) {
+function ContactFormModal({ isOpen, onClose, onSave, initial, title, contactTags }: ContactFormModalProps) {
   const emptyForm = (): ContactFormData => ({
     name: initial?.name ?? '',
     email: initial?.email ?? '',
@@ -1010,9 +1012,9 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
         <div>
           <label className="caesar-label">Tags</label>
           <div className="flex flex-wrap gap-2 mt-1">
-            {ALL_TAGS.map((tag) => {
+            {contactTags.map((tag) => {
               const selected = form.tags.includes(tag);
-              const color = TAG_COLORS[tag];
+              const color = getTagColor(tag, contactTags);
               return (
                 <button
                   key={tag}
@@ -1106,12 +1108,13 @@ interface ContactDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   contact: Contact | null;
+  contactTags: string[];
   onUpdate: (updated: Contact) => void;
   onSendEmail?: () => void;
   onViewEmails?: () => void;
 }
 
-function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
+function ContactDetailModal({ isOpen, onClose, contact, contactTags, onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
   const [newInteraction, setNewInteraction] = useState<Omit<ContactInteraction, 'id'>>(emptyInteraction());
   const [showAddInteraction, setShowAddInteraction] = useState(false);
 
@@ -1225,8 +1228,9 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
         <div>
           <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Tags</p>
           <div className="flex flex-wrap gap-1.5">
-            {ALL_TAGS.map((tag) => {
+            {contactTags.map((tag) => {
               const active = contact.tags.includes(tag);
+              const color = getTagColor(tag, contactTags);
               return (
                 <button
                   key={tag}
@@ -1238,9 +1242,9 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
                   }}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150"
                   style={{
-                    backgroundColor: active ? `${TAG_COLORS[tag]}25` : 'var(--bg-elevated)',
-                    color: active ? TAG_COLORS[tag] : 'var(--text-muted)',
-                    border: `1px solid ${active ? TAG_COLORS[tag] + '55' : 'var(--border)'}`,
+                    backgroundColor: active ? `${color}25` : 'var(--bg-elevated)',
+                    color: active ? color : 'var(--text-muted)',
+                    border: `1px solid ${active ? color + '55' : 'var(--border)'}`,
                   }}
                 >
                   {active ? <X size={10} /> : <Plus size={10} />}
@@ -1474,10 +1478,13 @@ function shuffleArray<T>(arr: T[]): T[] {
   return out;
 }
 
-export default function ContactsCRM({ contacts, setContacts, onNavigateToNetworking }: Props) {
+export default function ContactsCRM({ contacts, setContacts, contactTags, setContactTags, onNavigateToNetworking }: Props) {
   const toast = useToast();
   const { syncContacts, autoSync, deleteContact: deleteGoogleContact } = useGoogleContacts();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [manageTagsOpen, setManageTagsOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState<{ original: string; value: string } | null>(null);
+  const [newTagValue, setNewTagValue] = useState('');
 
   // One-time dedup of existing contacts on mount
   useEffect(() => {
@@ -1811,7 +1818,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
           const email = normalizeKey(row, 'email', 'email address');
           const rawTag = normalizeKey(row, 'tag', 'type', 'category', 'relationship type');
-          const tag = (ALL_TAGS.includes(rawTag as ContactTag) ? rawTag : 'Other') as ContactTag;
+          const tag = (contactTags.includes(rawTag) ? rawTag : 'Other') as ContactTag;
 
           newContacts.push({
             id: generateId(),
@@ -1930,6 +1937,13 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             </button>
           )}
           <button
+            onClick={() => setManageTagsOpen(true)}
+            className="caesar-btn flex items-center gap-2"
+          >
+            <Tag size={16} />
+            Manage Tags
+          </button>
+          <button
             onClick={() => setAddModalOpen(true)}
             className="caesar-btn-primary flex items-center gap-2"
           >
@@ -1987,18 +2001,18 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
               >
                 All Tags
               </button>
-              {ALL_TAGS.map((tag) => (
+              {contactTags.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => { setFilterTag(tag); setShowTagDropdown(false); }}
                   className="w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2"
-                  style={{ color: TAG_COLORS[tag] }}
+                  style={{ color: getTagColor(tag, contactTags) }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   <span
                     className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: TAG_COLORS[tag] }}
+                    style={{ backgroundColor: getTagColor(tag, contactTags) }}
                   />
                   {tag}
                 </button>
@@ -2077,6 +2091,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
       {viewMode === 'flashcard' && (
         <FlashcardView
           deck={flashcardDeck}
+          contactTags={contactTags}
           setContacts={setContacts}
           shuffled={flashcardShuffled}
           onShuffleToggle={() => setFlashcardShuffled((s) => !s)}
@@ -2103,6 +2118,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             <ContactCard
               key={contact.id}
               contact={contact}
+              contactTags={contactTags}
               onEdit={() => openEdit(contact)}
               onDelete={() => handleDelete(contact.id)}
               onDetail={() => openDetail(contact)}
@@ -2147,6 +2163,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
                       <ContactCard
                         key={contact.id}
                         contact={contact}
+                        contactTags={contactTags}
                         onEdit={() => openEdit(contact)}
                         onDelete={() => handleDelete(contact.id)}
                         onDetail={() => openDetail(contact)}
@@ -2170,6 +2187,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
         onClose={() => setAddModalOpen(false)}
         onSave={handleAdd}
         title="Add New Contact"
+        contactTags={contactTags}
       />
 
       {/* Edit Contact Modal */}
@@ -2197,6 +2215,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             notes: selectedContact.notes,
           } as any}
           title={`Edit — ${selectedContact.name}`}
+          contactTags={contactTags}
         />
       )}
 
@@ -2205,6 +2224,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
         isOpen={detailModalOpen}
         onClose={() => { setDetailModalOpen(false); setSelectedContact(null); }}
         contact={selectedContact}
+        contactTags={contactTags}
         onUpdate={handleUpdateContact}
         onSendEmail={() => selectedContact && openCompose(selectedContact)}
         onViewEmails={() => selectedContact && openThread(selectedContact)}
@@ -2236,6 +2256,132 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
           onClose={() => setThreadModalOpen(false)}
           onCompose={() => { setThreadModalOpen(false); setComposeModalOpen(true); }}
         />
+      )}
+
+      {/* Manage Tags Modal */}
+      {manageTagsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="caesar-card w-full max-w-md flex flex-col gap-4" style={{ maxHeight: '80vh', overflow: 'auto' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Manage Tags</h2>
+              <button onClick={() => { setManageTagsOpen(false); setEditingTag(null); setNewTagValue(''); }}>
+                <X size={18} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+
+            {/* Existing tags */}
+            <div className="flex flex-col gap-2">
+              {contactTags.map((tag) => (
+                <div key={tag} className="flex items-center gap-2">
+                  {editingTag?.original === tag ? (
+                    <>
+                      <input
+                        autoFocus
+                        value={editingTag.value}
+                        onChange={(e) => setEditingTag({ ...editingTag, value: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = editingTag.value.trim();
+                            if (!trimmed || (trimmed !== tag && contactTags.includes(trimmed))) return;
+                            const newTags = contactTags.map(t => t === tag ? trimmed : t);
+                            setContactTags(newTags);
+                            // Update all contacts that had the old tag
+                            setContacts(prev => prev.map(c => ({
+                              ...c,
+                              tags: c.tags.map(t => t === tag ? trimmed : t),
+                            })));
+                            setEditingTag(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingTag(null);
+                          }
+                        }}
+                        className="flex-1 px-2 py-1 rounded text-sm"
+                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }}
+                      />
+                      <button
+                        onClick={() => {
+                          const trimmed = editingTag.value.trim();
+                          if (!trimmed || (trimmed !== tag && contactTags.includes(trimmed))) return;
+                          const newTags = contactTags.map(t => t === tag ? trimmed : t);
+                          setContactTags(newTags);
+                          setContacts(prev => prev.map(c => ({
+                            ...c,
+                            tags: c.tags.map(t => t === tag ? trimmed : t),
+                          })));
+                          setEditingTag(null);
+                        }}
+                      >
+                        <Check size={16} style={{ color: 'var(--accent)' }} />
+                      </button>
+                      <button onClick={() => setEditingTag(null)}>
+                        <X size={16} style={{ color: 'var(--text-muted)' }} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className="flex-1 text-sm px-2 py-1 rounded font-medium"
+                        style={{
+                          color: getTagColor(tag, contactTags),
+                          backgroundColor: `${getTagColor(tag, contactTags)}15`,
+                          border: `1px solid ${getTagColor(tag, contactTags)}40`,
+                        }}
+                      >
+                        {tag}
+                      </span>
+                      <button onClick={() => setEditingTag({ original: tag, value: tag })} title="Rename">
+                        <Pencil size={14} style={{ color: 'var(--text-muted)' }} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`Delete tag "${tag}"? It will be removed from all contacts.`)) return;
+                          setContactTags(contactTags.filter(t => t !== tag));
+                          setContacts(prev => prev.map(c => ({
+                            ...c,
+                            tags: c.tags.filter(t => t !== tag),
+                          })));
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} style={{ color: 'var(--text-muted)' }} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Add new tag */}
+            <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <input
+                value={newTagValue}
+                onChange={(e) => setNewTagValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const trimmed = newTagValue.trim();
+                    if (!trimmed || contactTags.includes(trimmed)) return;
+                    setContactTags([...contactTags, trimmed]);
+                    setNewTagValue('');
+                  }
+                }}
+                placeholder="New tag name…"
+                className="flex-1 px-3 py-1.5 rounded text-sm"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+              />
+              <button
+                onClick={() => {
+                  const trimmed = newTagValue.trim();
+                  if (!trimmed || contactTags.includes(trimmed)) return;
+                  setContactTags([...contactTags, trimmed]);
+                  setNewTagValue('');
+                }}
+                className="caesar-btn-primary px-3 py-1.5 text-sm"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

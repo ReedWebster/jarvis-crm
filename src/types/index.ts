@@ -53,7 +53,7 @@ export interface TimeBlock {
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
 
-export type ContactTag = 'Investor' | 'Professor' | 'Resident' | 'Partner' | 'Friend' | 'Recruit' | 'Mentor' | 'Client' | 'Colleague' | 'Family' | 'Other';
+export type ContactTag = string;
 
 export interface ContactInteraction {
   id: string;
@@ -527,6 +527,7 @@ export interface AppState {
   timeCategories: TimeCategory[];
   timeBlocks: TimeBlock[];
   contacts: Contact[];
+  contactTags: string[];
   courses: Course[];
   financialEntries: FinancialEntry[];
   savingsGoals: SavingsGoal[];
