@@ -595,6 +595,49 @@ const ZONE_COLORS: Record<ZoneType, string> = {
   water:    '#7098B8',
 };
 
+// ─── TIME OF DAY ──────────────────────────────────────────────────────────────
+
+interface SkyConfig {
+  zenith: string; horizon: string; fogColor: number; fogDensity: number;
+  sunIntensity: number; hemiIntensity: number;
+  sunX: number; sunY: number; sunZ: number;
+}
+
+function getSkyConfig(hour: number): SkyConfig {
+  const t = Math.max(0, Math.min(1, (hour - 6) / 12)); // 0=6am, 0.5=noon, 1=6pm
+  const isDay = hour >= 6 && hour < 18;
+  const sunElev = Math.max(0, Math.sin(t * Math.PI));   // 0 at horizon, 1 at noon
+  const sunAz   = (t - 0.5) * Math.PI;                 // east → south → west
+  const sunX =  Math.sin(sunAz) * 200;
+  const sunY =  Math.max(8, sunElev * 200);
+  const sunZ = -Math.cos(sunAz) * 120;
+  if (!isDay) {
+    const deep = hour < 5 || hour >= 21;
+    return {
+      zenith: deep ? '#060A16' : '#0E1830', horizon: deep ? '#0C1020' : '#1A2A40',
+      fogColor: deep ? 0x060A16 : 0x0E1830, fogDensity: 0.003,
+      sunIntensity: 0, hemiIntensity: 0.06, sunX, sunY, sunZ,
+    };
+  }
+  if (hour < 7.5) return {
+    zenith: '#2A3A6A', horizon: '#F08040',
+    fogColor: 0xD87040, fogDensity: 0.0018,
+    sunIntensity: sunElev * 1.8, hemiIntensity: sunElev * 0.4, sunX, sunY, sunZ,
+  };
+  if (hour >= 16.5) return {
+    zenith: '#3A3060', horizon: '#E86030',
+    fogColor: 0xC05030, fogDensity: 0.0018,
+    sunIntensity: sunElev * 2.0, hemiIntensity: sunElev * 0.4, sunX, sunY, sunZ,
+  };
+  return {
+    zenith: '#7BB8D4', horizon: '#E8F0F8',
+    fogColor: 0xE8F0F8, fogDensity: 0.0014,
+    sunIntensity: 1.4 + sunElev * 1.2,
+    hemiIntensity: 0.3 + sunElev * 0.35,
+    sunX, sunY, sunZ,
+  };
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function WorldView() {
@@ -626,6 +669,11 @@ export function WorldView() {
   const allInteriorMeshesRef = useRef<THREE.Mesh[]>([]);
   const blockArchetypeMapRef = useRef<Map<string, { arch: string; height: number }>>(new Map());
 
+  // Time-of-day baseline (so exiting interior restores correct values)
+  const cityLightRef   = useRef({ sunI: 2.5, hemiI: 0.5, fogColor: 0xe8f0f8, fogDensity: 0.0014 });
+  // Minimap teleport target (lerped each frame)
+  const minimapPanRef  = useRef<THREE.Vector3 | null>(null);
+
   // Callback refs — set inside useEffect so they close over orbit vars
   const enterBuildingCallbackRef = useRef<((block: BlockInfo) => void) | null>(null);
   const exitBuildingCallbackRef  = useRef<(() => void) | null>(null);
@@ -652,7 +700,6 @@ export function WorldView() {
 
     // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
 
     // ── Groups ────────────────────────────────────────────────────────────────
     const cityGroup = new THREE.Group();
@@ -698,7 +745,6 @@ export function WorldView() {
 
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight('#ffffff', 2.5);
-    sun.position.set(120, 180, -100);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.near   = 1;
@@ -713,6 +759,22 @@ export function WorldView() {
 
     const hemi = new THREE.HemisphereLight('#C8D8F0', '#E8EEE4', 0.5);
     scene.add(hemi);
+
+    // ── Time of day ───────────────────────────────────────────────────────────
+    function applyTimeOfDay() {
+      const now = new Date();
+      const cfg = getSkyConfig(now.getHours() + now.getMinutes() / 60);
+      skyMat.uniforms.uHorizon.value.set(cfg.horizon);
+      skyMat.uniforms.uZenith.value.set(cfg.zenith);
+      skyMat.uniforms.uSunDir.value.set(cfg.sunX, cfg.sunY, cfg.sunZ).normalize();
+      sun.position.set(cfg.sunX, cfg.sunY, cfg.sunZ);
+      sun.intensity  = cfg.sunIntensity;
+      hemi.intensity = cfg.hemiIntensity;
+      scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
+      cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
+    }
+    applyTimeOfDay();
+    const todInterval = setInterval(applyTimeOfDay, 60_000);
 
     // ── Camera ────────────────────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(45, W / H, 0.5, 1200);
@@ -1126,6 +1188,21 @@ export function WorldView() {
       mmCtx.restore();
     }
 
+    // ── Minimap click-to-teleport ─────────────────────────────────────────────
+    const onMinimapClick = (e: MouseEvent) => {
+      if (viewModeRef.current !== 'city') return;
+      const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+      const wx = (e.clientX - rect.left - 80) / MM_SCALE;
+      const wz = (e.clientY - rect.top  - 80) / MM_SCALE;
+      const bound = HALF * STEP + 10;
+      minimapPanRef.current = new THREE.Vector3(
+        Math.max(-bound, Math.min(bound, wx)),
+        0,
+        Math.max(-bound, Math.min(bound, wz)),
+      );
+    };
+    mmCanvas?.addEventListener('click', onMinimapClick);
+
     // ── Enter / Exit / Floor callbacks ────────────────────────────────────────
     enterBuildingCallbackRef.current = (block: BlockInfo) => {
       if (transitionRef.current.active) return;
@@ -1249,9 +1326,9 @@ export function WorldView() {
             orbitTheta  = saved.theta;
             orbitPhi    = 1.08;
             orbitTarget.copy(saved.target);
-            sun.intensity  = 2.5;
-            hemi.intensity = 0.5;
-            scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+            sun.intensity  = cityLightRef.current.sunI;
+            hemi.intensity = cityLightRef.current.hemiI;
+            scene.fog      = new THREE.FogExp2(cityLightRef.current.fogColor, cityLightRef.current.fogDensity);
           }
           updateCameraOrbit();
           tr.direction = -1;
@@ -1260,6 +1337,16 @@ export function WorldView() {
           tr.active = false;
           if (fadeOverlayRef.current) fadeOverlayRef.current.style.opacity = '0';
         }
+      }
+
+      // Minimap teleport pan
+      if (minimapPanRef.current && viewModeRef.current === 'city') {
+        orbitTarget.lerp(minimapPanRef.current, 0.10);
+        if (orbitTarget.distanceTo(minimapPanRef.current) < 0.8) {
+          orbitTarget.copy(minimapPanRef.current);
+          minimapPanRef.current = null;
+        }
+        updateCameraOrbit();
       }
 
       composer.render();
@@ -1279,6 +1366,8 @@ export function WorldView() {
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove',  onTouchMove);
+      mmCanvas?.removeEventListener('click', onMinimapClick);
+      clearInterval(todInterval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1349,10 +1438,13 @@ export function WorldView() {
           )}
 
           {/* Minimap */}
-          <div style={{
-            position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
-            boxShadow: '0 0 0 2px rgba(100,180,255,0.3)', zIndex: 10,
-          }}>
+          <div
+            title={viewMode === 'city' ? 'Click to teleport' : undefined}
+            style={{
+              position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
+              boxShadow: '0 0 0 2px rgba(100,180,255,0.3)', zIndex: 10,
+              cursor: viewMode === 'city' ? 'crosshair' : 'default',
+            }}>
             <canvas ref={minimapRef} width={160} height={160} style={{ display: 'block' }} />
           </div>
 
