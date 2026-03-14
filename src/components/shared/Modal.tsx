@@ -39,7 +39,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
-      onClick={(e) => e.target === overlayRef.current && onClose()}
+      onMouseDown={(e) => e.target === overlayRef.current && onClose()}
     >
       <div
         className={`w-full sm:max-h-[90vh] max-h-[85dvh] rounded-t-2xl sm:rounded-2xl shadow-2xl animate-fade-in transition-colors duration-300 ${sizeClasses[size] ?? sizeClasses.md}`}
