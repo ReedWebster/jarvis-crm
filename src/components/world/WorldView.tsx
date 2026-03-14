@@ -260,6 +260,59 @@ function disposeGroup(group: THREE.Group) {
   group.clear();
 }
 
+// ─── EXTERIOR CANVAS TEXTURE ──────────────────────────────────────────────────
+
+function makeExteriorTexture(rng: () => number, elevationFloor: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  // Ground line shifts higher for higher floors (more sky, rooftop-level view)
+  const groundY = Math.max(90, Math.round(215 - elevationFloor * 11));
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+  skyGrad.addColorStop(0,   '#4A80A8');
+  skyGrad.addColorStop(0.5, '#7AAECE');
+  skyGrad.addColorStop(1,   '#C0DCF0');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, 512, groundY);
+  // Horizon haze
+  const hazeGrad = ctx.createLinearGradient(0, groundY * 0.65, 0, groundY);
+  hazeGrad.addColorStop(0, 'rgba(210,232,248,0)');
+  hazeGrad.addColorStop(1, 'rgba(225,242,252,0.6)');
+  ctx.fillStyle = hazeGrad;
+  ctx.fillRect(0, 0, 512, groundY);
+  // Far buildings (hazy silhouettes)
+  ctx.fillStyle = 'rgba(145,178,205,0.5)';
+  const nFar = 10 + Math.floor(rng() * 8);
+  for (let i = 0; i < nFar; i++) {
+    const bx = rng() * 560 - 25, bw = 16 + rng() * 44, bh = 22 + rng() * 88;
+    ctx.fillRect(bx, groundY - bh, bw, bh);
+  }
+  // Near buildings with lit windows
+  const nNear = 5 + Math.floor(rng() * 5);
+  for (let i = 0; i < nNear; i++) {
+    const bx = rng() * 540 - 15, bw = 26 + rng() * 54, bh = 38 + rng() * 78;
+    const r = 100 + Math.floor(rng() * 35), g = 130 + Math.floor(rng() * 35), b = 168 + Math.floor(rng() * 28);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.88)`;
+    ctx.fillRect(bx, groundY - bh, bw, bh);
+    const wCols = Math.max(1, Math.floor(bw / 9)), wRows = Math.max(1, Math.floor(bh / 12));
+    ctx.fillStyle = `rgba(${215 + Math.floor(rng()*30)},${230 + Math.floor(rng()*20)},255,${0.4 + rng()*0.35})`;
+    for (let wr = 0; wr < wRows; wr++) {
+      for (let wc = 0; wc < wCols; wc++) {
+        if (rng() > 0.32) ctx.fillRect(bx + wc*(bw/wCols)+1.5, groundY-bh+wr*(bh/wRows)+2.5, bw/wCols-3, bh/wRows-4.5);
+      }
+    }
+  }
+  // Ground / street
+  if (groundY < 256) {
+    const gGrad = ctx.createLinearGradient(0, groundY, 0, 256);
+    gGrad.addColorStop(0, '#B0BCC8'); gGrad.addColorStop(1, '#A0ACB8');
+    ctx.fillStyle = gGrad;
+    ctx.fillRect(0, groundY, 512, 256 - groundY);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
 function buildInteriorScene(
   group: THREE.Group,
   block: BlockInfo,
@@ -273,259 +326,276 @@ function buildInteriorScene(
 
   const rng = seededRandom(`interior-${block.col}-${block.row}-f${floor}`);
 
-  // Archetype-aware floor dimensions
-  let iW = 18, iD = 14;
-  if (arch === 'tower' || arch === 'spire') { iW = 11; iD = 11; }
-  else if (arch === 'podiumTower') { iW = 15; iD = 12; }
-  else if (arch === 'slab') { iW = 22; iD = 10; }
-  else if (arch === 'warehouse') { iW = 22; iD = 16; }
-  else if (arch === 'residential') { iW = 11; iD = 10; }
-  const iH = 3.5;
+  // Archetype-aware floor dimensions (larger — feels like a real building)
+  let iW = 32, iD = 24;
+  if (arch === 'tower' || arch === 'spire') { iW = 20; iD = 20; }
+  else if (arch === 'podiumTower') { iW = 28; iD = 22; }
+  else if (arch === 'slab')        { iW = 40; iD = 18; }
+  else if (arch === 'warehouse')   { iW = 42; iD = 28; }
+  else if (arch === 'residential') { iW = 20; iD = 16; }
+  const iH = 4.0;
+  const nRegularFloors = Math.max(1, Math.min(10, Math.floor(buildingHeight / 4.0)));
+  const isRooftop = floor === nRegularFloors;
+
+  // ── ROOFTOP ───────────────────────────────────────────────────────────────────
+  if (isRooftop) {
+    // Concrete pavement
+    const paveMat = new THREE.MeshStandardMaterial({ color: '#BEC8D0', roughness: 0.92 });
+    const floorR = new THREE.Mesh(new THREE.PlaneGeometry(iW, iD), paveMat);
+    floorR.rotation.x = -Math.PI / 2; floorR.receiveShadow = true;
+    group.add(floorR);
+    // Paving grid (larger tiles)
+    const gMatR = new THREE.MeshStandardMaterial({ color: '#A8B4BC', roughness: 0.95 });
+    for (let gx = -iW / 2; gx <= iW / 2; gx += 3) {
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(0.05, iD), gMatR); l.rotation.x = -Math.PI / 2; l.position.set(gx, 0.003, 0); group.add(l);
+    }
+    for (let gz = -iD / 2; gz <= iD / 2; gz += 3) {
+      const l = new THREE.Mesh(new THREE.PlaneGeometry(iW, 0.05), gMatR.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0, 0.003, gz); group.add(l);
+    }
+    // Parapet walls
+    const ppMat = new THREE.MeshStandardMaterial({ color: '#D0D8E0', roughness: 0.85 });
+    const ppH = 1.3, ppW = 0.42;
+    for (const pz of [-iD / 2 + ppW / 2, iD / 2 - ppW / 2]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(iW, ppH, ppW), ppMat.clone()); p.position.set(0, ppH / 2, pz); p.castShadow = true; group.add(p);
+    }
+    for (const px of [-iW / 2 + ppW / 2, iW / 2 - ppW / 2]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(ppW, ppH, iD), ppMat.clone()); p.position.set(px, ppH / 2, 0); p.castShadow = true; group.add(p);
+    }
+    // Panoramic skyline backdrops (4 sides)
+    const roofElev = buildingHeight / 4.0;
+    const bdH = 22, bdOff = 5;
+    const bdCfg: [number, number, number, number][] = [
+      [0, -iD/2 - bdOff, 0, iW * 1.7],
+      [0,  iD/2 + bdOff, Math.PI, iW * 1.7],
+      [-iW/2 - bdOff, 0,  Math.PI/2,  iD * 1.7],
+      [ iW/2 + bdOff, 0, -Math.PI/2,  iD * 1.7],
+    ];
+    for (const [bx, bz, bRot, bW] of bdCfg) {
+      const bdR = seededRandom(`roof-${bx.toFixed(0)}-${bz.toFixed(0)}-${block.col}-${block.row}`);
+      const bd = new THREE.Mesh(new THREE.PlaneGeometry(bW, bdH), new THREE.MeshBasicMaterial({ map: makeExteriorTexture(bdR, roofElev), side: THREE.DoubleSide }));
+      bd.position.set(bx, bdH / 2, bz); bd.rotation.y = bRot; group.add(bd);
+    }
+    // ── Garden ─────────────────────────────────────────────────────────────────
+    const soilMat  = new THREE.MeshStandardMaterial({ color: '#7A8A6C', roughness: 0.95 });
+    const bedMat_  = new THREE.MeshStandardMaterial({ color: '#8A9A78', roughness: 0.9 });
+    const leafG1   = new THREE.MeshStandardMaterial({ color: '#60984A', roughness: 0.85 });
+    const leafG2   = new THREE.MeshStandardMaterial({ color: '#78A858', roughness: 0.85 });
+    const benchMt  = new THREE.MeshStandardMaterial({ color: '#9AACB8', roughness: 0.8 });
+    const pergoMt  = new THREE.MeshStandardMaterial({ color: '#C8D4DC', roughness: 0.75 });
+    const pathMt   = new THREE.MeshStandardMaterial({ color: '#C0B8A8', roughness: 0.92 });
+    // Gravel paths
+    const p1 = new THREE.Mesh(new THREE.PlaneGeometry(1.8, iD * 0.62), pathMt); p1.rotation.x = -Math.PI / 2; p1.position.set(iW * 0.08, 0.004, -iD * 0.06); group.add(p1);
+    const p2 = new THREE.Mesh(new THREE.PlaneGeometry(iW * 0.52, 1.8), pathMt.clone()); p2.rotation.x = -Math.PI / 2; p2.position.set(-iW * 0.02, 0.004, iD * 0.14); group.add(p2);
+    // Raised planting beds
+    const bedDefs: [number, number, number, number][] = [
+      [-iW*0.28, -iD*0.26, iW*0.22, iD*0.18],
+      [ iW*0.26, -iD*0.28, iW*0.18, iD*0.20],
+      [-iW*0.28,  iD*0.22, iW*0.22, iD*0.17],
+      [ iW*0.26,  iD*0.22, iW*0.18, iD*0.17],
+    ];
+    for (const [bx, bz, bw, bd_] of bedDefs) {
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.3, bd_), bedMat_.clone()); bed.position.set(bx, 0.15, bz); bed.castShadow = true; group.add(bed);
+      const soil = new THREE.Mesh(new THREE.PlaneGeometry(bw - 0.1, bd_ - 0.1), soilMat.clone()); soil.rotation.x = -Math.PI / 2; soil.position.set(bx, 0.31, bz); group.add(soil);
+      const nP = 3 + Math.floor(rng() * 4);
+      for (let p = 0; p < nP; p++) {
+        const px2 = bx + (rng() - 0.5) * (bw * 0.7), pz2 = bz + (rng() - 0.5) * (bd_ * 0.7);
+        const lr = 0.4 + rng() * 0.35;
+        const pl = new THREE.Mesh(new THREE.SphereGeometry(lr, 8, 8), (rng() > 0.5 ? leafG1 : leafG2).clone());
+        pl.position.set(px2, 0.31 + lr * 0.7, pz2); group.add(pl);
+      }
+    }
+    // Benches
+    for (const [bx, bz] of [[iW*0.09+2.2, -iD*0.18], [iW*0.09+2.2, iD*0.06], [-iW*0.14, iD*0.28]] as [number,number][]) {
+      const seat_ = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.65), benchMt.clone()); seat_.position.set(bx, 0.44, bz); seat_.castShadow = true; group.add(seat_);
+      const back_ = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.08), benchMt.clone()); back_.position.set(bx, 0.7, bz - 0.3); group.add(back_);
+      for (const lx of [-0.85, 0.85]) { const leg_ = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.44, 0.55), benchMt.clone()); leg_.position.set(bx + lx, 0.22, bz); group.add(leg_); }
+    }
+    // Pergola corner (-x, +z)
+    const pgX = -iW * 0.3, pgZ = iD * 0.3, pgW = Math.max(4, iW * 0.16), pgD = Math.max(3, iD * 0.13), cH = 2.8;
+    for (const [cx, cz] of [[pgX-pgW/2, pgZ-pgD/2],[pgX+pgW/2, pgZ-pgD/2],[pgX-pgW/2, pgZ+pgD/2],[pgX+pgW/2, pgZ+pgD/2]] as [number,number][]) {
+      const c_ = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, cH, 8), pergoMt.clone()); c_.position.set(cx, cH/2, cz); c_.castShadow = true; group.add(c_);
+    }
+    for (let s = 0; s < 4; s++) { const sl = new THREE.Mesh(new THREE.BoxGeometry(pgW+0.4, 0.1, 0.14), pergoMt.clone()); sl.position.set(pgX, cH, pgZ - pgD/2 + s*(pgD/3)); group.add(sl); }
+    for (const bx_ of [pgX-pgW/2+0.2, pgX+pgW/2-0.2]) { const bm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, pgD), pergoMt.clone()); bm.position.set(bx_, cH+0.05, pgZ); group.add(bm); }
+    // Path lights
+    const orbMat = new THREE.MeshStandardMaterial({ color: '#FFE8C0', emissive: new THREE.Color('#FF9820'), emissiveIntensity: 0.8 });
+    for (const [lx, lz] of [[iW*0.08-1.3, -iD*0.3],[iW*0.08-1.3, iD*0.15],[iW*0.08+2.3, iD*0.14]] as [number,number][]) {
+      const post_ = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 6), benchMt.clone()); post_.position.set(lx, 0.5, lz); group.add(post_);
+      const orb_ = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), orbMat.clone()); orb_.position.set(lx, 1.08, lz); group.add(orb_);
+    }
+    return nRegularFloors + 1;
+  }
+
+  // ── REGULAR OFFICE FLOOR ─────────────────────────────────────────────────────
 
   // ── Floor ───────────────────────────────────────────────────────────────────
   const floorMat = new THREE.MeshStandardMaterial({ color: '#D0D8E8', roughness: 0.85 });
   const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(iW, iD), floorMat);
-  floorMesh.rotation.x = -Math.PI / 2;
-  floorMesh.receiveShadow = true;
+  floorMesh.rotation.x = -Math.PI / 2; floorMesh.receiveShadow = true;
   group.add(floorMesh);
-
-  // Subtle floor grid lines
+  // Floor grid lines
   const gridMat = new THREE.MeshStandardMaterial({ color: '#B8C8D8', roughness: 0.9 });
-  const tileSize = 2;
-  for (let gx = -iW / 2; gx < iW / 2; gx += tileSize) {
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.04, iD), gridMat);
-    line.rotation.x = -Math.PI / 2;
-    line.position.set(gx, 0.002, 0);
-    group.add(line);
+  for (let gx = -iW / 2; gx < iW / 2; gx += 2) {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(0.04, iD), gridMat); l.rotation.x = -Math.PI / 2; l.position.set(gx, 0.002, 0); group.add(l);
   }
-  for (let gz = -iD / 2; gz < iD / 2; gz += tileSize) {
-    const line = new THREE.Mesh(new THREE.PlaneGeometry(iW, 0.04), gridMat);
-    line.rotation.x = -Math.PI / 2;
-    line.position.set(0, 0.002, gz);
-    group.add(line);
+  for (let gz = -iD / 2; gz < iD / 2; gz += 2) {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(iW, 0.04), gridMat.clone()); l.rotation.x = -Math.PI / 2; l.position.set(0, 0.002, gz); group.add(l);
   }
 
   // ── Ceiling ─────────────────────────────────────────────────────────────────
   const ceilMat = new THREE.MeshStandardMaterial({ color: '#F2F6FF', roughness: 0.8 });
   const ceilMesh = new THREE.Mesh(new THREE.PlaneGeometry(iW, iD), ceilMat);
-  ceilMesh.rotation.x = Math.PI / 2;
-  ceilMesh.position.y = iH;
-  group.add(ceilMesh);
+  ceilMesh.rotation.x = Math.PI / 2; ceilMesh.position.y = iH; group.add(ceilMesh);
 
-  // ── Walls ───────────────────────────────────────────────────────────────────
+  // ── Back + front solid walls ─────────────────────────────────────────────────
   const wallMat = new THREE.MeshStandardMaterial({ color: '#E8EEF8', roughness: 0.82 });
-
   const wallBack = new THREE.Mesh(new THREE.PlaneGeometry(iW, iH), wallMat);
-  wallBack.position.set(0, iH / 2, -iD / 2);
-  group.add(wallBack);
-
+  wallBack.position.set(0, iH / 2, -iD / 2); group.add(wallBack);
   const wallFront = new THREE.Mesh(new THREE.PlaneGeometry(iW, iH), wallMat.clone());
-  wallFront.position.set(0, iH / 2, iD / 2);
-  wallFront.rotation.y = Math.PI;
-  group.add(wallFront);
+  wallFront.position.set(0, iH / 2, iD / 2); wallFront.rotation.y = Math.PI; group.add(wallFront);
 
-  const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(iD, iH), wallMat.clone());
-  wallLeft.position.set(-iW / 2, iH / 2, 0);
-  wallLeft.rotation.y = Math.PI / 2;
-  group.add(wallLeft);
+  // ── Windowed left + right walls with exterior backdrop ───────────────────────
+  const nWins  = arch === 'warehouse' ? 7 : arch === 'slab' ? 8 : arch === 'tower' || arch === 'spire' ? 4 : 6;
+  const winW   = 2.8, winH = 2.2;
+  const winY   = iH * 0.52;
+  const winZPositions = Array.from({ length: nWins }, (_, i) => -iD / 2 + (i + 1) * (iD / (nWins + 1)));
 
-  const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(iD, iH), wallMat.clone());
-  wallRight.position.set(iW / 2, iH / 2, 0);
-  wallRight.rotation.y = -Math.PI / 2;
-  group.add(wallRight);
-
-  // ── Windows on left and right walls ─────────────────────────────────────────
-  const winGlowMat = new THREE.MeshStandardMaterial({
-    color: '#B8D4EC', roughness: 0.05, metalness: 0.1,
-    transparent: true, opacity: 0.65,
-    emissive: new THREE.Color('#4870A8'), emissiveIntensity: 0.5,
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: '#C8DCF0', roughness: 0.04, metalness: 0.08,
+    transparent: true, opacity: 0.15,
+    emissive: new THREE.Color('#1A3850'), emissiveIntensity: 0.05,
   });
+  const frameMat = new THREE.MeshStandardMaterial({ color: '#B0BCC8', roughness: 0.65, metalness: 0.15 });
+  const fT = 0.09;
 
-  const nWins = arch === 'warehouse' ? 5 : arch === 'slab' ? 6 : 4;
-  const winStep = iD / (nWins + 1);
-  for (let i = 1; i <= nWins; i++) {
-    const wz = -iD / 2 + i * winStep;
-    const wy = iH * 0.58;
-    const winW = 1.8, winH = 1.5;
-
-    const winL = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), winGlowMat.clone());
-    winL.position.set(-iW / 2 + 0.06, wy, wz);
-    winL.rotation.y = Math.PI / 2;
-    winL.userData.interiorElement = { type: 'window', label: 'City View' };
-    group.add(winL);
-    interiorMeshesRef.current.push(winL);
-
-    const winR = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), winGlowMat.clone());
-    winR.position.set(iW / 2 - 0.06, wy, wz);
-    winR.rotation.y = -Math.PI / 2;
-    winR.userData.interiorElement = { type: 'window', label: 'City View' };
-    group.add(winR);
-    interiorMeshesRef.current.push(winR);
+  function buildWindowedWall(wallX: number, wallRotY: number, backdropSign: number) {
+    const wMat = wallMat.clone();
+    const topH = iH - (winY + winH / 2);
+    const botH = winY - winH / 2;
+    if (topH > 0.01) {
+      const top = new THREE.Mesh(new THREE.PlaneGeometry(iD, topH), wMat);
+      top.position.set(wallX, winY + winH / 2 + topH / 2, 0); top.rotation.y = wallRotY; group.add(top);
+    }
+    if (botH > 0.01) {
+      const bot = new THREE.Mesh(new THREE.PlaneGeometry(iD, botH), wMat.clone());
+      bot.position.set(wallX, botH / 2, 0); bot.rotation.y = wallRotY; group.add(bot);
+    }
+    for (let i = 0; i <= winZPositions.length; i++) {
+      const segZ0 = i === 0 ? -iD / 2 : winZPositions[i - 1] + winW / 2;
+      const segZ1 = i === winZPositions.length ? iD / 2 : winZPositions[i] - winW / 2;
+      const segLen = segZ1 - segZ0;
+      if (segLen > 0.04) {
+        const pier = new THREE.Mesh(new THREE.PlaneGeometry(segLen, winH), wMat.clone());
+        pier.position.set(wallX, winY, segZ0 + segLen / 2); pier.rotation.y = wallRotY; group.add(pier);
+      }
+    }
+    const extRng = seededRandom(`ext-${wallX.toFixed(1)}-${block.col}-${block.row}-f${floor}`);
+    const extTex = makeExteriorTexture(extRng, floor);
+    const bdMat  = new THREE.MeshBasicMaterial({ map: extTex, side: THREE.DoubleSide });
+    for (const wz of winZPositions) {
+      // Glass pane
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), glassMat.clone());
+      glass.position.set(wallX - backdropSign * 0.02, winY, wz); glass.rotation.y = wallRotY;
+      glass.userData.interiorElement = { type: 'window', label: 'City View' };
+      group.add(glass); interiorMeshesRef.current.push(glass);
+      // Frame bars (top, bottom, left upright, right upright)
+      const tBar = new THREE.Mesh(new THREE.BoxGeometry(fT, fT, winW + fT*2), frameMat.clone()); tBar.position.set(wallX, winY + winH/2 + fT/2, wz); group.add(tBar);
+      const bBar = new THREE.Mesh(new THREE.BoxGeometry(fT, fT, winW + fT*2), frameMat.clone()); bBar.position.set(wallX, winY - winH/2 - fT/2, wz); group.add(bBar);
+      const lBar = new THREE.Mesh(new THREE.BoxGeometry(fT, winH+fT*2, fT), frameMat.clone()); lBar.position.set(wallX, winY, wz - winW/2 - fT/2); group.add(lBar);
+      const rBar = new THREE.Mesh(new THREE.BoxGeometry(fT, winH+fT*2, fT), frameMat.clone()); rBar.position.set(wallX, winY, wz + winW/2 + fT/2); group.add(rBar);
+      // Exterior canvas backdrop (outside the wall)
+      const bd = new THREE.Mesh(new THREE.PlaneGeometry(winW * 2.2, winH * 2.2), bdMat.clone());
+      bd.position.set(wallX + backdropSign * 2.8, winY, wz); bd.rotation.y = wallRotY; group.add(bd);
+    }
   }
+  buildWindowedWall(-iW / 2,  Math.PI / 2, -1);
+  buildWindowedWall( iW / 2, -Math.PI / 2,  1);
 
   // ── Ceiling light strips ─────────────────────────────────────────────────────
   const lightMat = new THREE.MeshStandardMaterial({
-    color: '#D8E8FF',
-    emissive: new THREE.Color('#A8C4F0'),
-    emissiveIntensity: 0.95,
-    roughness: 0.2,
+    color: '#D8E8FF', emissive: new THREE.Color('#A8C4F0'), emissiveIntensity: 0.95, roughness: 0.2,
   });
-  const nStrips = Math.max(2, Math.floor(iW / 6));
+  const nStrips = Math.max(2, Math.floor(iW / 7));
   const stripSpacing = iW / (nStrips + 1);
   for (let s = 1; s <= nStrips; s++) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, iD * 0.65), lightMat);
-    strip.position.set(-iW / 2 + s * stripSpacing, iH - 0.04, 0);
-    group.add(strip);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, iD * 0.68), lightMat);
+    strip.position.set(-iW / 2 + s * stripSpacing, iH - 0.04, 0); group.add(strip);
   }
 
   // ── Desks, chairs, monitors ──────────────────────────────────────────────────
   const deskMat    = new THREE.MeshStandardMaterial({ color: '#C8D4E0', roughness: 0.7 });
   const monitorMat = new THREE.MeshStandardMaterial({ color: '#1C2030', roughness: 0.5 });
-  const screenMat  = new THREE.MeshStandardMaterial({
-    color: '#2060A0', roughness: 0.2,
-    emissive: new THREE.Color('#0840A0'), emissiveIntensity: 0.35,
-  });
-  const chairMat = new THREE.MeshStandardMaterial({ color: '#A8B8CC', roughness: 0.85 });
+  const screenMat  = new THREE.MeshStandardMaterial({ color: '#2060A0', roughness: 0.2, emissive: new THREE.Color('#0840A0'), emissiveIntensity: 0.35 });
+  const chairMat   = new THREE.MeshStandardMaterial({ color: '#A8B8CC', roughness: 0.85 });
 
-  const deskRows     = block.zone === 'downtown' ? 3 : block.zone === 'midrise' ? 2 : 1;
-  const desksPerRow  = block.zone === 'downtown' ? 4 : block.zone === 'midrise' ? 3 : 2;
-
-  const deskAreaW  = iW * 0.58;
-  const deskAreaD  = iD * 0.52;
-  const deskStartX = -deskAreaW / 2 + (rng() - 0.5) * 1.5;
-  const deskStartZ = -deskAreaD / 2 + (rng() - 0.5) * 1.0;
+  const deskRows    = block.zone === 'downtown' ? 4 : block.zone === 'midrise' ? 3 : 2;
+  const desksPerRow = block.zone === 'downtown' ? 5 : block.zone === 'midrise' ? 4 : 3;
+  const deskAreaW   = iW * 0.60, deskAreaD = iD * 0.55;
+  const deskStartX  = -deskAreaW / 2 + (rng() - 0.5) * 2.0;
+  const deskStartZ  = -deskAreaD / 2 + (rng() - 0.5) * 1.5;
 
   for (let dr = 0; dr < deskRows; dr++) {
     for (let dc = 0; dc < desksPerRow; dc++) {
       const dx = deskStartX + dc * (deskAreaW / Math.max(1, desksPerRow - 1));
       const dz = deskStartZ + dr * (deskAreaD / Math.max(1, deskRows - 1));
-
-      // Desk surface
       const desk = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.07, 0.85), deskMat.clone());
-      desk.position.set(dx, 0.74, dz);
-      desk.castShadow = true; desk.receiveShadow = true;
+      desk.position.set(dx, 0.74, dz); desk.castShadow = true; desk.receiveShadow = true;
       desk.userData.interiorElement = { type: 'desk', label: `Workstation ${dr * desksPerRow + dc + 1}` };
-      group.add(desk);
-      interiorMeshesRef.current.push(desk);
-
-      // Legs
-      for (const [lx, lz] of [[-0.9, -0.35], [0.9, -0.35], [-0.9, 0.35], [0.9, 0.35]] as [number, number][]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.74, 0.05), deskMat.clone());
-        leg.position.set(dx + lx, 0.37, dz + lz);
-        group.add(leg);
+      group.add(desk); interiorMeshesRef.current.push(desk);
+      for (const [lx, lz] of [[-0.9,-0.35],[0.9,-0.35],[-0.9,0.35],[0.9,0.35]] as [number,number][]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.74, 0.05), deskMat.clone()); leg.position.set(dx+lx, 0.37, dz+lz); group.add(leg);
       }
-
-      // Monitor
       const mox = dx + (rng() - 0.5) * 0.4;
-      const monitor = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.42, 0.05), monitorMat.clone());
-      monitor.position.set(mox, 1.06, dz - 0.24);
-      group.add(monitor);
-      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.36), screenMat.clone());
-      screen.position.set(mox, 1.06, dz - 0.215);
-      group.add(screen);
-      // Monitor stand
-      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), monitorMat.clone());
-      stand.position.set(mox, 0.86, dz - 0.24);
-      group.add(stand);
-
-      // Chair seat + back
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.62), chairMat.clone());
-      seat.position.set(dx, 0.47, dz + 0.62);
-      group.add(seat);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.52, 0.06), chairMat.clone());
-      back.position.set(dx, 0.74, dz + 0.95);
-      group.add(back);
-      // Chair base cylinder
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 8), chairMat.clone());
-      base.position.set(dx, 0.03, dz + 0.62);
-      group.add(base);
+      const mon = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.42, 0.05), monitorMat.clone()); mon.position.set(mox, 1.06, dz - 0.24); group.add(mon);
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.36), screenMat.clone()); scr.position.set(mox, 1.06, dz - 0.215); group.add(scr);
+      const std = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), monitorMat.clone()); std.position.set(mox, 0.86, dz - 0.24); group.add(std);
+      const seatM = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.62), chairMat.clone()); seatM.position.set(dx, 0.47, dz + 0.62); group.add(seatM);
+      const backM = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.52, 0.06), chairMat.clone()); backM.position.set(dx, 0.74, dz + 0.95); group.add(backM);
+      const baseM = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 8), chairMat.clone()); baseM.position.set(dx, 0.03, dz + 0.62); group.add(baseM);
     }
   }
 
   // ── Glass dividers ───────────────────────────────────────────────────────────
-  const dividerMat = new THREE.MeshStandardMaterial({
-    color: '#B8D0E8', roughness: 0.05, metalness: 0.15,
-    transparent: true, opacity: 0.42,
-  });
+  const dividerMat = new THREE.MeshStandardMaterial({ color: '#B8D0E8', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.42 });
   if (deskRows > 1) {
     for (let dr = 0; dr < deskRows - 1; dr++) {
       const dz = deskStartZ + (dr + 0.5) * (deskAreaD / Math.max(1, deskRows - 1));
       const div = new THREE.Mesh(new THREE.BoxGeometry(deskAreaW + 1.5, 1.35, 0.04), dividerMat);
-      div.position.set(deskStartX + deskAreaW / 2, 0.68, dz);
-      group.add(div);
+      div.position.set(deskStartX + deskAreaW / 2, 0.68, dz); group.add(div);
     }
   }
 
-  // ── Meeting room (corner: -x, +z) ────────────────────────────────────────────
-  const mrW = iW < 14 ? 4.5 : 5.5, mrD = iD < 12 ? 3.5 : 4.5;
-  const mrCx = -iW / 2 + mrW / 2;
-  const mrCz = iD / 2 - mrD / 2;
-  const mrGlassMat = new THREE.MeshStandardMaterial({
-    color: '#B0CCDC', roughness: 0.04, metalness: 0.18,
-    transparent: true, opacity: 0.4,
-  });
-
-  // Front glass panel (facing +z)
+  // ── Meeting room ─────────────────────────────────────────────────────────────
+  const mrW = iW < 22 ? 5.5 : 7.5, mrD = iD < 18 ? 4.5 : 6.0;
+  const mrCx = -iW / 2 + mrW / 2, mrCz = iD / 2 - mrD / 2;
+  const mrGlassMat = new THREE.MeshStandardMaterial({ color: '#B0CCDC', roughness: 0.04, metalness: 0.18, transparent: true, opacity: 0.38 });
   const mrFront = new THREE.Mesh(new THREE.PlaneGeometry(mrW, iH * 0.88), mrGlassMat.clone());
   mrFront.position.set(mrCx, iH * 0.44, mrCz - mrD / 2);
   mrFront.userData.interiorElement = { type: 'meetingRoom', label: 'Conference Room' };
-  group.add(mrFront);
-  interiorMeshesRef.current.push(mrFront);
-
-  // Side glass panel (facing +x)
+  group.add(mrFront); interiorMeshesRef.current.push(mrFront);
   const mrSide = new THREE.Mesh(new THREE.PlaneGeometry(mrD, iH * 0.88), mrGlassMat.clone());
-  mrSide.position.set(mrCx + mrW / 2, iH * 0.44, mrCz);
-  mrSide.rotation.y = -Math.PI / 2;
-  group.add(mrSide);
-
-  // Meeting table
-  const mrTableMat = new THREE.MeshStandardMaterial({ color: '#B8C8D4', roughness: 0.65 });
-  const mrTable = new THREE.Mesh(new THREE.BoxGeometry(mrW * 0.7, 0.08, mrD * 0.55), mrTableMat);
-  mrTable.position.set(mrCx, 0.75, mrCz);
-  mrTable.castShadow = true;
-  group.add(mrTable);
-
-  // Meeting chairs around table
-  const mrChairPositions: [number, number, number][] = [
-    [mrCx - mrW * 0.22, 0, mrCz - mrD * 0.2],
-    [mrCx,              0, mrCz - mrD * 0.2],
-    [mrCx + mrW * 0.22, 0, mrCz - mrD * 0.2],
-    [mrCx - mrW * 0.22, 0, mrCz + mrD * 0.2],
-    [mrCx,              0, mrCz + mrD * 0.2],
-  ];
-  for (const [cx, , cz] of mrChairPositions) {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.06, 0.48), chairMat.clone());
-    s.position.set(cx, 0.46, cz);
-    group.add(s);
+  mrSide.position.set(mrCx + mrW / 2, iH * 0.44, mrCz); mrSide.rotation.y = -Math.PI / 2; group.add(mrSide);
+  const mrTable = new THREE.Mesh(new THREE.BoxGeometry(mrW * 0.7, 0.08, mrD * 0.55), new THREE.MeshStandardMaterial({ color: '#B8C8D4', roughness: 0.65 }));
+  mrTable.position.set(mrCx, 0.75, mrCz); mrTable.castShadow = true; group.add(mrTable);
+  for (const [cx, , cz] of [[mrCx-mrW*0.22,0,mrCz-mrD*0.18],[mrCx,0,mrCz-mrD*0.18],[mrCx+mrW*0.22,0,mrCz-mrD*0.18],[mrCx-mrW*0.22,0,mrCz+mrD*0.18],[mrCx,0,mrCz+mrD*0.18]] as [number,number,number][]) {
+    const cs = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.06, 0.48), chairMat.clone()); cs.position.set(cx, 0.46, cz); group.add(cs);
   }
 
   // ── Plants ───────────────────────────────────────────────────────────────────
   const potMat  = new THREE.MeshStandardMaterial({ color: '#C8B8A0', roughness: 0.88 });
   const leafMat = new THREE.MeshStandardMaterial({ color: '#70A060', roughness: 0.82 });
-
-  const plantSpots: [number, number][] = [
-    [iW / 2 - 1.6, iD / 2 - 1.6],
-    [iW / 2 - 1.6, -iD / 2 + 1.6],
-    [mrCx + mrW / 2 + 0.8, mrCz + 0.5],
-  ];
-  for (const [px, pz] of plantSpots) {
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.14, 0.34, 8), potMat.clone());
-    pot.position.set(px, 0.17, pz);
-    group.add(pot);
-    const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.38 + rng() * 0.14, 8, 8), leafMat.clone());
-    leaves.position.set(px, 0.62 + rng() * 0.1, pz);
-    group.add(leaves);
+  for (const [px, pz] of [[iW/2-1.8, iD/2-1.8],[iW/2-1.8, -iD/2+1.8],[mrCx+mrW/2+0.8, mrCz+0.6]] as [number,number][]) {
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.14, 0.34, 8), potMat.clone()); pot.position.set(px, 0.17, pz); group.add(pot);
+    const lv  = new THREE.Mesh(new THREE.SphereGeometry(0.38+rng()*0.14, 8, 8), leafMat.clone()); lv.position.set(px, 0.62+rng()*0.1, pz); group.add(lv);
   }
 
-  // ── Structural column (corner accent) ────────────────────────────────────────
+  // ── Corner columns ────────────────────────────────────────────────────────────
   const colMat = new THREE.MeshStandardMaterial({ color: '#C8D4E0', roughness: 0.8, metalness: 0.05 });
-  for (const [cx, cz] of [[iW / 2 - 0.3, -iD / 2 + 0.3], [-iW / 2 + 0.3, -iD / 2 + 0.3]] as [number, number][]) {
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, iH, 8), colMat.clone());
-    col.position.set(cx, iH / 2, cz);
-    group.add(col);
+  for (const [cx, cz] of [[iW/2-0.35, -iD/2+0.35],[-iW/2+0.35, -iD/2+0.35]] as [number,number][]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, iH, 8), colMat.clone()); col.position.set(cx, iH/2, cz); group.add(col);
   }
 
-  return Math.max(1, Math.min(10, Math.floor(buildingHeight / 3.5)));
+  return nRegularFloors + 1; // +1 accounts for rooftop
 }
 
 // ─── ZONE TYPES ───────────────────────────────────────────────────────────────
@@ -982,7 +1052,7 @@ export function WorldView() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (viewModeRef.current === 'interior') {
-        orbitRadius = Math.max(2, Math.min(15, orbitRadius + e.deltaY * 0.04));
+        orbitRadius = Math.max(4, Math.min(28, orbitRadius + e.deltaY * 0.06));
       } else {
         orbitRadius = Math.max(60, Math.min(500, orbitRadius + e.deltaY * 0.35));
       }
@@ -1009,7 +1079,7 @@ export function WorldView() {
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx*dx + dy*dy);
         if (viewModeRef.current === 'interior') {
-          orbitRadius = Math.max(2, Math.min(15, orbitRadius - (dist - lastTouchDist) * 0.3));
+          orbitRadius = Math.max(4, Math.min(28, orbitRadius - (dist - lastTouchDist) * 0.3));
         } else {
           orbitRadius = Math.max(60, Math.min(500, orbitRadius - (dist - lastTouchDist) * 0.5));
         }
@@ -1111,6 +1181,9 @@ export function WorldView() {
           floor, allInteriorMeshesRef
         );
         setTotalFloors(nFloors);
+        const onRoof = floor === nFloors - 1;
+        sun.intensity  = onRoof ? 1.8 : 0.3;
+        hemi.intensity = onRoof ? 2.0 : 1.4;
       }
       setCurrentFloor(floor);
       setInteriorSelection(null);
@@ -1144,11 +1217,12 @@ export function WorldView() {
             );
             setTotalFloors(nFloors);
             // Interior camera
-            orbitRadius = 8;
-            orbitPhi    = 1.3;
-            orbitTarget.set(0, 1.5, 0);
-            sun.intensity  = 0.3;
-            hemi.intensity = 1.4;
+            orbitRadius = 18;
+            orbitPhi    = 1.25;
+            orbitTarget.set(0, 2.0, 0);
+            const isRoof = currentFloorRef.current === nFloors - 1;
+            sun.intensity  = isRoof ? 1.8 : 0.3;
+            hemi.intensity = isRoof ? 2.0 : 1.4;
             scene.fog = null;
           } else {
             // Restore city
@@ -1336,7 +1410,7 @@ export function WorldView() {
                       fontSize: 10, cursor: 'pointer', fontWeight: active ? 700 : 400,
                     }}
                   >
-                    {i + 1}
+                    {i === totalFloors - 1 ? 'Roof ⬆' : i + 1}
                   </button>
                 );
               })}
