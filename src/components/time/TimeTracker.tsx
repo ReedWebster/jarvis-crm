@@ -439,12 +439,14 @@ function useDragCreate(
     setGhost({ date, startMin, endMin: startMin + 60 });
 
     {
-      const onMouseMove = (me: MouseEvent) => updateGhost(me.clientY);
+      const onMouseMove = (me: MouseEvent) => { me.preventDefault(); updateGhost(me.clientY); };
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
+        document.body.style.userSelect = '';
         completeDrag();
       };
+      document.body.style.userSelect = 'none';
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
     }
@@ -489,11 +491,13 @@ function useDragMove(
     moveRef.current = { blockId: block.id, date, durationMin, offsetMin, containerEl };
 
     const onMouseMove = (me: MouseEvent) => {
+      me.preventDefault();
       if (!moveRef.current) return;
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
       if (!dragStarted && Math.sqrt(dx * dx + dy * dy) > 5) {
         dragStarted = true;
+        document.body.style.userSelect = 'none';
         setMoveGhost({ blockId: block.id, date, startMin, endMin, color });
       }
       if (!dragStarted) return;
@@ -509,6 +513,7 @@ function useDragMove(
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = '';
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       if (!dragStarted) {
         moveRef.current = null;

@@ -47,6 +47,17 @@ import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
 
 type TagDef = { name: string; color: string };
 
+const TAG_PALETTE_FALLBACK = [
+  '#60a5fa','#34d399','#f472b6','#fb923c','#a78bfa',
+  '#facc15','#38bdf8','#4ade80','#f87171','#e879f9',
+];
+
+/** Safely coerce a tag entry — handles old string[] data from Supabase */
+function normalizeTag(t: unknown, i: number): TagDef {
+  if (t && typeof t === 'object' && 'name' in t) return t as TagDef;
+  return { name: String(t), color: TAG_PALETTE_FALLBACK[i % TAG_PALETTE_FALLBACK.length] };
+}
+
 function getTagColor(tagName: string, allTags: TagDef[]): string {
   return allTags.find(t => t.name === tagName)?.color ?? '#6b7280';
 }
@@ -1479,6 +1490,25 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
   const [newTagValue, setNewTagValue] = useState('');
   const [newTagColor, setNewTagColor] = useState('#60a5fa');
 
+  // Migrate old string[] tag format → TagDef[] on first load
+  useEffect(() => {
+    if (!contactTags.length) return;
+    if (typeof (contactTags[0] as unknown) === 'string') {
+      const palette = [
+        '#60a5fa','#34d399','#f472b6','#fb923c','#a78bfa',
+        '#facc15','#38bdf8','#4ade80','#f87171','#e879f9',
+        '#fbbf24','#2dd4bf','#818cf8','#fb7185','#a3e635',
+      ];
+      setContactTags(
+        (contactTags as unknown as string[]).map((name, i) => ({
+          name,
+          color: palette[i % palette.length],
+        }))
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // One-time dedup of existing contacts on mount
   useEffect(() => {
     if (!contacts.length) return;
@@ -2265,7 +2295,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
 
             {/* Existing tags */}
             <div className="flex flex-col gap-2">
-              {contactTags.map((t) => (
+              {contactTags.map((raw, i) => { const t = normalizeTag(raw, i); return (
                 <div key={t.name} className="flex items-center gap-2">
                   {editingTag?.original === t.name ? (
                     <>
@@ -2335,7 +2365,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
                     </>
                   )}
                 </div>
-              ))}
+              );})}
             </div>
 
             {/* Add new tag */}
