@@ -46,7 +46,6 @@ import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
-import { NetworkingMap } from './components/networking/NetworkingMap';
 import { WorldView } from './components/world/WorldView';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
@@ -83,7 +82,6 @@ const SECTION_TITLES: Record<NavSection, string> = {
   recruitment: 'Clients',
   notes: 'Notes & Intelligence',
   todos: 'Todo List',
-  networking: 'Networking Map',
   world: 'World View',
   social: 'Social Command Center',
   dochub: 'Doc Hub',
@@ -310,7 +308,7 @@ function MainApp() {
           <ContactsCRM
             contacts={contacts}
             setContacts={setContacts}
-            onNavigateToNetworking={() => setActiveSection('networking')}
+            onNavigateToNetworking={() => setActiveSection('world')}
           />
         );
       case 'academic':
@@ -363,15 +361,6 @@ function MainApp() {
             notes={notes}
             readingItems={readingItems}
             candidates={candidates}
-          />
-        );
-      case 'networking':
-        return (
-          <NetworkingMap
-            contacts={contacts}
-            setContacts={setContacts}
-            projects={projects}
-            onNavigateToCRM={() => setActiveSection('contacts')}
           />
         );
       case 'world':
@@ -463,10 +452,10 @@ function MainApp() {
           }}
         >
           <div
-            className={activeSection === 'networking'
+            className={activeSection === 'world'
               ? 'animate-fade-in h-full overflow-hidden'
               : 'p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full animate-fade-in'}
-            style={activeSection === 'networking'
+            style={activeSection === 'world'
               ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }
               : undefined}
             key={activeSection}

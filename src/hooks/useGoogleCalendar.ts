@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TimeBlock, TimeCategory } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ const LS_TOKEN    = 'gcal_token';
 const LS_EXPIRY   = 'gcal_token_expiry';
 const LS_CAL_ID   = 'gcal_calendar_id';
 const LS_MAP      = 'gcal_event_map';   // { [blockId]: gcalEventId }
+const LS_CONSENTED = 'gcal_consented';  // set permanently after first successful auth
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ function getStoredToken(): string | null {
 function saveToken(token: string, expiresIn: number) {
   localStorage.setItem(LS_TOKEN, token);
   localStorage.setItem(LS_EXPIRY, String(Date.now() + expiresIn * 1000 - 60_000));
+  localStorage.setItem(LS_CONSENTED, '1');
 }
 
 function getMap(): Record<string, string> {
@@ -102,6 +104,40 @@ export function useGoogleCalendar() {
   const [isConnected, setIsConnected] = useState(() => !!getStoredToken());
   const tokenClientRef = useRef<{ requestAccessToken: (o?: { prompt?: string }) => void } | null>(null);
 
+  // Silently refresh the token on mount if the user has previously consented
+  useEffect(() => {
+    if (getStoredToken()) return; // token still valid
+    if (!localStorage.getItem(LS_CONSENTED)) return; // never consented
+    // Token expired but user has consented before — silently get a new one (no popup)
+    const tryRefresh = () => {
+      if (!window.google?.accounts?.oauth2) return;
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPE,
+        callback: (response) => {
+          if (!response.error && response.access_token && response.expires_in) {
+            saveToken(response.access_token, response.expires_in);
+            setIsConnected(true);
+          }
+          // silent failure — user will be prompted when they trigger a sync
+        },
+      });
+      client.requestAccessToken({ prompt: '' });
+    };
+    // GIS script may not be loaded yet — wait for it
+    if (window.google?.accounts?.oauth2) {
+      tryRefresh();
+    } else {
+      const interval = setInterval(() => {
+        if (window.google?.accounts?.oauth2) {
+          clearInterval(interval);
+          tryRefresh();
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const getToken = useCallback((silent: boolean): Promise<string> => {
     return new Promise((resolve, reject) => {
       if (!window.google?.accounts?.oauth2) {
@@ -132,7 +168,10 @@ export function useGoogleCalendar() {
     setIsSyncing(true);
     try {
       let token = getStoredToken();
-      if (!token) token = await getToken(false);
+      if (!token) {
+        // Try silent first (no popup), fall back to interactive
+        try { token = await getToken(true); } catch { token = await getToken(false); }
+      }
 
       const calId = await getOrCreateCalendar(token);
       const map   = getMap();

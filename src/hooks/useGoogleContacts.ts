@@ -10,6 +10,7 @@ const CONTACTS_SCOPE = 'https://www.googleapis.com/auth/contacts.readonly';
 const LS_TOKEN        = 'gcontacts_token';
 const LS_EXPIRY       = 'gcontacts_token_expiry';
 const LS_SYNC_TOKEN   = 'gcontacts_sync_token';
+const LS_CONSENTED    = 'gcontacts_consented'; // set permanently after first successful auth
 
 // ─── Google People API types ──────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ function getStoredToken(): string | null {
 function saveToken(token: string, expiresIn: number) {
   localStorage.setItem(LS_TOKEN, token);
   localStorage.setItem(LS_EXPIRY, String(Date.now() + expiresIn * 1000 - 60_000));
+  localStorage.setItem(LS_CONSENTED, '1');
 }
 
 // ─── People API fetch helpers ─────────────────────────────────────────────────
@@ -163,12 +165,13 @@ export function useGoogleContacts() {
   const autoSync = useCallback(async (): Promise<Contact[] | null> => {
     let token = getStoredToken();
 
-    // If no stored token, attempt silent re-auth (no popup if Google has a session)
+    // If no stored token, only attempt silent re-auth if user has previously consented
     if (!token) {
+      if (!localStorage.getItem(LS_CONSENTED)) return null; // never connected
       try {
         token = await getToken(true);
       } catch {
-        return null; // No session — don't bother the user
+        return null; // Silent auth failed — don't show popup
       }
     }
 
@@ -210,7 +213,13 @@ export function useGoogleContacts() {
    */
   const syncContacts = useCallback(async (): Promise<Contact[]> => {
     localStorage.removeItem(LS_SYNC_TOKEN); // force full sync on manual trigger
-    const token = await getToken(false);
+    let token: string;
+    if (localStorage.getItem(LS_CONSENTED) && !getStoredToken()) {
+      // Previously consented, token just expired — try silent first
+      try { token = await getToken(true); } catch { token = await getToken(false); }
+    } else {
+      token = await getToken(false);
+    }
     const result = await fetchConnections(token);
     if (result.nextSyncToken) localStorage.setItem(LS_SYNC_TOKEN, result.nextSyncToken);
     return result.people

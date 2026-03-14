@@ -24,6 +24,9 @@ import {
   Shuffle,
   LayoutGrid,
   CreditCard,
+  Linkedin,
+  MapPin,
+  X,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
@@ -67,6 +70,12 @@ interface Props {
   onNavigateToNetworking?: () => void;
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+function capitalizeName(name: string): string {
+  return name.trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ─── EMPTY FORMS ─────────────────────────────────────────────────────────────
 
 function emptyContact(): Omit<Contact, 'id' | 'interactions' | 'linkedProjects'> {
@@ -75,6 +84,7 @@ function emptyContact(): Omit<Contact, 'id' | 'interactions' | 'linkedProjects'>
     email: '',
     phone: '',
     company: '',
+    linkedin: '',
     relationship: '',
     tags: [],
     lastContacted: todayStr(),
@@ -218,7 +228,7 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
           >
-            {contact.name}
+            {capitalizeName(contact.name)}
           </button>
           {contact.company && (
             <div className="flex items-center gap-1 mt-0.5">
@@ -237,6 +247,34 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
         <HealthCircle score={health} />
       </div>
 
+      {/* Contact info rows */}
+      <div className="flex flex-col gap-1">
+        {contact.email && (
+          <div className="flex items-center gap-1.5">
+            <Mail size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{contact.email}</span>
+          </div>
+        )}
+        {contact.phone && (
+          <div className="flex items-center gap-1.5">
+            <Phone size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{contact.phone}</span>
+          </div>
+        )}
+        {(contact as any).linkedin && (
+          <div className="flex items-center gap-1.5">
+            <Linkedin size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{(contact as any).linkedin}</span>
+          </div>
+        )}
+        {(contact.mapLabel || contact.address) && (
+          <div className="flex items-center gap-1.5">
+            <MapPin size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{contact.mapLabel || contact.address}</span>
+          </div>
+        )}
+      </div>
+
       {/* Tags */}
       {contact.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -248,12 +286,6 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
 
       {/* Status indicators */}
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1">
-          <Clock size={11} style={{ color: 'var(--text-muted)' }} />
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}
-          </span>
-        </div>
         {contact.followUpNeeded && (
           <div className="flex items-center gap-1">
             <Calendar size={11} style={{ color: 'var(--text-secondary)' }} />
@@ -778,6 +810,7 @@ interface ContactFormData {
   email: string;
   phone: string;
   company: string;
+  linkedin: string;
   address: string;
   mapLat?: number;
   mapLng?: number;
@@ -807,6 +840,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
     email: initial?.email ?? '',
     phone: initial?.phone ?? '',
     company: initial?.company ?? '',
+    linkedin: (initial as any)?.linkedin ?? '',
     address: initial?.address ?? '',
     mapLat: initial?.mapLat,
     mapLng: initial?.mapLng,
@@ -897,6 +931,26 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
+            <label className="caesar-label">LinkedIn</label>
+            <input
+              className="caesar-input w-full"
+              placeholder="linkedin.com/in/username"
+              value={form.linkedin}
+              onChange={(e) => setForm((f) => ({ ...f, linkedin: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="caesar-label">Address</label>
+            <AddressAutocomplete
+              value={form.address}
+              onChange={(address, lat, lng, label) =>
+                setForm((f) => ({ ...f, address, mapLat: lat, mapLng: lng, mapLabel: label }))
+              }
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
             <label className="caesar-label">Company / Organization</label>
             <input
               className="caesar-input w-full"
@@ -915,20 +969,6 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
               onChange={(e) => setForm((f) => ({ ...f, metAt: e.target.value }))}
             />
           </div>
-        </div>
-        <div>
-          <label className="caesar-label">
-            Address{' '}
-            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-              — auto-pins on Networking Map
-            </span>
-          </label>
-          <AddressAutocomplete
-            value={form.address}
-            onChange={(address, lat, lng, label) =>
-              setForm((f) => ({ ...f, address, mapLat: lat, mapLng: lng, mapLabel: label }))
-            }
-          />
         </div>
 
         {/* ── Relationship ── */}
@@ -981,26 +1021,6 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="caesar-label">Last Contacted</label>
-            <input
-              className="caesar-input w-full"
-              type="date"
-              value={form.lastContacted}
-              onChange={(e) => setForm((f) => ({ ...f, lastContacted: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="caesar-label">Follow Up Date</label>
-            <input
-              className="caesar-input w-full"
-              type="date"
-              value={form.followUpDate}
-              onChange={(e) => setForm((f) => ({ ...f, followUpDate: e.target.value }))}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
             <label className="caesar-label">Birthday</label>
             <input
               className="caesar-input w-full"
@@ -1010,12 +1030,12 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
           <div>
-            <label className="caesar-label">Anniversary</label>
+            <label className="caesar-label">Follow Up Date</label>
             <input
               className="caesar-input w-full"
               type="date"
-              value={form.anniversary}
-              onChange={(e) => setForm((f) => ({ ...f, anniversary: e.target.value }))}
+              value={form.followUpDate}
+              onChange={(e) => setForm((f) => ({ ...f, followUpDate: e.target.value }))}
             />
           </div>
         </div>
@@ -1104,30 +1124,20 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={contact.name} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose} title={capitalizeName(contact.name)} size="xl">
       <div className="flex flex-col gap-5">
         {/* Info grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex flex-col gap-2">
             {contact.email && (
               <div className="flex items-center gap-2 flex-wrap">
                 <Mail size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contact.email}</span>
-                <button
-                  onClick={onSendEmail}
-                  className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2"
-                  title="Send Email"
-                >
-                  <Mail size={11} />
-                  Send
+                <button onClick={onSendEmail} className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2" title="Send Email">
+                  <Mail size={11} /> Send
                 </button>
-                <button
-                  onClick={onViewEmails}
-                  className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2"
-                  title="View Email History"
-                >
-                  <Inbox size={11} />
-                  Inbox
+                <button onClick={onViewEmails} className="caesar-btn-ghost text-xs flex items-center gap-1 py-1 px-2" title="View Email History">
+                  <Inbox size={11} /> Inbox
                 </button>
               </div>
             )}
@@ -1135,6 +1145,20 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
               <div className="flex items-center gap-2">
                 <Phone size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contact.phone}</span>
+              </div>
+            )}
+            {(contact as any).linkedin && (
+              <div className="flex items-center gap-2">
+                <Linkedin size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                <a
+                  href={(contact as any).linkedin.startsWith('http') ? (contact as any).linkedin : `https://${(contact as any).linkedin}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm truncate"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {(contact as any).linkedin}
+                </a>
               </div>
             )}
             {contact.company && (
@@ -1151,19 +1175,17 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
             )}
           </div>
           <div className="flex flex-col gap-2">
-            {contact.birthday && (
-              <div className="flex items-center gap-2">
-                <Star size={14} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
-                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Birthday: {formatDate(contact.birthday)}
-                </span>
+            {(contact.address || contact.mapLabel) && (
+              <div className="flex items-start gap-2">
+                <MapPin size={14} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contact.address || contact.mapLabel}</span>
               </div>
             )}
-            {contact.anniversary && (
+            {contact.birthday && (
               <div className="flex items-center gap-2">
-                <Heart size={14} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
+                <Star size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Anniversary: {formatDate(contact.anniversary)}
+                  Birthday: {formatDate(contact.birthday)}
                 </span>
               </div>
             )}
@@ -1171,8 +1193,8 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
               <div className="flex items-center gap-2">
                 <Calendar
                   size={14}
-                  style={{ color: contact.followUpNeeded ? 'var(--text-secondary)' : 'var(--text-muted)' }}
                   className="flex-shrink-0"
+                  style={{ color: contact.followUpNeeded ? 'var(--text-secondary)' : 'var(--text-muted)' }}
                 />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                   Follow up: {formatDate(contact.followUpDate)}
@@ -1182,14 +1204,35 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
           </div>
         </div>
 
-        {/* Tags */}
-        {contact.tags.length > 0 && (
+        {/* Tags — inline add / remove */}
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Tags</p>
           <div className="flex flex-wrap gap-1.5">
-            {contact.tags.map((tag) => (
-              <Badge key={tag} label={tag} color={TAG_COLORS[tag]} />
-            ))}
+            {ALL_TAGS.map((tag) => {
+              const active = contact.tags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  onClick={() => {
+                    const newTags = active
+                      ? contact.tags.filter(t => t !== tag)
+                      : [...contact.tags, tag];
+                    onUpdate({ ...contact, tags: newTags });
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150"
+                  style={{
+                    backgroundColor: active ? `${TAG_COLORS[tag]}25` : 'var(--bg-elevated)',
+                    color: active ? TAG_COLORS[tag] : 'var(--text-muted)',
+                    border: `1px solid ${active ? TAG_COLORS[tag] + '55' : 'var(--border)'}`,
+                  }}
+                >
+                  {active ? <X size={10} /> : <Plus size={10} />}
+                  {tag}
+                </button>
+              );
+            })}
           </div>
-        )}
+        </div>
 
         {/* Notes */}
         {contact.notes && (
@@ -1229,9 +1272,6 @@ function ContactDetailModal({ isOpen, onClose, contact, onUpdate, onSendEmail, o
               style={{ width: `${health}%`, backgroundColor: healthColor }}
             />
           </div>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            Last contacted: {formatDate(contact.lastContacted)}
-          </p>
         </div>
 
         {/* Interaction Timeline */}
@@ -1493,8 +1533,9 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
   // CRUD helpers
   const handleAdd = (data: ContactFormData) => {
-    const emailKey = data.email?.trim().toLowerCase();
-    const nameKey  = data.name.trim().toLowerCase();
+    const normalized = { ...data, name: capitalizeName(data.name) };
+    const emailKey = normalized.email?.trim().toLowerCase();
+    const nameKey  = normalized.name.trim().toLowerCase();
     const duplicate = contacts.find(c =>
       (emailKey && c.email?.trim().toLowerCase() === emailKey) ||
       c.name.trim().toLowerCase() === nameKey
@@ -1505,7 +1546,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
     }
     const newContact: Contact = {
       id: generateId(),
-      ...data,
+      ...normalized,
       interactions: [],
       linkedProjects: [],
     };
@@ -1516,9 +1557,10 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
   const handleEdit = (data: ContactFormData) => {
     if (!selectedContact) return;
+    const normalized = { ...data, name: capitalizeName(data.name) };
     setContacts((prev) =>
       (Array.isArray(prev) ? prev : []).map((c) =>
-        c.id === selectedContact.id ? { ...c, ...data } : c
+        c.id === selectedContact.id ? { ...c, ...normalized } : c
       )
     );
     setEditModalOpen(false);

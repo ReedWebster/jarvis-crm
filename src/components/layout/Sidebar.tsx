@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
   DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
-  CheckSquare, Network, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
+  CheckSquare, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
   Share2, Inbox, Flame, Globe,
 } from 'lucide-react';
 import type { Theme } from '../../hooks/useTheme';
@@ -35,7 +35,6 @@ export type NavSection =
   | 'recruitment'
   | 'notes'
   | 'todos'
-  | 'networking'
   | 'world'
   | 'social'
   | 'dochub'
@@ -60,7 +59,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'recruitment',label: 'Clients',           icon: <Building2 size={18} /> },
   { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
   { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
-  { id: 'networking', label: 'Networking Map',   icon: <Network size={18} /> },
   { id: 'world',      label: 'World View',       icon: <Globe size={18} /> },
   { id: 'social',     label: 'Social Command',   icon: <Share2 size={18} /> },
   { id: 'dochub',     label: 'Doc Hub',          icon: <FolderOpen size={18} /> },

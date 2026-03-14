@@ -91,6 +91,14 @@ interface GhostBlock {
   endMin: number;
 }
 
+interface MoveGhost {
+  blockId: string;
+  date: string;
+  startMin: number;
+  endMin: number;
+  color: string;
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 function timeToMinutes(time: string): number {
@@ -188,7 +196,7 @@ function getMinutesAtClientY(
 // ─── EVENT BLOCK ──────────────────────────────────────────────────────────────
 
 function EventBlock({
-  block, categories, top, height, colPct, widthPct, onClick,
+  block, categories, top, height, colPct, widthPct, onClick, onMoveStart, isDragging,
 }: {
   block: TimeBlock;
   categories: TimeCategory[];
@@ -197,6 +205,8 @@ function EventBlock({
   colPct: number;
   widthPct: number;
   onClick: () => void;
+  onMoveStart?: (e: React.MouseEvent) => void;
+  isDragging?: boolean;
 }) {
   const color = getCategoryColor(block.categoryId, categories);
   const catName = getCategoryName(block.categoryId, categories);
@@ -206,9 +216,12 @@ function EventBlock({
 
   return (
     <div
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        if (onMoveStart) { e.preventDefault(); onMoveStart(e); }
+      }}
       onTouchStart={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onClick={(e) => { e.stopPropagation(); if (!onMoveStart) onClick(); }}
       title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
       style={{
         position: 'absolute',
@@ -219,7 +232,8 @@ function EventBlock({
         backgroundColor: `${color}28`,
         borderLeft: `3px solid ${color}`,
         borderRadius: 6,
-        cursor: 'pointer',
+        cursor: onMoveStart ? 'grab' : 'pointer',
+        opacity: isDragging ? 0.35 : 1,
         overflow: 'hidden',
         padding: isShort ? '0 5px' : '3px 6px',
         display: 'flex',
@@ -276,6 +290,35 @@ function GhostEventBlock({ startMin, endMin }: { startMin: number; endMin: numbe
       }}
     >
       <span style={{ fontSize: 10, fontWeight: 600, color: '#3b82f6' }}>
+        {minutesToTimeStr(startMin).replace(/^0/, '')} – {minutesToTimeStr(endMin).replace(/^0/, '')}
+      </span>
+    </div>
+  );
+}
+
+// ─── MOVE GHOST BLOCK (drag-to-move preview) ──────────────────────────────────
+
+function MoveGhostBlock({ startMin, endMin, color }: { startMin: number; endMin: number; color: string }) {
+  const top = (startMin / 60) * HOUR_HEIGHT;
+  const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 24);
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: top + 1,
+        height: height - 2,
+        left: 2, right: 2,
+        backgroundColor: `${color}22`,
+        border: `2px dashed ${color}`,
+        borderRadius: 6,
+        zIndex: 20,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'flex-start',
+        padding: '3px 6px',
+      }}
+    >
+      <span style={{ fontSize: 10, fontWeight: 600, color }}>
         {minutesToTimeStr(startMin).replace(/^0/, '')} – {minutesToTimeStr(endMin).replace(/^0/, '')}
       </span>
     </div>
@@ -410,11 +453,89 @@ function useDragCreate(
   return { ghost, startDrag };
 }
 
+// ─── DRAG MOVE HOOK ───────────────────────────────────────────────────────────
+
+function useDragMove(
+  scrollRef: React.RefObject<HTMLDivElement>,
+  onComplete: (blockId: string, newDate: string, newStartTime: string, newEndTime: string) => void
+) {
+  const [moveGhost, setMoveGhost] = useState<MoveGhost | null>(null);
+  const moveRef = useRef<{
+    blockId: string; date: string; durationMin: number; offsetMin: number; containerEl: HTMLElement;
+  } | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const startMove = useCallback((
+    e: React.MouseEvent,
+    block: TimeBlock,
+    date: string,
+    color: string,
+    onClickFallback: () => void,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const containerEl = (e.currentTarget as HTMLElement).closest('[data-cal-col]') as HTMLElement | null;
+    if (!containerEl) { onClickFallback(); return; }
+
+    const startMin = timeToMinutes(block.startTime);
+    const endMin = timeToMinutes(block.endTime);
+    const durationMin = endMin - startMin;
+    const clickMin = getMinutesAtClientY(containerEl, scrollRef.current, e.clientY);
+    const offsetMin = Math.max(0, Math.min(snapToGrid(clickMin - startMin), durationMin - 15));
+
+    let dragStarted = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    moveRef.current = { blockId: block.id, date, durationMin, offsetMin, containerEl };
+
+    const onMouseMove = (me: MouseEvent) => {
+      if (!moveRef.current) return;
+      const dx = me.clientX - startX;
+      const dy = me.clientY - startY;
+      if (!dragStarted && Math.sqrt(dx * dx + dy * dy) > 5) {
+        dragStarted = true;
+        setMoveGhost({ blockId: block.id, date, startMin, endMin, color });
+      }
+      if (!dragStarted) return;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (!moveRef.current) return;
+        const rawStart = getMinutesAtClientY(moveRef.current.containerEl, scrollRef.current, me.clientY) - moveRef.current.offsetMin;
+        const newStart = snapToGrid(Math.min(Math.max(rawStart, 0), 24 * 60 - moveRef.current.durationMin));
+        setMoveGhost(prev => prev ? { ...prev, startMin: newStart, endMin: newStart + moveRef.current!.durationMin } : null);
+      });
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      if (!dragStarted) {
+        moveRef.current = null;
+        onClickFallback();
+        return;
+      }
+      setMoveGhost(prev => {
+        if (prev && moveRef.current) {
+          onComplete(moveRef.current.blockId, moveRef.current.date, minutesToTimeStr(prev.startMin), minutesToTimeStr(prev.endMin));
+        }
+        moveRef.current = null;
+        return null;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [scrollRef, onComplete]);
+
+  return { moveGhost, startMove };
+}
+
 // ─── DAY VIEW ─────────────────────────────────────────────────────────────────
 
 function AppleDayView({
   date, blocks, categories, currentTimePx, isToday,
-  onCreateBlock, onClickBlock, scrollRef,
+  onCreateBlock, onClickBlock, onMoveBlock, scrollRef,
 }: {
   date: string;
   blocks: TimeBlock[];
@@ -423,11 +544,13 @@ function AppleDayView({
   isToday: boolean;
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
+  onMoveBlock: (blockId: string, newDate: string, newStartTime: string, newEndTime: string) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
 }) {
   const layout = useMemo(() => buildOverlapLayout(blocks), [blocks]);
   const total = getTotalHours(blocks);
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
+  const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -462,6 +585,7 @@ function AppleDayView({
           <TimeLabels />
           <div
             className="cal-grid-col"
+            data-cal-col="true"
             style={{
               flex: 1, position: 'relative',
               height: 24 * HOUR_HEIGHT,
@@ -484,11 +608,16 @@ function AppleDayView({
                   colPct={(100 / info.totalCols) * info.col}
                   widthPct={100 / info.totalCols}
                   onClick={() => onClickBlock(block)}
+                  onMoveStart={(e) => startMove(e, block, date, getCategoryColor(block.categoryId, categories), () => onClickBlock(block))}
+                  isDragging={moveGhost?.blockId === block.id}
                 />
               );
             })}
             {ghost && ghost.date === date && (
               <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />
+            )}
+            {moveGhost && moveGhost.date === date && (
+              <MoveGhostBlock startMin={moveGhost.startMin} endMin={moveGhost.endMin} color={moveGhost.color} />
             )}
             {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
           </div>
@@ -502,7 +631,7 @@ function AppleDayView({
 
 function AppleWeekView({
   weekDays, timeBlocks, categories, currentTimePx, today,
-  onCreateBlock, onClickBlock, scrollRef,
+  onCreateBlock, onClickBlock, onMoveBlock, scrollRef,
 }: {
   weekDays: Date[];
   timeBlocks: TimeBlock[];
@@ -511,9 +640,11 @@ function AppleWeekView({
   today: string;
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
+  onMoveBlock: (blockId: string, newDate: string, newStartTime: string, newEndTime: string) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
 }) {
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
+  const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -553,6 +684,7 @@ function AppleWeekView({
               <div
                 key={dayStr}
                 className="cal-grid-col"
+                data-cal-col="true"
                 style={{
                   flex: '1 0 90px', position: 'relative',
                   borderLeft: '1px solid var(--border)',
@@ -576,11 +708,16 @@ function AppleWeekView({
                       colPct={(100 / info.totalCols) * info.col}
                       widthPct={100 / info.totalCols}
                       onClick={() => onClickBlock(block)}
+                      onMoveStart={(e) => startMove(e, block, dayStr, getCategoryColor(block.categoryId, categories), () => onClickBlock(block))}
+                      isDragging={moveGhost?.blockId === block.id}
                     />
                   );
                 })}
                 {ghost?.date === dayStr && (
                   <GhostEventBlock startMin={ghost.startMin} endMin={ghost.endMin} />
+                )}
+                {moveGhost?.date === dayStr && (
+                  <MoveGhostBlock startMin={moveGhost.startMin} endMin={moveGhost.endMin} color={moveGhost.color} />
                 )}
                 {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
               </div>
@@ -921,6 +1058,12 @@ export function TimeTracker({
     openLogModal(date, startTime, endTime);
   }, [openLogModal]);
 
+  const handleMoveBlock = useCallback((blockId: string, newDate: string, newStartTime: string, newEndTime: string) => {
+    setTimeBlocks((prev) => prev.map((b) =>
+      b.id === blockId ? { ...b, date: newDate, startTime: newStartTime, endTime: newEndTime } : b
+    ));
+  }, [setTimeBlocks]);
+
   const handleLogSubmit = () => {
     if (!logForm.categoryId || calcDurationHours(logForm.startTime, logForm.endTime) <= 0) return;
 
@@ -1079,6 +1222,7 @@ export function TimeTracker({
             isToday={selectedDay === today}
             onCreateBlock={handleCreateBlock}
             onClickBlock={openEditModal}
+            onMoveBlock={handleMoveBlock}
             scrollRef={scrollRef}
           />
         )}
@@ -1091,6 +1235,7 @@ export function TimeTracker({
             today={today}
             onCreateBlock={handleCreateBlock}
             onClickBlock={openEditModal}
+            onMoveBlock={handleMoveBlock}
             scrollRef={scrollRef}
           />
         )}

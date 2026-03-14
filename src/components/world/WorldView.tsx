@@ -4,9 +4,9 @@
  *
  * Controls:
  *   Left-drag   → rotate azimuth
- *   Right-drag  → pan
+ *   Right-drag  → pan (city) / look (interior)
  *   Scroll      → zoom
- *   Click       → select building (shows name)
+ *   Click       → select building / inspect element
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -237,9 +237,298 @@ function makeTree(x: number, z: number, rng: () => number): THREE.Group {
   return g;
 }
 
-// ─── ZONE TYPES ───────────────────────────────────────────────────────────────
+// ─── INTERIOR SCENE BUILDER ───────────────────────────────────────────────────
+
+interface BlockInfo {
+  col: number; row: number;
+  cx:  number; cz: number;
+  zone: ZoneType;
+  label: string;
+}
 
 type ZoneType = 'downtown' | 'midrise' | 'mixed' | 'low' | 'park' | 'water';
+
+function disposeGroup(group: THREE.Group) {
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      obj.geometry.dispose();
+      const mat = obj.material;
+      if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+      else (mat as THREE.Material).dispose();
+    }
+  });
+  group.clear();
+}
+
+function buildInteriorScene(
+  group: THREE.Group,
+  block: BlockInfo,
+  arch: string,
+  buildingHeight: number,
+  floor: number,
+  interiorMeshesRef: { current: THREE.Mesh[] },
+): number {
+  disposeGroup(group);
+  interiorMeshesRef.current = [];
+
+  const rng = seededRandom(`interior-${block.col}-${block.row}-f${floor}`);
+
+  // Archetype-aware floor dimensions
+  let iW = 18, iD = 14;
+  if (arch === 'tower' || arch === 'spire') { iW = 11; iD = 11; }
+  else if (arch === 'podiumTower') { iW = 15; iD = 12; }
+  else if (arch === 'slab') { iW = 22; iD = 10; }
+  else if (arch === 'warehouse') { iW = 22; iD = 16; }
+  else if (arch === 'residential') { iW = 11; iD = 10; }
+  const iH = 3.5;
+
+  // ── Floor ───────────────────────────────────────────────────────────────────
+  const floorMat = new THREE.MeshStandardMaterial({ color: '#D0D8E8', roughness: 0.85 });
+  const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(iW, iD), floorMat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.receiveShadow = true;
+  group.add(floorMesh);
+
+  // Subtle floor grid lines
+  const gridMat = new THREE.MeshStandardMaterial({ color: '#B8C8D8', roughness: 0.9 });
+  const tileSize = 2;
+  for (let gx = -iW / 2; gx < iW / 2; gx += tileSize) {
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.04, iD), gridMat);
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(gx, 0.002, 0);
+    group.add(line);
+  }
+  for (let gz = -iD / 2; gz < iD / 2; gz += tileSize) {
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(iW, 0.04), gridMat);
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(0, 0.002, gz);
+    group.add(line);
+  }
+
+  // ── Ceiling ─────────────────────────────────────────────────────────────────
+  const ceilMat = new THREE.MeshStandardMaterial({ color: '#F2F6FF', roughness: 0.8 });
+  const ceilMesh = new THREE.Mesh(new THREE.PlaneGeometry(iW, iD), ceilMat);
+  ceilMesh.rotation.x = Math.PI / 2;
+  ceilMesh.position.y = iH;
+  group.add(ceilMesh);
+
+  // ── Walls ───────────────────────────────────────────────────────────────────
+  const wallMat = new THREE.MeshStandardMaterial({ color: '#E8EEF8', roughness: 0.82 });
+
+  const wallBack = new THREE.Mesh(new THREE.PlaneGeometry(iW, iH), wallMat);
+  wallBack.position.set(0, iH / 2, -iD / 2);
+  group.add(wallBack);
+
+  const wallFront = new THREE.Mesh(new THREE.PlaneGeometry(iW, iH), wallMat.clone());
+  wallFront.position.set(0, iH / 2, iD / 2);
+  wallFront.rotation.y = Math.PI;
+  group.add(wallFront);
+
+  const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(iD, iH), wallMat.clone());
+  wallLeft.position.set(-iW / 2, iH / 2, 0);
+  wallLeft.rotation.y = Math.PI / 2;
+  group.add(wallLeft);
+
+  const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(iD, iH), wallMat.clone());
+  wallRight.position.set(iW / 2, iH / 2, 0);
+  wallRight.rotation.y = -Math.PI / 2;
+  group.add(wallRight);
+
+  // ── Windows on left and right walls ─────────────────────────────────────────
+  const winGlowMat = new THREE.MeshStandardMaterial({
+    color: '#B8D4EC', roughness: 0.05, metalness: 0.1,
+    transparent: true, opacity: 0.65,
+    emissive: new THREE.Color('#4870A8'), emissiveIntensity: 0.5,
+  });
+
+  const nWins = arch === 'warehouse' ? 5 : arch === 'slab' ? 6 : 4;
+  const winStep = iD / (nWins + 1);
+  for (let i = 1; i <= nWins; i++) {
+    const wz = -iD / 2 + i * winStep;
+    const wy = iH * 0.58;
+    const winW = 1.8, winH = 1.5;
+
+    const winL = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), winGlowMat.clone());
+    winL.position.set(-iW / 2 + 0.06, wy, wz);
+    winL.rotation.y = Math.PI / 2;
+    winL.userData.interiorElement = { type: 'window', label: 'City View' };
+    group.add(winL);
+    interiorMeshesRef.current.push(winL);
+
+    const winR = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), winGlowMat.clone());
+    winR.position.set(iW / 2 - 0.06, wy, wz);
+    winR.rotation.y = -Math.PI / 2;
+    winR.userData.interiorElement = { type: 'window', label: 'City View' };
+    group.add(winR);
+    interiorMeshesRef.current.push(winR);
+  }
+
+  // ── Ceiling light strips ─────────────────────────────────────────────────────
+  const lightMat = new THREE.MeshStandardMaterial({
+    color: '#D8E8FF',
+    emissive: new THREE.Color('#A8C4F0'),
+    emissiveIntensity: 0.95,
+    roughness: 0.2,
+  });
+  const nStrips = Math.max(2, Math.floor(iW / 6));
+  const stripSpacing = iW / (nStrips + 1);
+  for (let s = 1; s <= nStrips; s++) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, iD * 0.65), lightMat);
+    strip.position.set(-iW / 2 + s * stripSpacing, iH - 0.04, 0);
+    group.add(strip);
+  }
+
+  // ── Desks, chairs, monitors ──────────────────────────────────────────────────
+  const deskMat    = new THREE.MeshStandardMaterial({ color: '#C8D4E0', roughness: 0.7 });
+  const monitorMat = new THREE.MeshStandardMaterial({ color: '#1C2030', roughness: 0.5 });
+  const screenMat  = new THREE.MeshStandardMaterial({
+    color: '#2060A0', roughness: 0.2,
+    emissive: new THREE.Color('#0840A0'), emissiveIntensity: 0.35,
+  });
+  const chairMat = new THREE.MeshStandardMaterial({ color: '#A8B8CC', roughness: 0.85 });
+
+  const deskRows     = block.zone === 'downtown' ? 3 : block.zone === 'midrise' ? 2 : 1;
+  const desksPerRow  = block.zone === 'downtown' ? 4 : block.zone === 'midrise' ? 3 : 2;
+
+  const deskAreaW  = iW * 0.58;
+  const deskAreaD  = iD * 0.52;
+  const deskStartX = -deskAreaW / 2 + (rng() - 0.5) * 1.5;
+  const deskStartZ = -deskAreaD / 2 + (rng() - 0.5) * 1.0;
+
+  for (let dr = 0; dr < deskRows; dr++) {
+    for (let dc = 0; dc < desksPerRow; dc++) {
+      const dx = deskStartX + dc * (deskAreaW / Math.max(1, desksPerRow - 1));
+      const dz = deskStartZ + dr * (deskAreaD / Math.max(1, deskRows - 1));
+
+      // Desk surface
+      const desk = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.07, 0.85), deskMat.clone());
+      desk.position.set(dx, 0.74, dz);
+      desk.castShadow = true; desk.receiveShadow = true;
+      desk.userData.interiorElement = { type: 'desk', label: `Workstation ${dr * desksPerRow + dc + 1}` };
+      group.add(desk);
+      interiorMeshesRef.current.push(desk);
+
+      // Legs
+      for (const [lx, lz] of [[-0.9, -0.35], [0.9, -0.35], [-0.9, 0.35], [0.9, 0.35]] as [number, number][]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.74, 0.05), deskMat.clone());
+        leg.position.set(dx + lx, 0.37, dz + lz);
+        group.add(leg);
+      }
+
+      // Monitor
+      const mox = dx + (rng() - 0.5) * 0.4;
+      const monitor = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.42, 0.05), monitorMat.clone());
+      monitor.position.set(mox, 1.06, dz - 0.24);
+      group.add(monitor);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.36), screenMat.clone());
+      screen.position.set(mox, 1.06, dz - 0.215);
+      group.add(screen);
+      // Monitor stand
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), monitorMat.clone());
+      stand.position.set(mox, 0.86, dz - 0.24);
+      group.add(stand);
+
+      // Chair seat + back
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.07, 0.62), chairMat.clone());
+      seat.position.set(dx, 0.47, dz + 0.62);
+      group.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.52, 0.06), chairMat.clone());
+      back.position.set(dx, 0.74, dz + 0.95);
+      group.add(back);
+      // Chair base cylinder
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 8), chairMat.clone());
+      base.position.set(dx, 0.03, dz + 0.62);
+      group.add(base);
+    }
+  }
+
+  // ── Glass dividers ───────────────────────────────────────────────────────────
+  const dividerMat = new THREE.MeshStandardMaterial({
+    color: '#B8D0E8', roughness: 0.05, metalness: 0.15,
+    transparent: true, opacity: 0.42,
+  });
+  if (deskRows > 1) {
+    for (let dr = 0; dr < deskRows - 1; dr++) {
+      const dz = deskStartZ + (dr + 0.5) * (deskAreaD / Math.max(1, deskRows - 1));
+      const div = new THREE.Mesh(new THREE.BoxGeometry(deskAreaW + 1.5, 1.35, 0.04), dividerMat);
+      div.position.set(deskStartX + deskAreaW / 2, 0.68, dz);
+      group.add(div);
+    }
+  }
+
+  // ── Meeting room (corner: -x, +z) ────────────────────────────────────────────
+  const mrW = iW < 14 ? 4.5 : 5.5, mrD = iD < 12 ? 3.5 : 4.5;
+  const mrCx = -iW / 2 + mrW / 2;
+  const mrCz = iD / 2 - mrD / 2;
+  const mrGlassMat = new THREE.MeshStandardMaterial({
+    color: '#B0CCDC', roughness: 0.04, metalness: 0.18,
+    transparent: true, opacity: 0.4,
+  });
+
+  // Front glass panel (facing +z)
+  const mrFront = new THREE.Mesh(new THREE.PlaneGeometry(mrW, iH * 0.88), mrGlassMat.clone());
+  mrFront.position.set(mrCx, iH * 0.44, mrCz - mrD / 2);
+  mrFront.userData.interiorElement = { type: 'meetingRoom', label: 'Conference Room' };
+  group.add(mrFront);
+  interiorMeshesRef.current.push(mrFront);
+
+  // Side glass panel (facing +x)
+  const mrSide = new THREE.Mesh(new THREE.PlaneGeometry(mrD, iH * 0.88), mrGlassMat.clone());
+  mrSide.position.set(mrCx + mrW / 2, iH * 0.44, mrCz);
+  mrSide.rotation.y = -Math.PI / 2;
+  group.add(mrSide);
+
+  // Meeting table
+  const mrTableMat = new THREE.MeshStandardMaterial({ color: '#B8C8D4', roughness: 0.65 });
+  const mrTable = new THREE.Mesh(new THREE.BoxGeometry(mrW * 0.7, 0.08, mrD * 0.55), mrTableMat);
+  mrTable.position.set(mrCx, 0.75, mrCz);
+  mrTable.castShadow = true;
+  group.add(mrTable);
+
+  // Meeting chairs around table
+  const mrChairPositions: [number, number, number][] = [
+    [mrCx - mrW * 0.22, 0, mrCz - mrD * 0.2],
+    [mrCx,              0, mrCz - mrD * 0.2],
+    [mrCx + mrW * 0.22, 0, mrCz - mrD * 0.2],
+    [mrCx - mrW * 0.22, 0, mrCz + mrD * 0.2],
+    [mrCx,              0, mrCz + mrD * 0.2],
+  ];
+  for (const [cx, , cz] of mrChairPositions) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.06, 0.48), chairMat.clone());
+    s.position.set(cx, 0.46, cz);
+    group.add(s);
+  }
+
+  // ── Plants ───────────────────────────────────────────────────────────────────
+  const potMat  = new THREE.MeshStandardMaterial({ color: '#C8B8A0', roughness: 0.88 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: '#70A060', roughness: 0.82 });
+
+  const plantSpots: [number, number][] = [
+    [iW / 2 - 1.6, iD / 2 - 1.6],
+    [iW / 2 - 1.6, -iD / 2 + 1.6],
+    [mrCx + mrW / 2 + 0.8, mrCz + 0.5],
+  ];
+  for (const [px, pz] of plantSpots) {
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.14, 0.34, 8), potMat.clone());
+    pot.position.set(px, 0.17, pz);
+    group.add(pot);
+    const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.38 + rng() * 0.14, 8, 8), leafMat.clone());
+    leaves.position.set(px, 0.62 + rng() * 0.1, pz);
+    group.add(leaves);
+  }
+
+  // ── Structural column (corner accent) ────────────────────────────────────────
+  const colMat = new THREE.MeshStandardMaterial({ color: '#C8D4E0', roughness: 0.8, metalness: 0.05 });
+  for (const [cx, cz] of [[iW / 2 - 0.3, -iD / 2 + 0.3], [-iW / 2 + 0.3, -iD / 2 + 0.3]] as [number, number][]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, iH, 8), colMat.clone());
+    col.position.set(cx, iH / 2, cz);
+    group.add(col);
+  }
+
+  return Math.max(1, Math.min(10, Math.floor(buildingHeight / 3.5)));
+}
+
+// ─── ZONE TYPES ───────────────────────────────────────────────────────────────
 
 const ZONE_COLORS: Record<ZoneType, string> = {
   downtown: '#7B9EC8',
@@ -250,13 +539,6 @@ const ZONE_COLORS: Record<ZoneType, string> = {
   water:    '#7098B8',
 };
 
-interface BlockInfo {
-  col: number; row: number;  // grid coords
-  cx:  number; cz: number;   // world center
-  zone: ZoneType;
-  label: string;
-}
-
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function WorldView() {
@@ -264,7 +546,34 @@ export function WorldView() {
   const labelRef   = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
 
+  // City view state
   const [selectedBlock, setSelectedBlock] = useState<BlockInfo | null>(null);
+
+  // Interior view state
+  const [viewMode, setViewMode]               = useState<'city' | 'interior'>('city');
+  const [interiorBuilding, setInteriorBuilding] = useState<BlockInfo | null>(null);
+  const [currentFloor, setCurrentFloor]       = useState(0);
+  const [totalFloors, setTotalFloors]         = useState(1);
+  const [interiorSelection, setInteriorSelection] = useState<{ type: string; label: string } | null>(null);
+
+  // Refs that bridge React state → Three.js animation loop
+  const viewModeRef          = useRef<'city' | 'interior'>('city');
+  const interiorBuildingRef  = useRef<BlockInfo | null>(null);
+  const currentFloorRef      = useRef(0);
+  const transitionRef        = useRef<{ active: boolean; alpha: number; direction: 1 | -1 }>({ active: false, alpha: 0, direction: 1 });
+  const fadeOverlayRef       = useRef<HTMLDivElement>(null);
+  const savedCityCameraRef   = useRef<{ radius: number; theta: number; target: THREE.Vector3 }>({
+    radius: 280, theta: Math.PI / 4, target: new THREE.Vector3(),
+  });
+  const cityGroupRef         = useRef<THREE.Group | null>(null);
+  const interiorGroupRef     = useRef<THREE.Group | null>(null);
+  const allInteriorMeshesRef = useRef<THREE.Mesh[]>([]);
+  const blockArchetypeMapRef = useRef<Map<string, { arch: string; height: number }>>(new Map());
+
+  // Callback refs — set inside useEffect so they close over orbit vars
+  const enterBuildingCallbackRef = useRef<((block: BlockInfo) => void) | null>(null);
+  const exitBuildingCallbackRef  = useRef<(() => void) | null>(null);
+  const changeFloorCallbackRef   = useRef<((floor: number) => void) | null>(null);
 
   useEffect(() => {
     const canvas   = canvasRef.current!;
@@ -288,6 +597,16 @@ export function WorldView() {
     // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+
+    // ── Groups ────────────────────────────────────────────────────────────────
+    const cityGroup = new THREE.Group();
+    const interiorGroup = new THREE.Group();
+    interiorGroup.visible = false;
+    scene.add(cityGroup);
+    scene.add(interiorGroup);
+    cityGroupRef.current = cityGroup;
+    interiorGroupRef.current = interiorGroup;
+    blockArchetypeMapRef.current = new Map();
 
     // ── Sky gradient shader ────────────────────────────────────────────────────
     const skyMat = new THREE.ShaderMaterial({
@@ -323,7 +642,6 @@ export function WorldView() {
 
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight('#ffffff', 2.5);
-    // NW sun angle (matches reference image cast shadows going SE)
     sun.position.set(120, 180, -100);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
@@ -346,7 +664,7 @@ export function WorldView() {
     let orbitTarget = new THREE.Vector3(0, 0, 0);
     let orbitRadius = 280;
     let orbitTheta  = Math.PI / 4;
-    const orbitPhi  = 1.08; // ~62° from zenith
+    let orbitPhi    = 1.08; // ~62° from zenith
 
     function updateCameraOrbit() {
       const sinP = Math.sin(orbitPhi), cosP = Math.cos(orbitPhi);
@@ -373,19 +691,17 @@ export function WorldView() {
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
-    scene.add(ground);
+    cityGroup.add(ground);
 
     // ── Materials (shared, cloned per building) ───────────────────────────────
     const mats = makeArchMats();
 
     // ── City grid parameters ───────────────────────────────────────────────────
-    // 9x9 grid of blocks, each block 60x60 units, separated by 8-unit roads
-    const GRID_N    = 9;        // 9 columns and rows
-    const BLOCK_SIZE = 58;      // buildable inner area per block
-    const STEP       = 66;      // block center-to-center (58 + 8 road)
-    const HALF       = Math.floor(GRID_N / 2); // 4 — grid goes -4..+4
+    const GRID_N    = 9;
+    const BLOCK_SIZE = 58;
+    const STEP       = 66;
+    const HALF       = Math.floor(GRID_N / 2);
 
-    // Road materials
     const roadMat  = new THREE.MeshStandardMaterial({ color: '#1C1C1E', roughness: 0.97 });
     const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90 });
     const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
@@ -393,50 +709,46 @@ export function WorldView() {
     const ROAD_W = 8;
     const GRID_EXTENT = HALF * STEP + STEP / 2;
 
-    // N-S avenues
-    for (let col = -HALF; col <= HALF; col++) {
-      const x = col * STEP;
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, GRID_EXTENT * 2 + ROAD_W), roadMat);
+    for (let i = 0; i <= GRID_N; i++) {
+      const x = (-HALF - 0.5 + i) * STEP;
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, GRID_EXTENT * 2), roadMat);
       road.rotation.x = -Math.PI / 2;
       road.position.set(x, 0.01, 0);
       road.receiveShadow = true;
-      scene.add(road);
-      // Sidewalks
+      cityGroup.add(road);
       for (const s of [-1, 1]) {
         const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.8, GRID_EXTENT * 2), swalkMat);
         sw.rotation.x = -Math.PI / 2;
-        sw.position.set(x + s * (ROAD_W / 2 + 0.9), 0.015, 0);
+        sw.position.set(x + s * (ROAD_W / 2 + 0.9), 0.016, 0);
         sw.receiveShadow = true;
-        scene.add(sw);
+        cityGroup.add(sw);
       }
-      // Center dashes
       for (let z = -GRID_EXTENT + 4; z < GRID_EXTENT; z += 6) {
         const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
         d.rotation.x = -Math.PI / 2;
         d.position.set(x, 0.018, z);
-        scene.add(d);
+        cityGroup.add(d);
       }
     }
-    // E-W streets
-    for (let row = -HALF; row <= HALF; row++) {
-      const z = row * STEP;
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2 + ROAD_W, ROAD_W), roadMat);
+    for (let i = 0; i <= GRID_N; i++) {
+      const z = (-HALF - 0.5 + i) * STEP;
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, ROAD_W), roadMat);
       road.rotation.x = -Math.PI / 2;
       road.position.set(0, 0.01, z);
       road.receiveShadow = true;
-      scene.add(road);
+      cityGroup.add(road);
       for (const s of [-1, 1]) {
         const sw = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, 1.8), swalkMat);
         sw.rotation.x = -Math.PI / 2;
-        sw.position.set(0, 0.015, z + s * (ROAD_W / 2 + 0.9));
+        sw.position.set(0, 0.016, z + s * (ROAD_W / 2 + 0.9));
         sw.receiveShadow = true;
-        scene.add(sw);
+        cityGroup.add(sw);
       }
       for (let x = -GRID_EXTENT + 4; x < GRID_EXTENT; x += 6) {
         const d = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.18), dashMat);
         d.rotation.x = -Math.PI / 2;
         d.position.set(x, 0.018, z);
-        scene.add(d);
+        cityGroup.add(d);
       }
     }
 
@@ -454,12 +766,9 @@ export function WorldView() {
     const allBuildingMeshes: THREE.Mesh[] = [];
     const blockMeshMap = new Map<THREE.Mesh, BlockInfo>();
 
-    // Determine zone by distance from center (in grid units)
     function getZone(col: number, row: number): ZoneType {
       const dist = Math.sqrt(col * col + row * row);
-      // Park blocks in specific positions
       if ((col === 2 && row === -2) || (col === -3 && row === 1) || (col === 1 && row === 3)) return 'park';
-      // Water on the far north edge
       if (row === -HALF || (row === -HALF + 1 && Math.abs(col) >= 3)) return 'water';
       if (dist <= 1.0) return 'downtown';
       if (dist <= 2.2) return 'midrise';
@@ -467,8 +776,7 @@ export function WorldView() {
       return 'low';
     }
 
-    // Park material
-    const parkMat = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
+    const parkMat  = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
     const waterMat = new THREE.MeshStandardMaterial({ color: '#4A90C8', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.82 });
 
     for (let row = -HALF; row <= HALF; row++) {
@@ -481,7 +789,6 @@ export function WorldView() {
         const info: BlockInfo = { col, row, cx, cz, zone, label: labelPool[labelIdx] };
         blocks.push(info);
 
-        // Block ground patch
         const patchMat = zone === 'park'  ? parkMat
                        : zone === 'water' ? waterMat
                        : new THREE.MeshStandardMaterial({ color: '#D8E4EE', roughness: 0.9 });
@@ -489,65 +796,58 @@ export function WorldView() {
         patch.rotation.x = -Math.PI / 2;
         patch.position.set(cx, zone === 'water' ? -0.2 : 0.015, cz);
         patch.receiveShadow = true;
-        scene.add(patch);
+        cityGroup.add(patch);
 
         if (zone === 'park') {
-          // Trees only
           const rng = seededRandom(`park-${col}-${row}`);
           for (let t = 0; t < 12; t++) {
             const tx = cx + (rng() - 0.5) * (BLOCK_SIZE - 10);
             const tz = cz + (rng() - 0.5) * (BLOCK_SIZE - 10);
-            scene.add(makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`)));
+            cityGroup.add(makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`)));
           }
           continue;
         }
-        if (zone === 'water') {
-          continue; // just water plane
-        }
+        if (zone === 'water') continue;
 
-        // ── Place buildings in the block ──────────────────────────────────────
         const rng = seededRandom(`block-${col}-${row}`);
-        const BUILD_AREA = BLOCK_SIZE - 8; // leave 4 unit margin from roads
+        const BUILD_AREA = BLOCK_SIZE - 8;
 
-        // Choose building layout based on zone
         type Arch = 'tower' | 'podiumTower' | 'midrise' | 'slab' | 'campus' | 'spire' | 'residential' | 'warehouse';
-
         type PlacementDef = { ox: number; oz: number; arch: Arch; hMult: number };
         let placements: PlacementDef[] = [];
 
         if (zone === 'downtown') {
-          // Dense towers: 1 landmark center + 6-8 surrounding
           placements = [
-            { ox: 0,            oz: 0,           arch: rng() > 0.5 ? 'podiumTower' : 'spire', hMult: 1.0 },
-            { ox: -16,          oz: -12,          arch: 'tower',       hMult: 0.75 },
-            { ox:  16,          oz: -12,          arch: 'tower',       hMult: 0.80 },
-            { ox: -16,          oz:  12,          arch: 'tower',       hMult: 0.70 },
-            { ox:  16,          oz:  12,          arch: 'midrise',     hMult: 0.65 },
-            { ox:  0,           oz: -22,          arch: 'midrise',     hMult: 0.60 },
-            { ox:  0,           oz:  22,          arch: 'midrise',     hMult: 0.55 },
-            { ox: -22,          oz:   0,          arch: 'slab',        hMult: 0.50 },
-            { ox:  22,          oz:   0,          arch: 'midrise',     hMult: 0.55 },
+            { ox: 0,   oz: 0,   arch: rng() > 0.5 ? 'podiumTower' : 'spire', hMult: 1.0 },
+            { ox: -16, oz: -12, arch: 'tower',   hMult: 0.75 },
+            { ox:  16, oz: -12, arch: 'tower',   hMult: 0.80 },
+            { ox: -16, oz:  12, arch: 'tower',   hMult: 0.70 },
+            { ox:  16, oz:  12, arch: 'midrise',  hMult: 0.65 },
+            { ox:  0,  oz: -22, arch: 'midrise',  hMult: 0.60 },
+            { ox:  0,  oz:  22, arch: 'midrise',  hMult: 0.55 },
+            { ox: -22, oz:   0, arch: 'slab',     hMult: 0.50 },
+            { ox:  22, oz:   0, arch: 'midrise',  hMult: 0.55 },
           ];
         } else if (zone === 'midrise') {
           placements = [
-            { ox:  0, oz:  0,  arch: 'midrise', hMult: 0.85 },
-            { ox: -14, oz: -10, arch: 'slab',   hMult: 0.70 },
-            { ox:  14, oz: -10, arch: 'midrise', hMult: 0.75 },
-            { ox: -14, oz:  12, arch: 'midrise', hMult: 0.65 },
+            { ox:   0, oz:   0, arch: 'midrise',  hMult: 0.85 },
+            { ox: -14, oz: -10, arch: 'slab',     hMult: 0.70 },
+            { ox:  14, oz: -10, arch: 'midrise',  hMult: 0.75 },
+            { ox: -14, oz:  12, arch: 'midrise',  hMult: 0.65 },
             { ox:  14, oz:  12, arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.60 },
-            { ox:  0, oz: -20,  arch: 'slab',   hMult: 0.55 },
-            { ox:  0, oz:  20,  arch: 'midrise', hMult: 0.50 },
+            { ox:   0, oz: -20, arch: 'slab',     hMult: 0.55 },
+            { ox:   0, oz:  20, arch: 'midrise',  hMult: 0.50 },
           ];
         } else if (zone === 'mixed') {
           placements = [
-            { ox:  0, oz:  0,   arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.60 },
+            { ox:   0, oz:   0, arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.60 },
             { ox: -14, oz: -10, arch: 'residential', hMult: 0.55 },
             { ox:  14, oz: -10, arch: 'midrise',     hMult: 0.50 },
             { ox: -14, oz:  10, arch: 'residential', hMult: 0.45 },
             { ox:  14, oz:  10, arch: 'residential', hMult: 0.45 },
-            { ox:  0,  oz: -20, arch: 'slab',        hMult: 0.40 },
+            { ox:   0, oz: -20, arch: 'slab',        hMult: 0.40 },
           ];
-        } else { // low
+        } else {
           placements = [
             { ox:   0, oz:   0, arch: 'residential', hMult: 0.40 },
             { ox: -14, oz: -10, arch: 'residential', hMult: 0.35 },
@@ -557,29 +857,26 @@ export function WorldView() {
           ];
         }
 
-        // Height ranges per zone
         const H_RANGES: Record<ZoneType, [number, number]> = {
-          downtown: [20, 48],
-          midrise:  [8, 18],
-          mixed:    [4, 11],
-          low:      [3, 7],
-          park:     [0, 0],
-          water:    [0, 0],
+          downtown: [20, 48], midrise: [8, 18], mixed: [4, 11], low: [3, 7], park: [0, 0], water: [0, 0],
         };
         const [hMin, hMax] = H_RANGES[zone];
 
         for (const p of placements) {
-          // Add small seeded jitter so grid doesn't look machine-stamped
           const jx = (rng() - 0.5) * 4;
           const jz = (rng() - 0.5) * 4;
           const wx = cx + p.ox + jx;
           const wz = cz + p.oz + jz;
-
-          // Keep within block bounds
           const halfBA = BUILD_AREA / 2;
           if (Math.abs(wx - cx) > halfBA - 6 || Math.abs(wz - cz) > halfBA - 6) continue;
 
           const h = hMin + (hMax - hMin) * rng() * p.hMult;
+
+          // Store first placement's archetype for interior generation
+          if (!blockArchetypeMapRef.current.has(`${col},${row}`)) {
+            blockArchetypeMapRef.current.set(`${col},${row}`, { arch: p.arch, height: h });
+          }
+
           let group: THREE.Group;
           switch (p.arch) {
             case 'tower':       group = createTower(wx, wz, h, mats); break;
@@ -591,7 +888,6 @@ export function WorldView() {
             case 'residential': group = createResidential(wx, wz, h, mats); break;
             case 'warehouse':   group = createWarehouse(wx, wz, h, mats); break;
           }
-          // Tag every mesh in this group with block info for raycasting
           group.traverse(obj => {
             if (obj instanceof THREE.Mesh) {
               obj.userData.blockInfo = info;
@@ -599,17 +895,16 @@ export function WorldView() {
               blockMeshMap.set(obj, info);
             }
           });
-          scene.add(group);
+          cityGroup.add(group);
         }
 
-        // A few trees on the sidewalk edges
         const treeRng = seededRandom(`trees-${col}-${row}`);
         for (let t = 0; t < 3; t++) {
           const edge = BUILD_AREA / 2 + 2;
           const side = treeRng() > 0.5 ? 1 : -1;
           const tx = cx + (treeRng() - 0.5) * BLOCK_SIZE * 0.7;
           const tz = cz + side * edge * 0.8;
-          scene.add(makeTree(tx, tz, seededRandom(`st-${t}-${col}-${row}`)));
+          cityGroup.add(makeTree(tx, tz, seededRandom(`st-${t}-${col}-${row}`)));
         }
       }
     }
@@ -634,7 +929,7 @@ export function WorldView() {
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      if (isPanning) {
+      if (isPanning && viewModeRef.current === 'city') {
         const panSpeed = orbitRadius * 0.0012;
         const right = new THREE.Vector3();
         right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
@@ -653,21 +948,32 @@ export function WorldView() {
       isDragging = false; isPanning = false;
       const moved = Math.abs(e.clientX - clickStartX) + Math.abs(e.clientY - clickStartY);
       if (e.button !== 0 || moved > 5) return;
-      // Raycast
+
       const rect = canvas.getBoundingClientRect();
       clickPt.set(
         ((e.clientX - rect.left) / rect.width)  * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(clickPt, camera);
-      const hits = raycaster.intersectObjects(allBuildingMeshes, false);
-      if (hits.length > 0) {
-        const info = blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null;
-        selectedBlockState = info;
-        setSelectedBlock(info);
+
+      if (viewModeRef.current === 'interior') {
+        const hits = raycaster.intersectObjects(allInteriorMeshesRef.current, false);
+        if (hits.length > 0) {
+          const elem = hits[0].object.userData.interiorElement;
+          if (elem) setInteriorSelection({ type: elem.type, label: elem.label });
+        } else {
+          setInteriorSelection(null);
+        }
       } else {
-        selectedBlockState = null;
-        setSelectedBlock(null);
+        const hits = raycaster.intersectObjects(allBuildingMeshes, false);
+        if (hits.length > 0) {
+          const info = blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null;
+          selectedBlockState = info;
+          setSelectedBlock(info);
+        } else {
+          selectedBlockState = null;
+          setSelectedBlock(null);
+        }
       }
     };
     document.addEventListener('mouseup', onMouseUp);
@@ -675,7 +981,11 @@ export function WorldView() {
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      orbitRadius = Math.max(60, Math.min(500, orbitRadius + e.deltaY * 0.35));
+      if (viewModeRef.current === 'interior') {
+        orbitRadius = Math.max(2, Math.min(15, orbitRadius + e.deltaY * 0.04));
+      } else {
+        orbitRadius = Math.max(60, Math.min(500, orbitRadius + e.deltaY * 0.35));
+      }
       updateCameraOrbit();
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -698,7 +1008,11 @@ export function WorldView() {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        orbitRadius = Math.max(60, Math.min(500, orbitRadius - (dist - lastTouchDist) * 0.5));
+        if (viewModeRef.current === 'interior') {
+          orbitRadius = Math.max(2, Math.min(15, orbitRadius - (dist - lastTouchDist) * 0.3));
+        } else {
+          orbitRadius = Math.max(60, Math.min(500, orbitRadius - (dist - lastTouchDist) * 0.5));
+        }
         lastTouchDist = dist;
       } else {
         const ddx = e.touches[0].clientX - lastTouchX;
@@ -725,17 +1039,15 @@ export function WorldView() {
     // ── Minimap ───────────────────────────────────────────────────────────────
     if (mmCanvas) { mmCanvas.width = 160; mmCanvas.height = 160; }
     const mmCtx = mmCanvas?.getContext('2d') ?? null;
-    const MM_SCALE = 72 / (HALF * STEP + STEP / 2); // fits grid into 72px radius
+    const MM_SCALE = 72 / (HALF * STEP + STEP / 2);
 
     function drawMinimap() {
       if (!mmCtx) return;
       mmCtx.clearRect(0, 0, 160, 160);
-      // Background circle
       mmCtx.beginPath(); mmCtx.arc(80, 80, 78, 0, Math.PI * 2);
       mmCtx.fillStyle = 'rgba(0,0,0,0.7)'; mmCtx.fill();
       mmCtx.strokeStyle = 'rgba(100,180,255,0.4)'; mmCtx.lineWidth = 2; mmCtx.stroke();
       mmCtx.save(); mmCtx.beginPath(); mmCtx.arc(80, 80, 78, 0, Math.PI * 2); mmCtx.clip();
-      // Draw blocks
       for (const b of blocks) {
         const bx = 80 + b.cx * MM_SCALE;
         const bz = 80 + b.cz * MM_SCALE;
@@ -747,25 +1059,121 @@ export function WorldView() {
           mmCtx.strokeRect(bx - bw / 2, bz - bw / 2, bw, bw);
         }
       }
-      // Viewport crosshair
       const vx = 80 + orbitTarget.x * MM_SCALE;
       const vz = 80 + orbitTarget.z * MM_SCALE;
       mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 1.5;
       mmCtx.beginPath(); mmCtx.moveTo(vx - 5, vz); mmCtx.lineTo(vx + 5, vz); mmCtx.stroke();
       mmCtx.beginPath(); mmCtx.moveTo(vx, vz - 5); mmCtx.lineTo(vx, vz + 5); mmCtx.stroke();
-      // N label
       mmCtx.fillStyle = 'rgba(255,255,255,0.65)';
       mmCtx.font = 'bold 9px system-ui'; mmCtx.textAlign = 'center';
       mmCtx.fillText('N', 80, 12);
       mmCtx.restore();
     }
 
+    // ── Enter / Exit / Floor callbacks ────────────────────────────────────────
+    enterBuildingCallbackRef.current = (block: BlockInfo) => {
+      if (transitionRef.current.active) return;
+      // Save current city camera before entering
+      savedCityCameraRef.current = {
+        radius: orbitRadius,
+        theta:  orbitTheta,
+        target: orbitTarget.clone(),
+      };
+      interiorBuildingRef.current = block;
+      viewModeRef.current = 'interior';
+      currentFloorRef.current = 0;
+      transitionRef.current = { active: true, alpha: 0, direction: 1 };
+      setViewMode('interior');
+      setInteriorBuilding(block);
+      setCurrentFloor(0);
+      setSelectedBlock(null);
+      setInteriorSelection(null);
+    };
+
+    exitBuildingCallbackRef.current = () => {
+      if (transitionRef.current.active) return;
+      viewModeRef.current = 'city';
+      transitionRef.current = { active: true, alpha: 0, direction: 1 };
+      setViewMode('city');
+      setInteriorBuilding(null);
+      setInteriorSelection(null);
+    };
+
+    changeFloorCallbackRef.current = (floor: number) => {
+      if (transitionRef.current.active) return;
+      currentFloorRef.current = floor;
+      const block = interiorBuildingRef.current;
+      if (block && interiorGroupRef.current) {
+        const archData = blockArchetypeMapRef.current.get(`${block.col},${block.row}`);
+        const nFloors = buildInteriorScene(
+          interiorGroupRef.current, block,
+          archData?.arch ?? 'midrise', archData?.height ?? 10,
+          floor, allInteriorMeshesRef
+        );
+        setTotalFloors(nFloors);
+      }
+      setCurrentFloor(floor);
+      setInteriorSelection(null);
+    };
+
     // ── Animate ───────────────────────────────────────────────────────────────
     let rafId = 0;
     function animate() {
       rafId = requestAnimationFrame(animate);
+
+      // Fade transition
+      const tr = transitionRef.current;
+      if (tr.active) {
+        tr.alpha = Math.max(0, Math.min(1, tr.alpha + 0.055 * tr.direction));
+        if (fadeOverlayRef.current) {
+          fadeOverlayRef.current.style.opacity = String(tr.alpha);
+        }
+
+        if (tr.direction === 1 && tr.alpha >= 1) {
+          tr.alpha = 1;
+          if (viewModeRef.current === 'interior') {
+            // Switch to interior
+            cityGroup.visible = false;
+            interiorGroup.visible = true;
+            const block = interiorBuildingRef.current!;
+            const archData = blockArchetypeMapRef.current.get(`${block.col},${block.row}`);
+            const nFloors = buildInteriorScene(
+              interiorGroup, block,
+              archData?.arch ?? 'midrise', archData?.height ?? 10,
+              currentFloorRef.current, allInteriorMeshesRef
+            );
+            setTotalFloors(nFloors);
+            // Interior camera
+            orbitRadius = 8;
+            orbitPhi    = 1.3;
+            orbitTarget.set(0, 1.5, 0);
+            sun.intensity  = 0.3;
+            hemi.intensity = 1.4;
+            scene.fog = null;
+          } else {
+            // Restore city
+            cityGroup.visible = true;
+            interiorGroup.visible = false;
+            const saved = savedCityCameraRef.current;
+            orbitRadius = saved.radius;
+            orbitTheta  = saved.theta;
+            orbitPhi    = 1.08;
+            orbitTarget.copy(saved.target);
+            sun.intensity  = 2.5;
+            hemi.intensity = 0.5;
+            scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+          }
+          updateCameraOrbit();
+          tr.direction = -1;
+        } else if (tr.direction === -1 && tr.alpha <= 0) {
+          tr.alpha = 0;
+          tr.active = false;
+          if (fadeOverlayRef.current) fadeOverlayRef.current.style.opacity = '0';
+        }
+      }
+
       composer.render();
-      drawMinimap();
+      if (viewModeRef.current === 'city') drawMinimap();
     }
     animate();
 
@@ -790,67 +1198,190 @@ export function WorldView() {
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       <div ref={labelRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
-      {/* Controls hint */}
-      <div style={{
-        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-        background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8, padding: '5px 14px', color: '#64748b', fontSize: 11,
-        pointerEvents: 'none', whiteSpace: 'nowrap',
-      }}>
-        Drag to rotate · Scroll to zoom · Right-drag to pan · Click a block to inspect
-      </div>
+      {/* Fade overlay */}
+      <div
+        ref={fadeOverlayRef}
+        style={{ position: 'absolute', inset: 0, background: '#F0F5FF', opacity: 0, pointerEvents: 'none', zIndex: 50 }}
+      />
 
-      {/* Selected block info */}
-      {selectedBlock && (
-        <div style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'rgba(10,15,30,0.92)', border: '1px solid rgba(255,255,255,0.15)',
-          borderRadius: 10, padding: '14px 18px', color: '#e2e8f0',
-          backdropFilter: 'blur(12px)', minWidth: 180,
-          animation: 'fadeIn 0.15s ease-out',
-        }}>
-          <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }`}</style>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{selectedBlock.label}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: 2, flexShrink: 0,
-              background: ZONE_COLORS[selectedBlock.zone],
-            }} />
-            <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>
-              {selectedBlock.zone} zone
-            </span>
+      {/* ── CITY MODE UI ── */}
+      {viewMode === 'city' && (
+        <>
+          {/* Controls hint */}
+          <div style={{
+            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '5px 14px', color: '#64748b', fontSize: 11,
+            pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            Drag to rotate · Scroll to zoom · Right-drag to pan · Click a block to inspect
           </div>
-          <button
-            onClick={() => setSelectedBlock(null)}
-            style={{
-              position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
-              color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1,
-            }}
-          >×</button>
-        </div>
+
+          {/* Selected block info */}
+          {selectedBlock && (
+            <div style={{
+              position: 'absolute', top: 16, right: 16,
+              background: 'rgba(10,15,30,0.92)', border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 10, padding: '14px 18px', color: '#e2e8f0',
+              backdropFilter: 'blur(12px)', minWidth: 190,
+              animation: 'fadeIn 0.15s ease-out',
+            }}>
+              <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }`}</style>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{selectedBlock.label}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: ZONE_COLORS[selectedBlock.zone] }} />
+                <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>
+                  {selectedBlock.zone} zone
+                </span>
+              </div>
+              <button
+                onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}
+                style={{
+                  width: '100%', padding: '7px 0',
+                  background: 'rgba(80,140,220,0.18)', border: '1px solid rgba(100,160,240,0.35)',
+                  borderRadius: 7, color: '#93c5fd', cursor: 'pointer', fontSize: 11,
+                  fontWeight: 600, letterSpacing: '0.02em',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(80,140,220,0.3)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,140,220,0.18)')}
+              >
+                Enter Building →
+              </button>
+              <button
+                onClick={() => setSelectedBlock(null)}
+                style={{
+                  position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
+                  color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                }}
+              >×</button>
+            </div>
+          )}
+
+          {/* Minimap */}
+          <div style={{
+            position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
+            boxShadow: '0 0 0 2px rgba(100,180,255,0.3)', zIndex: 10,
+          }}>
+            <canvas ref={minimapRef} width={160} height={160} style={{ display: 'block' }} />
+          </div>
+
+          {/* Zone legend */}
+          <div style={{
+            position: 'absolute', top: 16, left: 16,
+            background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '8px 12px', zIndex: 10, backdropFilter: 'blur(8px)',
+          }}>
+            {(['downtown','midrise','mixed','low','park','water'] as const).map(zone => (
+              <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <div style={{ width: 9, height: 9, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>{zone}</span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Minimap */}
-      <div style={{
-        position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
-        boxShadow: '0 0 0 2px rgba(100,180,255,0.3)', zIndex: 10,
-      }}>
-        <canvas ref={minimapRef} width={160} height={160} style={{ display: 'block' }} />
-      </div>
+      {/* ── INTERIOR MODE UI ── */}
+      {viewMode === 'interior' && (
+        <>
+          {/* Exit button */}
+          <button
+            onClick={() => exitBuildingCallbackRef.current?.()}
+            style={{
+              position: 'absolute', top: 16, left: 16, zIndex: 20,
+              background: 'rgba(10,15,30,0.85)', border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 8, padding: '8px 14px', color: '#e2e8f0',
+              cursor: 'pointer', fontSize: 12, backdropFilter: 'blur(8px)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(30,40,70,0.95)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(10,15,30,0.85)')}
+          >
+            ← Exit Building
+          </button>
 
-      {/* Zone legend */}
-      <div style={{
-        position: 'absolute', top: 16, left: 16,
-        background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8, padding: '8px 12px', zIndex: 10, backdropFilter: 'blur(8px)',
-      }}>
-        {(['downtown','midrise','mixed','low','park','water'] as const).map(zone => (
-          <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-            <div style={{ width: 9, height: 9, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0 }} />
-            <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>{zone}</span>
+          {/* Building + floor label */}
+          <div style={{
+            position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(10,15,30,0.75)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '6px 18px', color: '#94a3b8', fontSize: 11,
+            backdropFilter: 'blur(8px)', zIndex: 20, pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            <span style={{ color: '#c0d0e8', fontWeight: 600 }}>{interiorBuilding?.label}</span>
+            <span style={{ margin: '0 6px' }}>·</span>
+            Floor {currentFloor + 1} of {totalFloors}
           </div>
-        ))}
-      </div>
+
+          {/* Floor selector */}
+          {totalFloors > 1 && (
+            <div style={{
+              position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
+              display: 'flex', flexDirection: 'column', gap: 4, zIndex: 20,
+              background: 'rgba(10,15,30,0.85)', borderRadius: 10, padding: '8px 6px',
+              border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)',
+              maxHeight: '60vh', overflowY: 'auto',
+            }}>
+              {Array.from({ length: totalFloors }, (_, i) => {
+                const active = i === currentFloor;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => changeFloorCallbackRef.current?.(i)}
+                    style={{
+                      width: 32, height: 26,
+                      background: active ? 'rgba(80,140,220,0.3)' : 'transparent',
+                      border: active ? '1px solid rgba(100,160,240,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 5, color: active ? '#c8ddff' : '#64748b',
+                      fontSize: 10, cursor: 'pointer', fontWeight: active ? 700 : 400,
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Interior selection tooltip */}
+          {interiorSelection && (
+            <div style={{
+              position: 'absolute', top: 16, right: totalFloors > 1 ? 72 : 16, zIndex: 20,
+              background: 'rgba(10,15,30,0.92)', border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 10, padding: '12px 16px', color: '#e2e8f0',
+              backdropFilter: 'blur(12px)', minWidth: 160,
+              animation: 'fadeIn 0.12s ease-out',
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{interiorSelection.label}</div>
+              <div style={{ fontSize: 11, color: '#64748b', textTransform: 'capitalize' }}>
+                {interiorSelection.type === 'desk'        && 'Workstation'}
+                {interiorSelection.type === 'meetingRoom' && 'Meeting Space'}
+                {interiorSelection.type === 'window'      && 'Exterior Window'}
+              </div>
+              <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
+                {interiorBuilding?.label} · Floor {currentFloor + 1}
+              </div>
+              <button
+                onClick={() => setInteriorSelection(null)}
+                style={{
+                  position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
+                  color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                }}
+              >×</button>
+            </div>
+          )}
+
+          {/* Controls hint */}
+          <div style={{
+            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 8, padding: '5px 14px', color: '#64748b', fontSize: 11,
+            pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            Drag to look around · Scroll to zoom · Click to inspect · Use floor buttons to navigate
+          </div>
+        </>
+      )}
     </div>
   );
 }
