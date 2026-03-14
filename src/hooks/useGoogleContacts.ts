@@ -1,16 +1,23 @@
 import { useRef, useCallback } from 'react';
 import type { Contact } from '../types';
 import { generateId, todayStr } from '../utils';
+import {
+  GOOGLE_CLIENT_ID,
+  ALL_GOOGLE_SCOPES,
+  getLocalToken,
+  saveLocalToken,
+  hasEverConsented,
+} from './googleSharedAuth';
+
+interface GISResponse {
+  access_token: string;
+  expires_in: number;
+  error?: string;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CLIENT_ID = '8551940265-5t2rjjtb495tvbdj519d569vq4aa57ge.apps.googleusercontent.com';
-const CONTACTS_SCOPE = 'https://www.googleapis.com/auth/contacts.readonly';
-
-const LS_TOKEN        = 'gcontacts_token';
-const LS_EXPIRY       = 'gcontacts_token_expiry';
-const LS_SYNC_TOKEN   = 'gcontacts_sync_token';
-const LS_CONSENTED    = 'gcontacts_consented'; // set permanently after first successful auth
+const LS_SYNC_TOKEN = 'gcontacts_sync_token';
 
 // ─── Google People API types ──────────────────────────────────────────────────
 
@@ -22,6 +29,7 @@ interface Birthday       { date?: { year?: number; month?: number; day?: number 
 interface PersonMetadata { deleted?: boolean; }
 
 interface Person {
+  resourceName?: string;
   metadata?: PersonMetadata;
   names?: PersonName[];
   emailAddresses?: EmailAddress[];
@@ -34,26 +42,6 @@ interface ConnectionsResponse {
   connections?: Person[];
   nextPageToken?: string;
   nextSyncToken?: string;
-}
-
-// ─── Token helpers ────────────────────────────────────────────────────────────
-
-function getStoredToken(): string | null {
-  const token  = localStorage.getItem(LS_TOKEN);
-  const expiry = localStorage.getItem(LS_EXPIRY);
-  if (!token || !expiry) return null;
-  if (Date.now() > parseInt(expiry, 10)) {
-    localStorage.removeItem(LS_TOKEN);
-    localStorage.removeItem(LS_EXPIRY);
-    return null;
-  }
-  return token;
-}
-
-function saveToken(token: string, expiresIn: number) {
-  localStorage.setItem(LS_TOKEN, token);
-  localStorage.setItem(LS_EXPIRY, String(Date.now() + expiresIn * 1000 - 60_000));
-  localStorage.setItem(LS_CONSENTED, '1');
 }
 
 // ─── People API fetch helpers ─────────────────────────────────────────────────
@@ -125,7 +113,24 @@ function mapPerson(person: Person): Contact | null {
     interactions: [],
     linkedProjects: [],
     ...(birthday ? { birthday } : {}),
+    ...(person.resourceName ? { googleResourceName: person.resourceName } : {}),
   };
+}
+
+// ─── Delete a contact from Google Contacts ────────────────────────────────────
+
+async function deletePersonFromGoogle(resourceName: string, accessToken: string): Promise<void> {
+  const res = await fetch(
+    `https://people.googleapis.com/v1/${resourceName}:deleteContact`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+  if (!res.ok && res.status !== 404) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message ?? `People API ${res.status}`);
+  }
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -140,19 +145,20 @@ export function useGoogleContacts() {
         reject(new Error('Google Identity Services not loaded'));
         return;
       }
-      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: CONTACTS_SCOPE,
-        callback: (response) => {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: ALL_GOOGLE_SCOPES,
+        callback: (response: GISResponse) => {
           if (response.error || !response.access_token) {
             reject(new Error(response.error ?? 'No access token'));
             return;
           }
-          saveToken(response.access_token, response.expires_in);
+          saveLocalToken(response.access_token, response.expires_in);
           resolve(response.access_token);
         },
       });
-      tokenClientRef.current.requestAccessToken({ prompt: silent ? '' : 'consent' });
+      tokenClientRef.current = client;
+      client.requestAccessToken({ prompt: silent ? '' : 'consent' });
     });
   }, []);
 
@@ -163,11 +169,11 @@ export function useGoogleContacts() {
    * Returns null if no stored token exists (user hasn't synced yet).
    */
   const autoSync = useCallback(async (): Promise<Contact[] | null> => {
-    let token = getStoredToken();
+    let token = getLocalToken();
 
     // If no stored token, only attempt silent re-auth if user has previously consented
     if (!token) {
-      if (!localStorage.getItem(LS_CONSENTED)) return null; // never connected
+      if (!hasEverConsented()) return null; // never connected
       try {
         token = await getToken(true);
       } catch {
@@ -214,7 +220,7 @@ export function useGoogleContacts() {
   const syncContacts = useCallback(async (): Promise<Contact[]> => {
     localStorage.removeItem(LS_SYNC_TOKEN); // force full sync on manual trigger
     let token: string;
-    if (localStorage.getItem(LS_CONSENTED) && !getStoredToken()) {
+    if (hasEverConsented() && !getLocalToken()) {
       // Previously consented, token just expired — try silent first
       try { token = await getToken(true); } catch { token = await getToken(false); }
     } else {
@@ -228,5 +234,18 @@ export function useGoogleContacts() {
       .filter((c): c is Contact => c !== null);
   }, [getToken]);
 
-  return { syncContacts, autoSync };
+  /**
+   * deleteContact — silently removes a contact from Google Contacts.
+   * Only acts if googleResourceName is set. Skips silently if no token.
+   */
+  const deleteContact = useCallback(async (googleResourceName: string): Promise<void> => {
+    let token = getLocalToken();
+    if (!token) {
+      if (!hasEverConsented()) return; // never connected
+      try { token = await getToken(true); } catch { return; } // silent re-auth failed
+    }
+    await deletePersonFromGoogle(googleResourceName, token);
+  }, [getToken]);
+
+  return { syncContacts, autoSync, deleteContact };
 }

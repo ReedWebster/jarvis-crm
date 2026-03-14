@@ -38,6 +38,7 @@ import { Badge } from '../shared/Badge';
 import { EmailComposeModal } from '../email/EmailComposeModal';
 import { EmailThread } from '../email/EmailThread';
 import { useGoogleContacts } from '../../hooks/useGoogleContacts';
+import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
@@ -196,9 +197,11 @@ interface ContactCardProps {
   onLogInteraction: () => void;
   onSendEmail?: () => void;
   onViewEmails?: () => void;
+  onUpdateTags: (tags: ContactTag[]) => void;
 }
 
-function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails }: ContactCardProps) {
+function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails, onUpdateTags }: ContactCardProps) {
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const health = calcRelationshipHealth(contact.lastContacted);
   const daysAgo = useMemo(() => {
     try {
@@ -275,14 +278,56 @@ function ContactCard({ contact, onEdit, onDelete, onDetail, onLogInteraction, on
         )}
       </div>
 
-      {/* Tags */}
-      {contact.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {contact.tags.map((tag) => (
-            <Badge key={tag} label={tag} color={TAG_COLORS[tag]} size="xs" />
-          ))}
+      {/* Tags — inline editable */}
+      <div className="flex flex-wrap gap-1 items-center relative">
+        {contact.tags.map((tag) => (
+          <button
+            key={tag}
+            onClick={(e) => { e.stopPropagation(); onUpdateTags(contact.tags.filter(t => t !== tag)); }}
+            className="flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium transition-all"
+            style={{
+              backgroundColor: `${TAG_COLORS[tag]}22`,
+              color: TAG_COLORS[tag],
+              border: `1px solid ${TAG_COLORS[tag]}55`,
+            }}
+            title="Remove tag"
+          >
+            {tag}
+            <X size={9} className="ml-0.5 opacity-60" />
+          </button>
+        ))}
+        <div className="relative">
+          <button
+            onClick={(e) => { e.stopPropagation(); setTagMenuOpen(o => !o); }}
+            className="flex items-center justify-center rounded-full w-5 h-5 text-xs transition-colors"
+            style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}
+            title="Add tag"
+          >
+            +
+          </button>
+          {tagMenuOpen && (
+            <div
+              className="absolute left-0 top-6 z-50 rounded-lg shadow-xl p-2 flex flex-col gap-0.5 min-w-[130px]"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
+              onMouseLeave={() => setTagMenuOpen(false)}
+            >
+              {ALL_TAGS.filter(t => !contact.tags.includes(t)).map(tag => (
+                <button
+                  key={tag}
+                  onClick={(e) => { e.stopPropagation(); onUpdateTags([...contact.tags, tag]); setTagMenuOpen(false); }}
+                  className="text-left text-xs px-2 py-1 rounded transition-colors hover:opacity-80"
+                  style={{ color: TAG_COLORS[tag] }}
+                >
+                  {tag}
+                </button>
+              ))}
+              {ALL_TAGS.filter(t => !contact.tags.includes(t)).length === 0 && (
+                <span className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>All tags added</span>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Status indicators */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -815,7 +860,6 @@ interface ContactFormData {
   mapLat?: number;
   mapLng?: number;
   mapLabel?: string;
-  metAt: string;
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
@@ -845,7 +889,6 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
     mapLat: initial?.mapLat,
     mapLng: initial?.mapLng,
     mapLabel: initial?.mapLabel,
-    metAt: (initial as any)?.metAt ?? '',
     relationship: initial?.relationship ?? '',
     tags: initial?.tags ?? [],
     lastContacted: initial?.lastContacted ?? todayStr(),
@@ -949,26 +992,14 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
             />
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="caesar-label">Company / Organization</label>
-            <input
-              className="caesar-input w-full"
-              placeholder="Company name"
-              value={form.company}
-              onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="caesar-label">Where / How You Met</label>
-            <input
-              className="caesar-input w-full"
-              list="metat-suggestions"
-              placeholder="e.g. Harvard, YC S24, Conference"
-              value={form.metAt}
-              onChange={(e) => setForm((f) => ({ ...f, metAt: e.target.value }))}
-            />
-          </div>
+        <div>
+          <label className="caesar-label">Company / Organization</label>
+          <input
+            className="caesar-input w-full"
+            placeholder="Company name"
+            value={form.company}
+            onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+          />
         </div>
 
         {/* ── Relationship ── */}
@@ -1066,20 +1097,6 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title }: ContactFo
         </div>
       </form>
     </Modal>
-  );
-}
-
-// Datalist component — rendered once at the page level for metAt autocomplete
-function MetAtDatalist({ contacts }: { contacts: Contact[] }) {
-  const suggestions = useMemo(() => {
-    const vals = new Set<string>();
-    contacts.forEach(c => { if ((c as any).metAt?.trim()) vals.add((c as any).metAt.trim()); });
-    return [...vals].sort();
-  }, [contacts]);
-  return (
-    <datalist id="metat-suggestions">
-      {suggestions.map(s => <option key={s} value={s} />)}
-    </datalist>
   );
 }
 
@@ -1459,7 +1476,7 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 export default function ContactsCRM({ contacts, setContacts, onNavigateToNetworking }: Props) {
   const toast = useToast();
-  const { syncContacts, autoSync } = useGoogleContacts();
+  const { syncContacts, autoSync, deleteContact: deleteGoogleContact } = useGoogleContacts();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // One-time dedup of existing contacts on mount
@@ -1497,7 +1514,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
   const [filterTag, setFilterTag] = useState<ContactTag | ''>('');
   const [filterFollowUp, setFilterFollowUp] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [groupBy, setGroupBy] = useState<'none' | 'metAt' | 'tag' | 'company'>('none');
+  const [groupBy, setGroupBy] = useState<'none' | 'tag' | 'company'>('none');
   const [viewMode, setViewMode] = useState<'grid' | 'flashcard'>('grid');
   const [flashcardShuffled, setFlashcardShuffled] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -1570,8 +1587,17 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
 
   const handleDelete = (id: string) => {
     if (!window.confirm('Delete this contact?')) return;
+    const contact = contacts.find(c => c.id === id);
     setContacts((prev) => (Array.isArray(prev) ? prev : []).filter((c) => c.id !== id));
     toast.success('Contact deleted');
+
+    if (contact) {
+      // Propagate deletion to Google Contacts (→ phone) and Google Calendar in the background
+      if (contact.googleResourceName) {
+        deleteGoogleContact(contact.googleResourceName).catch(() => {});
+      }
+      deleteContactCalendarEvents(contact.name).catch(() => {});
+    }
   };
 
   const handleUpdateContact = (updated: Contact) => {
@@ -2005,7 +2031,6 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             style={{ color: 'inherit' }}
           >
             <option value="none">No Grouping</option>
-            <option value="metAt">By Where Met</option>
             <option value="tag">By Tag</option>
             <option value="company">By Company</option>
           </select>
@@ -2048,9 +2073,6 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
         </p>
       )}
 
-      {/* MetAt datalist for form autocomplete */}
-      <MetAtDatalist contacts={contacts} />
-
       {/* Flashcard view */}
       {viewMode === 'flashcard' && (
         <FlashcardView
@@ -2087,13 +2109,13 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
               onLogInteraction={() => openLog(contact)}
               onSendEmail={() => openCompose(contact)}
               onViewEmails={() => openThread(contact)}
+              onUpdateTags={(tags) => setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, tags } : c))}
             />
           ))}
         </div>
       ) : (
         (() => {
           const getKey = (c: Contact) => {
-            if (groupBy === 'metAt') return (c as any).metAt?.trim() || 'Unknown';
             if (groupBy === 'tag') return c.tags[0] ?? 'Untagged';
             if (groupBy === 'company') return c.company?.trim() || 'No Company';
             return 'Other';
@@ -2131,6 +2153,7 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
                         onLogInteraction={() => openLog(contact)}
                         onSendEmail={() => openCompose(contact)}
                         onViewEmails={() => openThread(contact)}
+                        onUpdateTags={(tags) => setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, tags } : c))}
                       />
                     ))}
                   </div>
@@ -2172,7 +2195,6 @@ export default function ContactsCRM({ contacts, setContacts, onNavigateToNetwork
             birthday: selectedContact.birthday ?? '',
             anniversary: selectedContact.anniversary ?? '',
             notes: selectedContact.notes,
-            metAt: (selectedContact as any).metAt ?? '',
           } as any}
           title={`Edit — ${selectedContact.name}`}
         />

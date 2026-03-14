@@ -1,5 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import {
+  GOOGLE_CLIENT_ID,
+  ALL_GOOGLE_SCOPES,
+  getLocalToken,
+  saveLocalToken,
+  clearLocalToken,
+  loadTokenFromSupabase,
+  saveTokenToSupabase as saveSharedTokenToSupabase,
+  clearTokenFromSupabase as clearSharedTokenFromSupabase,
+} from './googleSharedAuth';
 
 // ─── Google Identity Services type declarations ───────────────────────────────
 
@@ -11,35 +21,6 @@ interface TokenResponse {
   access_token: string;
   expires_in: number;
   error?: string;
-}
-
-declare global {
-  interface Window {
-    google: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            callback: (response: TokenResponse) => void;
-          }) => TokenClient;
-        };
-      };
-    };
-  }
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CLIENT_ID = '8551940265-5t2rjjtb495tvbdj519d569vq4aa57ge.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.modify';
-const TOKEN_KEY = 'gmail_token';
-const EXPIRY_KEY = 'gmail_token_expiry';
-const SUPABASE_KEY = 'jarvis:gmail_auth';
-
-interface GmailAuth {
-  access_token: string;
-  expires_at: number;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,19 +50,7 @@ export interface GmailMessage {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useGmail() {
-  const getStoredToken = (): string | null => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    const expiry = localStorage.getItem(EXPIRY_KEY);
-    if (!token || !expiry) return null;
-    if (Date.now() > parseInt(expiry, 10)) {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(EXPIRY_KEY);
-      return null;
-    }
-    return token;
-  };
-
-  const [token, setToken] = useState<string | null>(getStoredToken);
+  const [token, setToken] = useState<string | null>(getLocalToken);
   const [isLoading, setIsLoading] = useState(false);
   const tokenClientRef = useRef<TokenClient | null>(null);
   const userIdRef = useRef<string | null>(null);
@@ -101,37 +70,27 @@ export function useGmail() {
 
   const silentReconnectRef = useRef(false);
 
-  // ── On login: restore Gmail token from Supabase, or silently re-auth if expired ──
+  // ── On login: restore shared Google token from Supabase, or silently re-auth if expired ──
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       const uid = session?.user.id;
       if (!uid) return;
-      supabase
-        .from('user_data')
-        .select('value')
-        .eq('user_id', uid)
-        .eq('key', SUPABASE_KEY)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (!data?.value) return;
-          const auth = data.value as GmailAuth;
-          if (Date.now() < auth.expires_at) {
-            // Token still valid — restore immediately
-            localStorage.setItem(TOKEN_KEY, auth.access_token);
-            localStorage.setItem(EXPIRY_KEY, String(auth.expires_at));
-            setToken(auth.access_token);
-          } else {
-            // Token expired — attempt silent re-auth once GIS is ready
-            silentReconnectRef.current = true;
-            attemptSilentReconnect();
-          }
-        });
+
+      // Try to restore from Supabase (covers Gmail + Contacts + Calendar)
+      const restored = await loadTokenFromSupabase(uid);
+      if (restored) {
+        setToken(restored);
+        return;
+      }
+
+      // Token expired in Supabase — attempt silent re-auth once GIS is ready
+      silentReconnectRef.current = true;
+      attemptSilentReconnect();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const attemptSilentReconnect = () => {
-    // Poll for GIS to load (it's a script tag loaded async in index.html)
     let attempts = 0;
     const maxAttempts = 20; // 10 seconds
     const poll = setInterval(() => {
@@ -139,39 +98,21 @@ export function useGmail() {
       if (window.google?.accounts?.oauth2) {
         clearInterval(poll);
         const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: SCOPES,
+          client_id: GOOGLE_CLIENT_ID,
+          scope: ALL_GOOGLE_SCOPES,
           callback: (response: TokenResponse) => {
             if (response.error || !silentReconnectRef.current) return;
-            const expiresAt = Date.now() + response.expires_in * 1000;
-            localStorage.setItem(TOKEN_KEY, response.access_token);
-            localStorage.setItem(EXPIRY_KEY, String(expiresAt));
+            const expiresAt = saveLocalToken(response.access_token, response.expires_in);
             setToken(response.access_token);
-            saveTokenToSupabase(response.access_token, expiresAt);
+            const uid = userIdRef.current;
+            if (uid) saveSharedTokenToSupabase(uid, response.access_token, expiresAt);
           },
         });
-        // prompt: '' = silent if user has previously authorized; shows popup only if needed
         client.requestAccessToken({ prompt: '' });
       } else if (attempts >= maxAttempts) {
         clearInterval(poll);
       }
     }, 500);
-  };
-
-  const saveTokenToSupabase = (accessToken: string, expiresAt: number) => {
-    const uid = userIdRef.current;
-    if (!uid) return;
-    const auth: GmailAuth = { access_token: accessToken, expires_at: expiresAt };
-    supabase.from('user_data').upsert(
-      { user_id: uid, key: SUPABASE_KEY, value: auth, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,key' }
-    );
-  };
-
-  const clearTokenFromSupabase = () => {
-    const uid = userIdRef.current;
-    if (!uid) return;
-    supabase.from('user_data').delete().eq('user_id', uid).eq('key', SUPABASE_KEY);
   };
 
   const connect = useCallback((): Promise<void> => {
@@ -181,44 +122,39 @@ export function useGmail() {
         return;
       }
 
-      if (!tokenClientRef.current) {
-        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: SCOPES,
-          callback: (response: TokenResponse) => {
-            if (response.error) {
-              reject(new Error(response.error));
-              return;
-            }
-            const expiresAt = Date.now() + response.expires_in * 1000;
-            localStorage.setItem(TOKEN_KEY, response.access_token);
-            localStorage.setItem(EXPIRY_KEY, String(expiresAt));
-            setToken(response.access_token);
-            // Persist per-user Gmail auth so the connection
-            // can be restored automatically on future logins.
-            saveTokenToSupabase(response.access_token, expiresAt);
-            resolve();
-          },
-        });
-      }
-
-      tokenClientRef.current.requestAccessToken({ prompt: '' });
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: ALL_GOOGLE_SCOPES,
+        callback: (response: TokenResponse) => {
+          if (response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          const expiresAt = saveLocalToken(response.access_token, response.expires_in);
+          setToken(response.access_token);
+          const uid = userIdRef.current;
+          if (uid) saveSharedTokenToSupabase(uid, response.access_token, expiresAt);
+          resolve();
+        },
+      });
+      tokenClientRef.current = client;
+      client.requestAccessToken({ prompt: '' });
     });
   }, []);
 
   const disconnect = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EXPIRY_KEY);
+    clearLocalToken();
     setToken(null);
     tokenClientRef.current = null;
-    clearTokenFromSupabase();
+    const uid = userIdRef.current;
+    if (uid) clearSharedTokenFromSupabase(uid);
   }, []);
 
   const getToken = useCallback(async (): Promise<string> => {
-    const stored = getStoredToken();
+    const stored = getLocalToken();
     if (stored) return stored;
     await connect();
-    const fresh = localStorage.getItem(TOKEN_KEY);
+    const fresh = getLocalToken();
     if (!fresh) throw new Error('Failed to obtain Gmail token');
     return fresh;
   }, [connect]);
@@ -585,11 +521,11 @@ export function useGmail() {
     const msg: string = (err as any)?.error?.message ?? fallback;
     if (res.status === 401 || (res.status === 403 && msg.toLowerCase().includes('scope'))) {
       // Token is missing required scopes or is invalid — clear it so user re-authorizes
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(EXPIRY_KEY);
+      clearLocalToken();
       setToken(null);
       tokenClientRef.current = null;
-      clearTokenFromSupabase();
+      const uid = userIdRef.current;
+      if (uid) clearSharedTokenFromSupabase(uid);
       throw new Error('Gmail needs to be reconnected to enable new permissions. Please click "Connect Gmail".');
     }
     throw new Error(msg);

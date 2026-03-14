@@ -73,7 +73,8 @@ export interface Contact {
   mapLng?: number;     // geocoded lng from address autocomplete selection
   mapLabel?: string;   // short "City, State" label derived from geocoding
   metAt?: string;      // where/how you met this person (e.g. "Harvard", "YC S24", "Conference")
-  linkedin?: string;   // LinkedIn profile URL or username
+  linkedin?: string;          // LinkedIn profile URL or username
+  googleResourceName?: string; // Google People API resource name (e.g. "people/c12345") — set when synced from Google
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;

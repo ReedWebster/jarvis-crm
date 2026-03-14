@@ -1,37 +1,24 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TimeBlock, TimeCategory } from '../types';
+import {
+  GOOGLE_CLIENT_ID,
+  ALL_GOOGLE_SCOPES,
+  getLocalToken,
+  saveLocalToken,
+  hasEverConsented,
+} from './googleSharedAuth';
+
+interface GISResponse {
+  access_token: string;
+  expires_in: number;
+  error?: string;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CLIENT_ID   = '8551940265-5t2rjjtb495tvbdj519d569vq4aa57ge.apps.googleusercontent.com';
-const SCOPE       = 'https://www.googleapis.com/auth/calendar';
 const CAL_NAME    = 'Litehouse';
-
-const LS_TOKEN    = 'gcal_token';
-const LS_EXPIRY   = 'gcal_token_expiry';
 const LS_CAL_ID   = 'gcal_calendar_id';
 const LS_MAP      = 'gcal_event_map';   // { [blockId]: gcalEventId }
-const LS_CONSENTED = 'gcal_consented';  // set permanently after first successful auth
-
-// ─── Token helpers ────────────────────────────────────────────────────────────
-
-function getStoredToken(): string | null {
-  const token  = localStorage.getItem(LS_TOKEN);
-  const expiry = localStorage.getItem(LS_EXPIRY);
-  if (!token || !expiry) return null;
-  if (Date.now() > parseInt(expiry, 10)) {
-    localStorage.removeItem(LS_TOKEN);
-    localStorage.removeItem(LS_EXPIRY);
-    return null;
-  }
-  return token;
-}
-
-function saveToken(token: string, expiresIn: number) {
-  localStorage.setItem(LS_TOKEN, token);
-  localStorage.setItem(LS_EXPIRY, String(Date.now() + expiresIn * 1000 - 60_000));
-  localStorage.setItem(LS_CONSENTED, '1');
-}
 
 function getMap(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(LS_MAP) ?? '{}'); } catch { return {}; }
@@ -97,26 +84,60 @@ function blockToEvent(block: TimeBlock, categories: TimeCategory[]) {
   };
 }
 
+// ─── Delete calendar events mentioning a contact name ────────────────────────
+
+/**
+ * Searches the Litehouse calendar for events mentioning the contact's name
+ * and deletes them. Silently no-ops if not connected or no calendar exists.
+ */
+export async function deleteContactCalendarEvents(contactName: string): Promise<void> {
+  const token = getLocalToken();
+  if (!token) return;
+
+  const calId = localStorage.getItem(LS_CAL_ID);
+  if (!calId) return;
+
+  try {
+    const params = new URLSearchParams({ q: contactName, maxResults: '250' });
+    const list = await gcalFetch(
+      `/calendars/${encodeURIComponent(calId)}/events?${params}`,
+      token
+    );
+    const events: Array<{ id: string }> = list?.items ?? [];
+    await Promise.all(
+      events.map(ev =>
+        gcalFetch(
+          `/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,
+          token,
+          { method: 'DELETE' }
+        ).catch(() => {}) // already deleted or not found — ignore
+      )
+    );
+  } catch {
+    // Silently fail — don't block the local delete
+  }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useGoogleCalendar() {
   const [isSyncing, setIsSyncing]   = useState(false);
-  const [isConnected, setIsConnected] = useState(() => !!getStoredToken());
+  const [isConnected, setIsConnected] = useState(() => !!getLocalToken());
   const tokenClientRef = useRef<{ requestAccessToken: (o?: { prompt?: string }) => void } | null>(null);
 
   // Silently refresh the token on mount if the user has previously consented
   useEffect(() => {
-    if (getStoredToken()) return; // token still valid
-    if (!localStorage.getItem(LS_CONSENTED)) return; // never consented
+    if (getLocalToken()) return; // token still valid
+    if (!hasEverConsented()) return; // never consented
     // Token expired but user has consented before — silently get a new one (no popup)
     const tryRefresh = () => {
       if (!window.google?.accounts?.oauth2) return;
       const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPE,
-        callback: (response) => {
+        client_id: GOOGLE_CLIENT_ID,
+        scope: ALL_GOOGLE_SCOPES,
+        callback: (response: GISResponse) => {
           if (!response.error && response.access_token && response.expires_in) {
-            saveToken(response.access_token, response.expires_in);
+            saveLocalToken(response.access_token, response.expires_in);
             setIsConnected(true);
           }
           // silent failure — user will be prompted when they trigger a sync
@@ -144,20 +165,21 @@ export function useGoogleCalendar() {
         reject(new Error('Google Identity Services not loaded'));
         return;
       }
-      tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: SCOPE,
-        callback: (response) => {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: ALL_GOOGLE_SCOPES,
+        callback: (response: GISResponse) => {
           if (response.error || !response.access_token) {
             reject(new Error(response.error ?? 'No access token'));
             return;
           }
-          saveToken(response.access_token, response.expires_in);
+          saveLocalToken(response.access_token, response.expires_in);
           setIsConnected(true);
           resolve(response.access_token);
         },
       });
-      tokenClientRef.current.requestAccessToken({ prompt: silent ? '' : 'consent' });
+      tokenClientRef.current = client;
+      client.requestAccessToken({ prompt: silent ? '' : 'consent' });
     });
   }, []);
 
@@ -167,7 +189,7 @@ export function useGoogleCalendar() {
   ) => {
     setIsSyncing(true);
     try {
-      let token = getStoredToken();
+      let token = getLocalToken();
       if (!token) {
         // Try silent first (no popup), fall back to interactive
         try { token = await getToken(true); } catch { token = await getToken(false); }
