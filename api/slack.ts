@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './_supabaseAdmin.js';
+import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 
 // ─── Allowed Slack API methods for the proxy ─────────────────────────────────
 
