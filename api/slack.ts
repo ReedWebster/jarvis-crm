@@ -62,20 +62,25 @@ async function handleOAuthStart(_req: any, res: any) {
     `&user_scope=${userScope}` +
     `&state=${state}`;
 
-  res.writeHead(302, { Location: authUrl });
+  res.statusCode = 302;
+  res.setHeader('Location', authUrl);
   res.end();
 }
 
 // ─── OAuth Callback ──────────────────────────────────────────────────────────
+
+function redirect(res: any, location: string) {
+  res.statusCode = 302;
+  res.setHeader('Location', location);
+  res.end();
+}
 
 async function handleOAuthCallback(_req: any, res: any, url: URL) {
   const code = url.searchParams.get('code');
   const error = url.searchParams.get('error');
 
   if (error) {
-    res.writeHead(302, { Location: `/messaging?slack=error&msg=${encodeURIComponent(error)}` });
-    res.end();
-    return;
+    return redirect(res, `/messaging?slack=error&msg=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
@@ -111,11 +116,7 @@ async function handleOAuthCallback(_req: any, res: any, url: URL) {
     const tokenJson: any = await tokenRes.json();
 
     if (!tokenJson.ok) {
-      res.writeHead(302, {
-        Location: `/messaging?slack=error&msg=${encodeURIComponent(tokenJson.error ?? 'Token exchange failed')}`,
-      });
-      res.end();
-      return;
+      return redirect(res, `/messaging?slack=error&msg=${encodeURIComponent(tokenJson.error ?? 'Token exchange failed')}`);
     }
 
     const accessToken: string = tokenJson.authed_user?.access_token;
@@ -124,9 +125,7 @@ async function handleOAuthCallback(_req: any, res: any, url: URL) {
     const teamName: string = tokenJson.team?.name;
 
     if (!accessToken) {
-      res.writeHead(302, { Location: `/messaging?slack=error&msg=no_access_token` });
-      res.end();
-      return;
+      return redirect(res, '/messaging?slack=error&msg=no_access_token');
     }
 
     let userName = '';
@@ -163,16 +162,12 @@ async function handleOAuthCallback(_req: any, res: any, url: URL) {
       );
 
     if (dbError) {
-      res.writeHead(302, { Location: `/messaging?slack=error&msg=${encodeURIComponent(dbError.message)}` });
-      res.end();
-      return;
+      return redirect(res, `/messaging?slack=error&msg=${encodeURIComponent(dbError.message)}`);
     }
 
-    res.writeHead(302, { Location: '/messaging?slack=connected' });
-    res.end();
+    redirect(res, '/messaging?slack=connected');
   } catch (e: any) {
-    res.writeHead(302, { Location: `/messaging?slack=error&msg=${encodeURIComponent(e?.message ?? 'Unknown error')}` });
-    res.end();
+    redirect(res, `/messaging?slack=error&msg=${encodeURIComponent(e?.message ?? 'Unknown error')}`);
   }
 }
 
