@@ -604,37 +604,26 @@ interface SkyConfig {
 }
 
 function getSkyConfig(hour: number): SkyConfig {
-  const t = Math.max(0, Math.min(1, (hour - 6) / 12)); // 0=6am, 0.5=noon, 1=6pm
   const isDay = hour >= 6 && hour < 18;
-  const sunElev = Math.max(0, Math.sin(t * Math.PI));   // 0 at horizon, 1 at noon
-  const sunAz   = (t - 0.5) * Math.PI;                 // east → south → west
-  const sunX =  Math.sin(sunAz) * 200;
-  const sunY =  Math.max(8, sunElev * 200);
-  const sunZ = -Math.cos(sunAz) * 120;
   if (!isDay) {
-    const deep = hour < 5 || hour >= 21;
     return {
-      zenith: deep ? '#060A16' : '#0E1830', horizon: deep ? '#0C1020' : '#1A2A40',
-      fogColor: deep ? 0x060A16 : 0x0E1830, fogDensity: 0.003,
-      sunIntensity: 0, hemiIntensity: 0.06, sunX, sunY, sunZ,
+      zenith: '#060A16', horizon: '#0C1020',
+      fogColor: 0x060A16, fogDensity: 0.003,
+      sunIntensity: 0, hemiIntensity: 0.06,
+      sunX: 0, sunY: -100, sunZ: 0,
     };
   }
-  if (hour < 7.5) return {
-    zenith: '#2A3A6A', horizon: '#F08040',
-    fogColor: 0xD87040, fogDensity: 0.0018,
-    sunIntensity: sunElev * 1.8, hemiIntensity: sunElev * 0.4, sunX, sunY, sunZ,
-  };
-  if (hour >= 16.5) return {
-    zenith: '#3A3060', horizon: '#E86030',
-    fogColor: 0xC05030, fogDensity: 0.0018,
-    sunIntensity: sunElev * 2.0, hemiIntensity: sunElev * 0.4, sunX, sunY, sunZ,
-  };
+  const t = (hour - 6) / 12;                        // 0=6am, 0.5=noon, 1=6pm
+  const sunElev = Math.sin(t * Math.PI);             // 0 at horizon, 1 at noon
+  const sunAz   = (t - 0.5) * Math.PI;              // east → south → west
   return {
     zenith: '#7BB8D4', horizon: '#E8F0F8',
     fogColor: 0xE8F0F8, fogDensity: 0.0014,
     sunIntensity: 1.4 + sunElev * 1.2,
     hemiIntensity: 0.3 + sunElev * 0.35,
-    sunX, sunY, sunZ,
+    sunX:  Math.sin(sunAz) * 200,
+    sunY:  Math.max(8, sunElev * 200),
+    sunZ: -Math.cos(sunAz) * 120,
   };
 }
 
@@ -837,7 +826,7 @@ export function WorldView() {
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
       // Night lights (come on at dusk 4:30pm, off after dawn 7:30am)
       const hr = now.getHours() + now.getMinutes() / 60;
-      const showNight = hr >= 16.5 || hr < 7.5;
+      const showNight = hr < 6 || hr >= 18;
       for (const m of nightLightMeshes) m.visible = showNight;
       nightAmbient.intensity = showNight ? 0.55 : 0;
     }
@@ -870,71 +859,142 @@ export function WorldView() {
     const bloom = new BloomEffect({ intensity: 0.15, luminanceThreshold: 0.92, luminanceSmoothing: 0.02, mipmapBlur: true });
     composer.addPass(new EffectPass(camera, bloom));
 
-    // ── Ground ────────────────────────────────────────────────────────────────
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(700, 700),
-      new THREE.MeshStandardMaterial({ color: '#E4EAF0', roughness: 0.95 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    cityGroup.add(ground);
-
     // ── Materials (shared, cloned per building) ───────────────────────────────
     const mats = makeArchMats();
 
     // ── City grid parameters ───────────────────────────────────────────────────
-    const GRID_N    = 9;
-    const BLOCK_SIZE = 58;
-    const STEP       = 66;
+    const GRID_N    = 13;
+    const BLOCK_SIZE = 50;
+    const STEP       = 58;
     const HALF       = Math.floor(GRID_N / 2);
 
     const roadMat  = new THREE.MeshStandardMaterial({ color: '#1C1C1E', roughness: 0.97 });
     const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90 });
     const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
 
-    const ROAD_W = 8;
+    const ROAD_W = 6;
     const GRID_EXTENT = HALF * STEP + STEP / 2;
 
+    // ── Island terrain (ocean → beach → foam → city ground) ──────────────────
+    // Water shader (declared early so ocean can reuse it; same ref used for city water blocks below)
+    const waterShaderMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform float uTime; varying vec2 vUv;
+        void main() {
+          float w = sin(vUv.x*8.0 + uTime*0.9) * sin(vUv.y*6.0 + uTime*0.7) * 0.5 + 0.5;
+          vec3 c = mix(vec3(0.22,0.44,0.62), vec3(0.35,0.62,0.80), w);
+          gl_FragColor = vec4(c, 0.82 + w*0.06);
+        }`,
+    });
+
+    const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2800, 2800), waterShaderMat);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = -1.2;
+    cityGroup.add(ocean);
+
+    const beachMat = new THREE.MeshStandardMaterial({ color: '#C8A060', roughness: 0.95 });
+    const beach = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT - 24, GRID_EXTENT + 130, 80), beachMat);
+    beach.rotation.x = -Math.PI / 2;
+    beach.position.y = -0.05;
+    beach.receiveShadow = true;
+    cityGroup.add(beach);
+
+    const foamMat = new THREE.MeshStandardMaterial({ color: '#F0EEE8', roughness: 0.9, transparent: true, opacity: 0.65 });
+    const foam = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT + 118, GRID_EXTENT + 132, 80), foamMat);
+    foam.rotation.x = -Math.PI / 2;
+    foam.position.y = -0.04;
+    cityGroup.add(foam);
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(GRID_EXTENT + 12, 80),
+      new THREE.MeshStandardMaterial({ color: '#D0C8B8', roughness: 0.95 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    cityGroup.add(ground);
+
+    // ── Roads (connected: segmented sidewalks, clean intersections) ───────────
+    const roadXs: number[] = [];
+    const roadZs: number[] = [];
     for (let i = 0; i <= GRID_N; i++) {
-      const x = (-HALF - 0.5 + i) * STEP;
+      roadXs.push((-HALF - 0.5 + i) * STEP);
+      roadZs.push((-HALF - 0.5 + i) * STEP);
+    }
+
+    // Vertical roads
+    for (const xPos of roadXs) {
       const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, GRID_EXTENT * 2), roadMat);
       road.rotation.x = -Math.PI / 2;
-      road.position.set(x, 0.01, 0);
+      road.position.set(xPos, 0.01, 0);
       road.receiveShadow = true;
       cityGroup.add(road);
-      for (const s of [-1, 1]) {
-        const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.8, GRID_EXTENT * 2), swalkMat);
-        sw.rotation.x = -Math.PI / 2;
-        sw.position.set(x + s * (ROAD_W / 2 + 0.9), 0.016, 0);
-        sw.receiveShadow = true;
-        cityGroup.add(sw);
+      // Segmented sidewalks between intersections
+      for (let s = 0; s < roadZs.length - 1; s++) {
+        const zStart = roadZs[s]   + ROAD_W / 2 + 0.15;
+        const zEnd   = roadZs[s+1] - ROAD_W / 2 - 0.15;
+        const segLen = zEnd - zStart;
+        if (segLen <= 0) continue;
+        const zMid = (zStart + zEnd) / 2;
+        for (const side of [-1, 1]) {
+          const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.6, segLen), swalkMat);
+          sw.rotation.x = -Math.PI / 2;
+          sw.position.set(xPos + side * (ROAD_W / 2 + 0.8), 0.012, zMid);
+          sw.receiveShadow = true;
+          cityGroup.add(sw);
+        }
       }
-      for (let z = -GRID_EXTENT + 4; z < GRID_EXTENT; z += 6) {
+      // Dashes — skip near intersections
+      for (let dz = -GRID_EXTENT + 3; dz < GRID_EXTENT; dz += 6) {
+        if (roadZs.some(rz => Math.abs(dz - rz) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
         d.rotation.x = -Math.PI / 2;
-        d.position.set(x, 0.018, z);
+        d.position.set(xPos, 0.016, dz);
         cityGroup.add(d);
       }
     }
-    for (let i = 0; i <= GRID_N; i++) {
-      const z = (-HALF - 0.5 + i) * STEP;
+
+    // Horizontal roads
+    for (const zPos of roadZs) {
       const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, ROAD_W), roadMat);
       road.rotation.x = -Math.PI / 2;
-      road.position.set(0, 0.01, z);
+      road.position.set(0, 0.01, zPos);
       road.receiveShadow = true;
       cityGroup.add(road);
-      for (const s of [-1, 1]) {
-        const sw = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, 1.8), swalkMat);
-        sw.rotation.x = -Math.PI / 2;
-        sw.position.set(0, 0.016, z + s * (ROAD_W / 2 + 0.9));
-        sw.receiveShadow = true;
-        cityGroup.add(sw);
+      // Segmented sidewalks between intersections
+      for (let s = 0; s < roadXs.length - 1; s++) {
+        const xStart = roadXs[s]   + ROAD_W / 2 + 0.15;
+        const xEnd   = roadXs[s+1] - ROAD_W / 2 - 0.15;
+        const segLen = xEnd - xStart;
+        if (segLen <= 0) continue;
+        const xMid = (xStart + xEnd) / 2;
+        for (const side of [-1, 1]) {
+          const sw = new THREE.Mesh(new THREE.PlaneGeometry(segLen, 1.6), swalkMat);
+          sw.rotation.x = -Math.PI / 2;
+          sw.position.set(xMid, 0.012, zPos + side * (ROAD_W / 2 + 0.8));
+          sw.receiveShadow = true;
+          cityGroup.add(sw);
+        }
       }
-      for (let x = -GRID_EXTENT + 4; x < GRID_EXTENT; x += 6) {
+      // Dashes — skip near intersections
+      for (let dx = -GRID_EXTENT + 3; dx < GRID_EXTENT; dx += 6) {
+        if (roadXs.some(rx => Math.abs(dx - rx) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.18), dashMat);
         d.rotation.x = -Math.PI / 2;
-        d.position.set(x, 0.018, z);
+        d.position.set(dx, 0.016, zPos);
         cityGroup.add(d);
+      }
+    }
+
+    // Intersection fill squares (clean asphalt at every crossing)
+    for (const xPos of roadXs) {
+      for (const zPos of roadZs) {
+        const fill = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), roadMat);
+        fill.rotation.x = -Math.PI / 2;
+        fill.position.set(xPos, 0.013, zPos);
+        cityGroup.add(fill);
       }
     }
 
@@ -963,17 +1023,7 @@ export function WorldView() {
     }
 
     const parkMat  = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
-    const waterMat = new THREE.ShaderMaterial({
-      transparent: true,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; varying vec2 vUv;
-        void main() {
-          float w = sin(vUv.x*8.0 + uTime*0.9) * sin(vUv.y*6.0 + uTime*0.7) * 0.5 + 0.5;
-          vec3 c = mix(vec3(0.22,0.44,0.62), vec3(0.35,0.62,0.80), w);
-          gl_FragColor = vec4(c, 0.82 + w*0.06);
-        }`,
-    });
+    const waterMat = waterShaderMat;  // reuse the shared animated shader
 
     for (let row = -HALF; row <= HALF; row++) {
       for (let col = -HALF; col <= HALF; col++) {
@@ -1441,7 +1491,7 @@ export function WorldView() {
       // Bloom intensity by time of day (update every ~45s; bloom is always initialized here)
       if (frameCount % 2700 === 1) {
         const hr = new Date().getHours() + new Date().getMinutes() / 60;
-        bloom.intensity = hr < 6 || hr >= 18 ? 1.2 : (hr < 7.5 || hr >= 16.5) ? 0.5 : 0.12;
+        bloom.intensity = hr < 6 || hr >= 18 ? 1.2 : 0.12;
       }
 
       // Fade transition
@@ -1542,7 +1592,7 @@ export function WorldView() {
       }
 
       // Water animation
-      (waterMat as THREE.ShaderMaterial).uniforms.uTime.value += 0.012;
+      waterShaderMat.uniforms.uTime.value += 0.012;
 
       // District name HUD (every 45 frames)
       if (frameCount % 45 === 0 && viewModeRef.current === 'city') {
