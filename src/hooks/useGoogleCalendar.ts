@@ -118,11 +118,105 @@ export async function deleteContactCalendarEvents(contactName: string): Promise<
   }
 }
 
+// ─── Fetch events FROM Google Calendar ────────────────────────────────────────
+
+interface GCalEvent {
+  id: string;
+  summary?: string;
+  description?: string;
+  start?: { dateTime?: string; date?: string; timeZone?: string };
+  end?: { dateTime?: string; date?: string; timeZone?: string };
+  status?: string;
+}
+
+interface GCalCalendarListEntry {
+  id: string;
+  summary: string;
+  backgroundColor?: string;
+  selected?: boolean;
+  accessRole?: string;
+}
+
+/** Fetch events from ALL visible Google Calendars for a date range, returned as TimeBlocks. */
+async function fetchGoogleEvents(
+  token: string,
+  startDate: string,
+  endDate: string,
+): Promise<TimeBlock[]> {
+  // 1. List all calendars the user has
+  const calList = await gcalFetch('/users/me/calendarList', token);
+  const calendars: GCalCalendarListEntry[] = (calList.items ?? []).filter(
+    (c: GCalCalendarListEntry) => c.summary !== CAL_NAME // skip Litehouse calendar (already local)
+  );
+
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timeMin = `${startDate}T00:00:00`;
+  const timeMax = `${endDate}T23:59:59`;
+
+  // 2. Fetch events from each calendar in parallel
+  const allBlocks: TimeBlock[] = [];
+
+  await Promise.all(calendars.map(async (cal) => {
+    try {
+      const params = new URLSearchParams({
+        timeMin: new Date(timeMin).toISOString(),
+        timeMax: new Date(timeMax).toISOString(),
+        singleEvents: 'true',
+        orderBy: 'startTime',
+        maxResults: '250',
+        timeZone: tz,
+      });
+      const result = await gcalFetch(
+        `/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
+        token,
+      );
+      const events: GCalEvent[] = (result?.items ?? []).filter(
+        (e: GCalEvent) => e.status !== 'cancelled',
+      );
+
+      for (const ev of events) {
+        // Skip all-day events (no dateTime)
+        if (!ev.start?.dateTime || !ev.end?.dateTime) continue;
+
+        const startDt = new Date(ev.start.dateTime);
+        const endDt = new Date(ev.end.dateTime);
+        const date = `${startDt.getFullYear()}-${String(startDt.getMonth() + 1).padStart(2, '0')}-${String(startDt.getDate()).padStart(2, '0')}`;
+        const startTime = `${String(startDt.getHours()).padStart(2, '0')}:${String(startDt.getMinutes()).padStart(2, '0')}`;
+        const endTime = `${String(endDt.getHours()).padStart(2, '0')}:${String(endDt.getMinutes()).padStart(2, '0')}`;
+
+        // Skip events that span midnight (endTime <= startTime means next day)
+        if (endTime <= startTime && endTime !== '00:00') continue;
+        // Clamp midnight-ending events
+        const finalEnd = endTime === '00:00' ? '23:59' : endTime;
+
+        allBlocks.push({
+          id: `gcal_${ev.id}`,
+          date,
+          categoryId: '', // no local category
+          title: ev.summary || '(No title)',
+          startTime,
+          endTime: finalEnd,
+          notes: ev.description || '',
+          energy: 3,
+          googleEventId: ev.id,
+          googleCalendarName: cal.summary,
+        });
+      }
+    } catch {
+      // Skip calendars that fail (e.g. permission issues)
+    }
+  }));
+
+  return allBlocks;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useGoogleCalendar() {
   const [isSyncing, setIsSyncing]   = useState(false);
   const [isConnected, setIsConnected] = useState(() => !!getLocalToken());
+  const [googleEvents, setGoogleEvents] = useState<TimeBlock[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
   const tokenClientRef = useRef<{ requestAccessToken: (o?: { prompt?: string }) => void } | null>(null);
 
   // Silently refresh the token on mount if the user has previously consented
@@ -247,5 +341,22 @@ export function useGoogleCalendar() {
     }
   }, [getToken]);
 
-  return { syncToGoogle, isSyncing, isConnected };
+  /** Fetch events from all Google Calendars for a date range */
+  const fetchFromGoogle = useCallback(async (startDate: string, endDate: string) => {
+    setIsFetching(true);
+    try {
+      let token = getLocalToken();
+      if (!token) {
+        try { token = await getToken(true); } catch { return; }
+      }
+      const events = await fetchGoogleEvents(token, startDate, endDate);
+      setGoogleEvents(events);
+    } catch {
+      // Silently fail — Google events are supplementary
+    } finally {
+      setIsFetching(false);
+    }
+  }, [getToken]);
+
+  return { syncToGoogle, fetchFromGoogle, isSyncing, isFetching, isConnected, googleEvents };
 }

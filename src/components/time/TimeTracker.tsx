@@ -195,6 +195,9 @@ function getMinutesAtClientY(
 
 // ─── EVENT BLOCK ──────────────────────────────────────────────────────────────
 
+// Default color for Google Calendar events (blue)
+const GOOGLE_EVENT_COLOR = '#4285f4';
+
 function EventBlock({
   block, categories, top, height, colPct, widthPct, onClick, onMoveStart, isDragging,
 }: {
@@ -208,8 +211,9 @@ function EventBlock({
   onMoveStart?: (e: React.MouseEvent) => void;
   isDragging?: boolean;
 }) {
-  const color = getCategoryColor(block.categoryId, categories);
-  const catName = getCategoryName(block.categoryId, categories);
+  const isGoogleEvent = !!block.googleEventId;
+  const color = isGoogleEvent ? GOOGLE_EVENT_COLOR : getCategoryColor(block.categoryId, categories);
+  const catName = isGoogleEvent ? (block.googleCalendarName ?? 'Google') : getCategoryName(block.categoryId, categories);
   const displayName = block.title?.trim() || catName;
   const isShort = height < 38;
   const [active, setActive] = useState(false);
@@ -218,21 +222,21 @@ function EventBlock({
     <div
       onMouseDown={(e) => {
         e.stopPropagation();
-        if (onMoveStart) { e.preventDefault(); onMoveStart(e); }
+        if (onMoveStart && !isGoogleEvent) { e.preventDefault(); onMoveStart(e); }
       }}
       onTouchStart={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); if (!onMoveStart) onClick(); }}
-      title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}`}
+      onClick={(e) => { e.stopPropagation(); if (!isGoogleEvent && !onMoveStart) onClick(); }}
+      title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}${isGoogleEvent ? `\n${catName}` : ''}`}
       style={{
         position: 'absolute',
         top: top + 1,
         height: height - 2,
         left: `calc(${colPct}% + 2px)`,
         width: `calc(${widthPct}% - 4px)`,
-        backgroundColor: `${color}28`,
+        backgroundColor: isGoogleEvent ? `${color}20` : `${color}28`,
         borderLeft: `3px solid ${color}`,
         borderRadius: 6,
-        cursor: onMoveStart ? 'grab' : 'pointer',
+        cursor: isGoogleEvent ? 'default' : onMoveStart ? 'grab' : 'pointer',
         opacity: isDragging ? 0.35 : 1,
         overflow: 'hidden',
         padding: isShort ? '0 5px' : '3px 6px',
@@ -240,7 +244,6 @@ function EventBlock({
         flexDirection: isShort ? 'row' : 'column',
         alignItems: isShort ? 'center' : 'flex-start',
         gap: isShort ? 4 : 1,
-        /* Bring event to front on hover/focus so overlapping events are clickable */
         zIndex: active ? 10 : 1,
         boxSizing: 'border-box',
         transition: 'filter 0.1s, z-index 0s',
@@ -941,7 +944,7 @@ function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export function TimeTracker({
+export function Calendar({
   timeBlocks, setTimeBlocks, timeCategories, setTimeCategories,
 }: Props) {
   const today = todayStr();
@@ -983,12 +986,34 @@ export function TimeTracker({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const toast = useToast();
-  const { syncToGoogle, isSyncing } = useGoogleCalendar();
+  const { syncToGoogle, fetchFromGoogle, isSyncing, isFetching, isConnected, googleEvents } = useGoogleCalendar();
+
+  // Auto-fetch Google Calendar events when the visible date range changes
+  const visibleRange = useMemo(() => {
+    if (calView === 'day') return { start: selectedDay, end: selectedDay };
+    if (calView === 'week') {
+      const days = getWeekDays(addDays(new Date(), weekOffset * 7));
+      return { start: format(days[0], 'yyyy-MM-dd'), end: format(days[6], 'yyyy-MM-dd') };
+    }
+    // month: cover full month
+    const refMonth = addMonths(new Date(), monthOffset);
+    return {
+      start: format(startOfMonth(refMonth), 'yyyy-MM-dd'),
+      end: format(endOfMonth(refMonth), 'yyyy-MM-dd'),
+    };
+  }, [calView, selectedDay, weekOffset, monthOffset]);
+
+  useEffect(() => {
+    if (isConnected) {
+      fetchFromGoogle(visibleRange.start, visibleRange.end);
+    }
+  }, [isConnected, visibleRange.start, visibleRange.end, fetchFromGoogle]);
 
   const handleGoogleCalendarSync = async () => {
     try {
       await syncToGoogle(timeBlocks, timeCategories);
-      toast.success('Synced to Google Calendar');
+      await fetchFromGoogle(visibleRange.start, visibleRange.end);
+      toast.success('Synced with Google Calendar');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       if (!msg.includes('popup_closed') && !msg.includes('access_denied')) {
@@ -1015,10 +1040,10 @@ export function TimeTracker({
 
   const weekDays = useMemo(() => getWeekDays(addDays(new Date(), weekOffset * 7)), [weekOffset]);
 
-  const filteredBlocks = useMemo(() =>
-    hiddenCategoryIds.size === 0 ? timeBlocks : timeBlocks.filter((b) => !hiddenCategoryIds.has(b.categoryId)),
-    [timeBlocks, hiddenCategoryIds]
-  );
+  const filteredBlocks = useMemo(() => {
+    const local = hiddenCategoryIds.size === 0 ? timeBlocks : timeBlocks.filter((b) => !hiddenCategoryIds.has(b.categoryId));
+    return [...local, ...googleEvents];
+  }, [timeBlocks, hiddenCategoryIds, googleEvents]);
 
   const navTitle = useMemo(() => {
     if (calView === 'day') return format(parseISO(selectedDay), 'EEEE, MMMM d, yyyy');
@@ -1190,9 +1215,9 @@ export function TimeTracker({
             onClick={handleGoogleCalendarSync}
             disabled={isSyncing}
             className="caesar-btn-ghost p-1.5"
-            title="Sync to Google Calendar (and Apple Calendar)"
+            title="Sync with Google Calendar"
           >
-            <RefreshCw size={15} className={isSyncing ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={isSyncing || isFetching ? 'animate-spin' : ''} />
           </button>
           <button onClick={() => setSettingsOpen(true)} className="caesar-btn-ghost p-1.5" title="Manage calendars">
             <Settings size={15} />

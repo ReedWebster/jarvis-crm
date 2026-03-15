@@ -37,7 +37,7 @@ import { GlobalSearch } from './components/shared/GlobalSearch';
 import DailyCommandBrief from './components/dashboard/DailyCommandBrief';
 import CoreIdentityPanel from './components/identity/CoreIdentityPanel';
 import { ProjectsTracker } from './components/projects/ProjectsTracker';
-import { TimeTracker } from './components/time/TimeTracker';
+import { Calendar } from './components/time/TimeTracker';
 import ContactsCRM from './components/contacts/ContactsCRM';
 import AcademicTracker from './components/academic/AcademicTracker';
 import { FinancialSnapshot } from './components/financial/FinancialSnapshot';
@@ -73,7 +73,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   command: 'Daily Command Brief',
   identity: 'Core Identity',
   projects: 'Projects & Ventures',
-  time: 'Time Tracker',
+  time: 'Calendar',
   contacts: 'Contacts CRM',
   academic: 'Academic Tracker',
   financial: 'Financial Snapshot',
@@ -297,7 +297,7 @@ function MainApp() {
         return <ProjectsTracker projects={projects} setProjects={setProjects} />;
       case 'time':
         return (
-          <TimeTracker
+          <Calendar
             timeBlocks={timeBlocks}
             setTimeBlocks={setTimeBlocks}
             timeCategories={timeCategories}

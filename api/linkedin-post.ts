@@ -1,5 +1,5 @@
 import { createLinkedInPost, LinkedInError } from '../src/lib/linkedin';
-import { supabaseAdmin } from './_supabaseAdmin.js';
+import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

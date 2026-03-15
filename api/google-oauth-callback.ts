@@ -1,4 +1,4 @@
-import { GOOGLE_CLIENT_ID, saveGoogleServerAuth } from './_googleAuth.js';
+import { GOOGLE_CLIENT_ID, saveGoogleServerAuth } from '../lib/_googleAuth.js';
 
 export default async function handler(req: any, res: any) {
   const url = new URL(req.url || '', `https://${req.headers.host}`);

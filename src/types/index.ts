@@ -49,6 +49,8 @@ export interface TimeBlock {
   energy: 1 | 2 | 3 | 4 | 5;
   recurrenceId?: string; // groups repeating events for bulk delete
   clientId?: string;     // team calendar: linked client
+  googleEventId?: string; // set when sourced from Google Calendar (read-only in UI)
+  googleCalendarName?: string; // display name of the source Google Calendar
 }
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────

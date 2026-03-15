@@ -1,7 +1,7 @@
-import { supabaseAdmin } from './_supabaseAdmin.js';
-import { buildBriefingPrompt } from './_briefingHelpers.js';
-import type { BriefingData } from './_briefingHelpers.js';
-import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from './_googleAuth.js';
+import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
+import { buildBriefingPrompt } from '../lib/_briefingHelpers.js';
+import type { BriefingData } from '../lib/_briefingHelpers.js';
+import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from '../lib/_googleAuth.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -119,14 +119,17 @@ export default async function handler(req: any, res: any) {
     // Try to fetch Google data (Gmail + Calendar) — non-fatal if unavailable
     let gmailData: any[] = [];
     let calendarData: any[] = [];
+    let googleStatus = 'not_connected';
     try {
       const googleToken = await getGoogleAccessToken(userId);
+      googleStatus = 'token_ok';
       [gmailData, calendarData] = await Promise.all([
         fetchRecentEmails(googleToken, 12),
         fetchTodayCalendarEvents(googleToken),
       ]);
-    } catch {
-      // Google not connected or token expired — briefing still works without it
+      googleStatus = `gmail:${gmailData.length},calendar:${calendarData.length}`;
+    } catch (e: any) {
+      googleStatus = `error: ${e?.message ?? 'unknown'}`;
     }
 
     // Build the prompt
@@ -191,7 +194,7 @@ export default async function handler(req: any, res: any) {
       }, { onConflict: 'user_id,key' }),
     ]);
 
-    res.status(200).json({ success: true, briefing });
+    res.status(200).json({ success: true, briefing, googleStatus });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to generate briefing', detail: err?.message ?? String(err) });
   }

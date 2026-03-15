@@ -251,7 +251,7 @@ export function QuickCaptureSheet({
             <>
               {timeCategories.length === 0 ? (
                 <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>
-                  Add a calendar category in Time Tracker first.
+                  Add a calendar category in Calendar first.
                 </p>
               ) : (
                 <>

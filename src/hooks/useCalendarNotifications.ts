@@ -1,6 +1,6 @@
 /**
  * useCalendarNotifications — fires browser push notifications ~10 min before
- * each of today's calendar events. Works for both personal (TimeTracker) and
+ * each of today's calendar events. Works for both personal (Calendar) and
  * team (TeamCalendarView) calendars.
  *
  * Deduplication: sessionStorage prevents re-firing the same event per session.

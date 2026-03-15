@@ -21,24 +21,35 @@ interface Props {
 export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Not logged in — please sign in first.');
+        return;
+      }
       const res = await fetch('/api/morning-briefing', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
       if (res.ok) {
-        const { briefing: newBriefing } = await res.json();
-        if (newBriefing) onRefresh(newBriefing);
+        const data = await res.json();
+        if (data.googleStatus) console.log('[Briefing] Google status:', data.googleStatus);
+        if (data.briefing) onRefresh(data.briefing);
+        else setError('Empty response from server.');
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? `Server error (${res.status})`);
       }
-    } catch {
-      // silently fail — user can retry
+    } catch (e: any) {
+      setError(e?.message ?? 'Network error — check your connection.');
     } finally {
       setRefreshing(false);
     }
@@ -68,6 +79,11 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
             {refreshing ? 'Generating...' : 'Generate Briefing'}
           </button>
         </div>
+        {error && (
+          <p className="text-xs font-medium" style={{ color: 'var(--priority-high, #ef4444)' }}>
+            {error}
+          </p>
+        )}
         <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>
           No briefing yet. Click "Generate Briefing" to create your first one.
         </p>
@@ -259,8 +275,9 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
             </div>
           )}
 
-          {/* Connect Google prompt — only show if no email data */}
-          {(!sections.emailDigest || sections.emailDigest.length === 0) && (
+          {/* Connect Google prompt — only show if no email AND no calendar data */}
+          {(!sections.emailDigest || sections.emailDigest.length === 0) &&
+           (!sections.calendar || sections.calendar.length === 0) && (
             <div
               className="flex items-center justify-between rounded-lg px-3 py-2"
               style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)' }}

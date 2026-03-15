@@ -1,4 +1,4 @@
-import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from './_googleAuth.js';
+import { GOOGLE_CLIENT_ID, GOOGLE_SCOPES } from '../lib/_googleAuth.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

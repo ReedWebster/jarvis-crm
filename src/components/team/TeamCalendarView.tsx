@@ -1,5 +1,5 @@
 /**
- * TeamCalendarView — same Apple-style calendar as the personal Time Tracker,
+ * TeamCalendarView — same Apple-style calendar as the personal Calendar,
  * but backed by workspace_data (shared across all co-founders).
  * Default categories: Meeting, Filming, Editing, Creative, Admin.
  */

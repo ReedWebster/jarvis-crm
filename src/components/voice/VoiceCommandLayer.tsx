@@ -254,20 +254,20 @@ export function VoiceCommandLayer(props: VoiceCommandLayerProps) {
         onNavigate('time');
         const hrs = params.hours ? `${params.hours} hours ` : '';
         const cat = params.category || 'your work';
-        return { response: `Navigating to Time Tracker. Log ${hrs}to ${cat}.`, success: true };
+        return { response: `Navigating to Calendar. Log ${hrs}to ${cat}.`, success: true };
       }
 
       // ── Time: start timer ─────────────────────────────────────────────────
       case 'time.start': {
         onNavigate('time');
         const cat = params.category ? `for ${params.category}` : '';
-        return { response: `Opening Time Tracker${cat ? ' ' + cat : ''}. Start your timer there.`, success: true };
+        return { response: `Opening Calendar${cat ? ' ' + cat : ''}. Start your timer there.`, success: true };
       }
 
       // ── Time: stop ────────────────────────────────────────────────────────
       case 'time.stop': {
         onNavigate('time');
-        return { response: 'Opening Time Tracker. Stop your active timer there.', success: true };
+        return { response: 'Opening Calendar. Stop your active timer there.', success: true };
       }
 
       // ── Time: today ───────────────────────────────────────────────────────
