@@ -39,6 +39,91 @@ function makeArchMats(): ArchMats {
   };
 }
 
+function makeBuildingTexture(type: 'curtain' | 'strip' | 'residential' | 'warehouse' | 'campus'): THREE.CanvasTexture {
+  const W = 128, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d')!;
+  if (type === 'curtain') {
+    ctx.fillStyle = '#0E1820'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#28384E'; ctx.lineWidth = 1.5;
+    for (let x = 0; x <= W; x += 16) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    for (let y = 2; y < H; y += 20) for (let x = 2; x < W; x += 16) {
+      ctx.fillStyle = `rgba(80,140,210,${0.04 + Math.random() * 0.10})`; ctx.fillRect(x, y, 12, 16);
+    }
+  } else if (type === 'strip') {
+    ctx.fillStyle = '#C2B8A8'; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 300; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.04})`; ctx.fillRect(Math.random()*W, Math.random()*H, 2, 1); }
+    for (let y = 14; y < H; y += 22) {
+      ctx.fillStyle = '#18243A'; ctx.fillRect(8, y, W - 16, 12);
+      ctx.fillStyle = '#243448';
+      for (let x = 8; x < W - 16; x += 20) ctx.fillRect(x + 18, y, 2, 12);
+    }
+  } else if (type === 'residential') {
+    ctx.fillStyle = '#D0C49C'; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 400; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.03})`; ctx.fillRect(Math.random()*W, Math.random()*H, 3, 2); }
+    for (let row = 0; row < 7; row++) for (let col = 0; col < 3; col++) {
+      const wx = col * 40 + 12, wy = row * 34 + 12;
+      ctx.fillStyle = '#141C28'; ctx.fillRect(wx, wy, 18, 22);
+      ctx.strokeStyle = '#C0B088'; ctx.lineWidth = 1.5; ctx.strokeRect(wx - 2, wy - 2, 22, 26);
+      ctx.fillStyle = '#B09870'; ctx.fillRect(wx - 3, wy + 21, 24, 3);
+    }
+  } else if (type === 'warehouse') {
+    ctx.fillStyle = '#8C9298'; ctx.fillRect(0, 0, W, H);
+    for (let x = 0; x < W; x += 6) { ctx.fillStyle = x % 12 === 0 ? '#788088' : '#929A9E'; ctx.fillRect(x, 0, 3, H); }
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = 'rgba(90,50,30,0.12)'; ctx.fillRect(Math.random()*W, 0, 2, H); }
+    ctx.fillStyle = '#606870'; ctx.fillRect(28, H - 68, 46, 66);
+    for (let y = H - 68; y < H; y += 10) { ctx.fillStyle = '#4A5058'; ctx.fillRect(28, y, 46, 2); }
+  } else {
+    ctx.fillStyle = '#141E2E'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#2A3C54'; ctx.lineWidth = 2;
+    for (let x = 0; x <= W; x += 22) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 16) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    for (let y = 2; y < H; y += 16) for (let x = 2; x < W; x += 22) {
+      ctx.fillStyle = `rgba(50,110,170,${0.06 + Math.random() * 0.12})`; ctx.fillRect(x, y, 18, 12);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function makeArchSpecificMats(arch: string): ArchMats {
+  const base = makeArchMats();
+  switch (arch) {
+    case 'tower': case 'spire': case 'podiumTower': {
+      const tex = makeBuildingTexture('curtain'); tex.repeat.set(0.6, 1.2);
+      base.main  = new THREE.MeshStandardMaterial({ map: tex, color: '#C8DCF0', roughness: 0.22, metalness: 0.38 });
+      base.glass = new THREE.MeshStandardMaterial({ color: '#88C0E8', roughness: 0.02, metalness: 0.45, transparent: true, opacity: 0.65 });
+      break;
+    }
+    case 'slab': {
+      const tex = makeBuildingTexture('strip'); tex.repeat.set(0.5, 0.8);
+      base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.90 });
+      break;
+    }
+    case 'residential': {
+      const tex = makeBuildingTexture('residential'); tex.repeat.set(0.5, 0.8);
+      base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
+      base.alt  = new THREE.MeshStandardMaterial({ map: tex, color: '#E8DCBC', roughness: 0.90 });
+      break;
+    }
+    case 'warehouse': {
+      const tex = makeBuildingTexture('warehouse'); tex.repeat.set(1, 0.6);
+      base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.84, metalness: 0.18 });
+      base.alt  = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.84, metalness: 0.18 });
+      break;
+    }
+    case 'midrise': case 'campus': {
+      const tex = makeBuildingTexture('campus'); tex.repeat.set(0.5, 1.0);
+      base.main = new THREE.MeshStandardMaterial({ map: tex, color: '#BED4EE', roughness: 0.40, metalness: 0.22 });
+      break;
+    }
+  }
+  return base;
+}
+
 function archBox(w: number, h: number, d: number, mat: THREE.MeshStandardMaterial): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.castShadow = m.receiveShadow = true;
@@ -868,7 +953,14 @@ export function WorldView() {
     const STEP       = 58;
     const HALF       = Math.floor(GRID_N / 2);
 
-    const roadMat  = new THREE.MeshStandardMaterial({ color: '#1C1C1E', roughness: 0.97 });
+    // Road: asphalt grain canvas texture
+    const roadCanvas = document.createElement('canvas'); roadCanvas.width = roadCanvas.height = 128;
+    const rCtx = roadCanvas.getContext('2d')!;
+    rCtx.fillStyle = '#1A1A1C'; rCtx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 1200; i++) { rCtx.fillStyle = `rgba(255,255,255,${Math.random()*0.04})`; rCtx.fillRect(Math.random()*128, Math.random()*128, 1+Math.random(), 1); }
+    for (let i = 0; i < 200; i++)  { rCtx.fillStyle = `rgba(0,0,0,${Math.random()*0.08})`; rCtx.fillRect(Math.random()*128, Math.random()*128, 3, 2); }
+    const roadTex = new THREE.CanvasTexture(roadCanvas); roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping; roadTex.repeat.set(4, 4);
+    const roadMat  = new THREE.MeshStandardMaterial({ map: roadTex, color: '#1C1C1E', roughness: 0.97 });
     const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90 });
     const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
 
@@ -894,7 +986,19 @@ export function WorldView() {
     ocean.position.y = -1.2;
     cityGroup.add(ocean);
 
-    const beachMat = new THREE.MeshStandardMaterial({ color: '#C8A060', roughness: 0.95 });
+    const beachMat = new THREE.ShaderMaterial({
+      uniforms: {},
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `varying vec2 vUv;
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
+        void main(){
+          float n = noise(vUv*18.0)*0.5 + noise(vUv*42.0)*0.25 + noise(vUv*90.0)*0.15;
+          vec3 sand = mix(vec3(0.72,0.58,0.34), vec3(0.84,0.72,0.48), n);
+          gl_FragColor = vec4(sand, 1.0);
+        }`,
+    });
     const beach = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT - 24, GRID_EXTENT + 130, 80), beachMat);
     beach.rotation.x = -Math.PI / 2;
     beach.position.y = -0.05;
@@ -1124,15 +1228,16 @@ export function WorldView() {
           }
 
           let group: THREE.Group;
+          const am = makeArchSpecificMats(p.arch);
           switch (p.arch) {
-            case 'tower':       group = createTower(wx, wz, h, mats); break;
-            case 'podiumTower': group = createPodiumTower(wx, wz, h, mats); break;
-            case 'midrise':     group = createMidrise(wx, wz, h, mats); break;
-            case 'slab':        group = createSlab(wx, wz, h, mats); break;
-            case 'campus':      group = createCampus(wx, wz, h, mats); break;
-            case 'spire':       group = createSpire(wx, wz, h, mats); break;
-            case 'residential': group = createResidential(wx, wz, h, mats); break;
-            case 'warehouse':   group = createWarehouse(wx, wz, h, mats); break;
+            case 'tower':       group = createTower(wx, wz, h, am); break;
+            case 'podiumTower': group = createPodiumTower(wx, wz, h, am); break;
+            case 'midrise':     group = createMidrise(wx, wz, h, am); break;
+            case 'slab':        group = createSlab(wx, wz, h, am); break;
+            case 'campus':      group = createCampus(wx, wz, h, am); break;
+            case 'spire':       group = createSpire(wx, wz, h, am); break;
+            case 'residential': group = createResidential(wx, wz, h, am); break;
+            case 'warehouse':   group = createWarehouse(wx, wz, h, am); break;
           }
           group.traverse(obj => {
             if (obj instanceof THREE.Mesh) {
@@ -1654,102 +1759,124 @@ export function WorldView() {
       {/* ── CITY MODE UI ── */}
       {viewMode === 'city' && (
         <>
-          {/* District name HUD */}
+          <style>{`
+            @keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+            @keyframes slideUp { from { opacity:0; transform:translateX(-50%) translateY(8px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+            .wv-btn:hover { background: rgba(80,140,220,0.32) !important; border-color: rgba(120,180,255,0.6) !important; }
+            .wv-top-btn:hover { background: rgba(30,40,60,0.95) !important; color: #cbd5e1 !important; }
+          `}</style>
+
+          {/* District name HUD — pill */}
           {districtLabel && (
             <div key={districtLabel} style={{
-              position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
-              color: 'rgba(220,235,255,0.85)', fontSize: 13, fontWeight: 600,
-              letterSpacing: '0.08em', textTransform: 'uppercase',
-              textShadow: '0 1px 8px rgba(0,0,0,0.8)',
-              animation: 'fadeIn 0.4s ease-out', pointerEvents: 'none', zIndex: 10,
+              position: 'absolute', top: 18, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(8,12,24,0.72)', border: '1px solid rgba(100,160,255,0.18)',
+              borderRadius: 20, padding: '5px 16px',
+              color: 'rgba(200,220,255,0.90)', fontSize: 11, fontWeight: 700,
+              letterSpacing: '0.12em', textTransform: 'uppercase',
+              textShadow: '0 1px 6px rgba(0,0,0,0.9)',
+              backdropFilter: 'blur(10px)',
+              animation: 'slideUp 0.35s ease-out', pointerEvents: 'none', zIndex: 10,
+              whiteSpace: 'nowrap',
             }}>{districtLabel}</div>
           )}
 
-          {/* Bird's eye button */}
+          {/* Top-right controls: Bird's eye */}
           <button
+            className="wv-top-btn"
             onClick={() => { birdEyeTargetRef.current = { phi: 0.06, radius: 220 }; }}
             title="Bird's eye view"
             style={{
-              position: 'absolute', top: 16, right: 16, zIndex: 10,
-              background: 'rgba(10,15,30,0.8)', border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 8, padding: '6px 10px', color: '#94a3b8',
-              cursor: 'pointer', fontSize: 11, backdropFilter: 'blur(8px)',
+              position: 'absolute', top: 14, right: 14, zIndex: 10,
+              background: 'rgba(8,12,24,0.80)', border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 8, padding: '6px 11px', color: '#8899B4',
+              cursor: 'pointer', fontSize: 11, fontWeight: 600,
+              backdropFilter: 'blur(10px)', letterSpacing: '0.04em',
+              transition: 'background 0.15s, color 0.15s',
             }}
-          >⬆ Top</button>
+          >↑ Top</button>
 
           {/* Controls hint */}
           <div style={{
-            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 8, padding: '5px 14px', color: '#64748b', fontSize: 11,
-            pointerEvents: 'none', whiteSpace: 'nowrap',
+            position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.07)',
+            borderRadius: 20, padding: '4px 14px', color: '#4A5568', fontSize: 10,
+            pointerEvents: 'none', whiteSpace: 'nowrap', letterSpacing: '0.04em',
           }}>
-            Drag to rotate · Scroll to zoom · Right-drag to pan · Click a block to inspect
+            Drag · Scroll · Right-drag to pan · Click to inspect
           </div>
 
-          {/* Selected block info */}
+          {/* Selected block info card */}
           {selectedBlock && (
             <div style={{
-              position: 'absolute', top: 16, right: 16,
-              background: 'rgba(10,15,30,0.92)', border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 10, padding: '14px 18px', color: '#e2e8f0',
-              backdropFilter: 'blur(12px)', minWidth: 190,
+              position: 'absolute', top: 14, right: 14,
+              background: 'rgba(8,12,26,0.94)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: 12, overflow: 'hidden', color: '#e2e8f0',
+              backdropFilter: 'blur(16px)', minWidth: 200, width: 200,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)',
               animation: 'fadeIn 0.15s ease-out',
             }}>
-              <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }`}</style>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{selectedBlock.label}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: ZONE_COLORS[selectedBlock.zone] }} />
-                <span style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>
-                  {selectedBlock.zone} zone
-                </span>
+              {/* Zone color accent bar */}
+              <div style={{ height: 3, background: ZONE_COLORS[selectedBlock.zone], opacity: 0.85 }} />
+              <div style={{ padding: '12px 14px 14px' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2, letterSpacing: '0.01em' }}>{selectedBlock.label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: ZONE_COLORS[selectedBlock.zone] }} />
+                  <span style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {selectedBlock.zone} zone
+                  </span>
+                </div>
+                <canvas ref={floorPlanRef} width={172} height={80} style={{ display: 'block', marginBottom: 10, borderRadius: 4, border: '1px solid rgba(255,255,255,0.07)', width: '100%' }} />
+                <button
+                  className="wv-btn"
+                  onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}
+                  style={{
+                    width: '100%', padding: '8px 0',
+                    background: 'rgba(60,120,220,0.16)', border: '1px solid rgba(80,140,240,0.30)',
+                    borderRadius: 7, color: '#7EB8F8', cursor: 'pointer', fontSize: 11,
+                    fontWeight: 600, letterSpacing: '0.04em',
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                >
+                  Enter Building →
+                </button>
               </div>
-              <canvas ref={floorPlanRef} width={158} height={80} style={{ display: 'block', marginBottom: 10, borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)' }} />
-              <button
-                onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}
-                style={{
-                  width: '100%', padding: '7px 0',
-                  background: 'rgba(80,140,220,0.18)', border: '1px solid rgba(100,160,240,0.35)',
-                  borderRadius: 7, color: '#93c5fd', cursor: 'pointer', fontSize: 11,
-                  fontWeight: 600, letterSpacing: '0.02em',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(80,140,220,0.3)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(80,140,220,0.18)')}
-              >
-                Enter Building →
-              </button>
               <button
                 onClick={() => setSelectedBlock(null)}
                 style={{
-                  position: 'absolute', top: 8, right: 10, background: 'none', border: 'none',
-                  color: '#64748b', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                  position: 'absolute', top: 7, right: 9, background: 'none', border: 'none',
+                  color: '#475569', cursor: 'pointer', fontSize: 15, lineHeight: 1,
+                  padding: '2px 4px', borderRadius: 4, transition: 'color 0.12s',
                 }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#94a3b8')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#475569')}
               >×</button>
             </div>
           )}
 
           {/* Minimap */}
           <div
-            title={viewMode === 'city' ? 'Click to teleport' : undefined}
+            title="Click to teleport"
             style={{
-              position: 'absolute', bottom: 16, left: 16, borderRadius: '50%', overflow: 'hidden',
-              boxShadow: '0 0 0 2px rgba(100,180,255,0.3)', zIndex: 10,
-              cursor: viewMode === 'city' ? 'crosshair' : 'default',
+              position: 'absolute', bottom: 14, left: 14, borderRadius: '50%', overflow: 'hidden',
+              boxShadow: '0 0 0 1.5px rgba(80,140,220,0.35), 0 4px 20px rgba(0,0,0,0.5)',
+              zIndex: 10, cursor: 'crosshair',
             }}>
             <canvas ref={minimapRef} width={160} height={160} style={{ display: 'block' }} />
           </div>
 
           {/* Zone legend */}
           <div style={{
-            position: 'absolute', top: 16, left: 16,
-            background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 8, padding: '8px 12px', zIndex: 10, backdropFilter: 'blur(8px)',
+            position: 'absolute', top: 14, left: 14,
+            background: 'rgba(6,10,20,0.82)', border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 10, padding: '10px 12px', zIndex: 10, backdropFilter: 'blur(12px)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
           }}>
             {(['downtown','midrise','mixed','low','park','water'] as const).map(zone => (
-              <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <div style={{ width: 9, height: 9, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0 }} />
-                <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'capitalize' }}>{zone}</span>
+              <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0, boxShadow: `0 0 4px ${ZONE_COLORS[zone]}80` }} />
+                <span style={{ fontSize: 10, color: '#6B7A8D', textTransform: 'capitalize', letterSpacing: '0.04em' }}>{zone}</span>
               </div>
             ))}
           </div>
