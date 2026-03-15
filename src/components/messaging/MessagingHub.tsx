@@ -1,11 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Mail, RefreshCw, PenSquare, Search, X, Download, Reply,
-  ArrowLeft, Paperclip, AlertCircle, Trash2,
+  ArrowLeft, Paperclip, AlertCircle, Trash2, Hash, Plus, ExternalLink, Trash,
 } from 'lucide-react';
 import { useGmail, type GmailMessage } from '../../hooks/useGmail';
 import { EmailComposeModal } from '../email/EmailComposeModal';
 import type { Contact } from '../../types';
+
+// ─── Slack workspace persistence ─────────────────────────────────────────────
+
+interface SlackWorkspace {
+  id: string;
+  name: string;
+  url: string;
+}
+
+const SLACK_STORAGE_KEY = 'litehouse_slack_workspaces';
+
+function loadSlackWorkspaces(): SlackWorkspace[] {
+  try {
+    const raw = localStorage.getItem(SLACK_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSlackWorkspaces(workspaces: SlackWorkspace[]) {
+  localStorage.setItem(SLACK_STORAGE_KEY, JSON.stringify(workspaces));
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,9 +113,12 @@ interface MessagingHubProps {
   contacts?: Contact[];
 }
 
+type MessagingTab = 'email' | 'slack';
+
 export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const { fetchInbox, isConnected, connect, isLoading, downloadAttachment, trashEmail, markAsRead } = useGmail();
 
+  const [activeTab, setActiveTab] = useState<MessagingTab>('email');
   const [messages, setMessages] = useState<GmailMessage[]>([]);
   const [selected, setSelected] = useState<GmailMessage | null>(null);
   const [search, setSearch] = useState('');
@@ -105,6 +131,49 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const [showDetail, setShowDetail] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [trashingId, setTrashingId] = useState<string | null>(null);
+
+  // Slack state
+  const [slackWorkspaces, setSlackWorkspaces] = useState<SlackWorkspace[]>(loadSlackWorkspaces);
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [showAddSlack, setShowAddSlack] = useState(false);
+  const [newSlackName, setNewSlackName] = useState('');
+  const [newSlackUrl, setNewSlackUrl] = useState('');
+
+  // Auto-select first workspace
+  useEffect(() => {
+    if (!activeWorkspace && slackWorkspaces.length > 0) {
+      setActiveWorkspace(slackWorkspaces[0].id);
+    }
+  }, [slackWorkspaces, activeWorkspace]);
+
+  const handleAddWorkspace = () => {
+    const name = newSlackName.trim();
+    let url = newSlackUrl.trim();
+    if (!name || !url) return;
+    // Normalize URL: ensure it's a full URL
+    if (!url.startsWith('http')) url = `https://${url}`;
+    // If they just gave a workspace slug, build the Slack URL
+    if (!url.includes('.slack.com') && !url.includes('slack.com')) {
+      url = `https://app.slack.com/client/${url}`;
+    }
+    const ws: SlackWorkspace = { id: crypto.randomUUID(), name, url };
+    const updated = [...slackWorkspaces, ws];
+    setSlackWorkspaces(updated);
+    saveSlackWorkspaces(updated);
+    setActiveWorkspace(ws.id);
+    setNewSlackName('');
+    setNewSlackUrl('');
+    setShowAddSlack(false);
+  };
+
+  const handleRemoveWorkspace = (id: string) => {
+    const updated = slackWorkspaces.filter(w => w.id !== id);
+    setSlackWorkspaces(updated);
+    saveSlackWorkspaces(updated);
+    if (activeWorkspace === id) {
+      setActiveWorkspace(updated[0]?.id ?? null);
+    }
+  };
 
   const load = useCallback(async (query?: string) => {
     setError(null);
@@ -192,65 +261,71 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
     load();
   };
 
-  // ─── Not connected ─────────────────────────────────────────────────────────
-
-  if (!isConnected) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-6">
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: 'var(--bg-elevated)' }}
-        >
-          <Mail size={28} style={{ color: 'var(--text-muted)' }} />
-        </div>
-        <div className="text-center">
-          <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Connect Gmail</h3>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            Connect your Gmail account to view your inbox and send emails.
-          </p>
-        </div>
-        {error && <div className="text-xs" style={{ color: '#f87171' }}>{error}</div>}
-        <button onClick={handleConnect} disabled={connecting} className="caesar-btn-primary px-6 py-2.5">
-          {connecting ? 'Connecting…' : 'Connect Gmail'}
-        </button>
-      </div>
-    );
-  }
-
   // ─── Main layout ────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-4" style={{ height: 'calc(100dvh - 100px)', minHeight: '520px' }}>
 
-      {/* Header */}
+      {/* Top-level tabs */}
       <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            {activeSearch ? `Search: "${activeSearch}"` : 'Inbox'}
-          </h1>
-          {isLoading && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} />}
+        <div className="flex items-center gap-1">
+          {([
+            { id: 'email' as MessagingTab, label: 'Email', Icon: Mail },
+            { id: 'slack' as MessagingTab, label: 'Slack', Icon: Hash },
+          ]).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+              style={{
+                color: activeTab === id ? '#6366f1' : 'var(--text-muted)',
+                backgroundColor: activeTab === id ? 'rgba(99,102,241,0.1)' : 'transparent',
+              }}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => load()}
-            disabled={isLoading}
-            className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
-          >
-            <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button
-            onClick={() => { setReplyTo(null); setComposeOpen(true); }}
-            className="caesar-btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
-          >
-            <PenSquare size={13} />
-            Compose
-          </button>
-        </div>
+
+        {/* Email-specific actions */}
+        {activeTab === 'email' && (
+          <div className="flex items-center gap-2">
+            {isLoading && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--text-muted)' }} />}
+            <button
+              onClick={() => load()}
+              disabled={isLoading}
+              className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
+            >
+              <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <button
+              onClick={() => { setReplyTo(null); setComposeOpen(true); }}
+              className="caesar-btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
+            >
+              <PenSquare size={13} />
+              Compose
+            </button>
+          </div>
+        )}
+
+        {/* Slack-specific actions */}
+        {activeTab === 'slack' && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAddSlack(true)}
+              className="caesar-btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
+            >
+              <Plus size={13} />
+              Add Workspace
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Error */}
-      {error && (
+      {error && activeTab === 'email' && (
         <div
           className="text-xs rounded-lg px-3 py-2 flex items-center gap-2 flex-shrink-0"
           style={{ backgroundColor: 'rgba(220,38,38,0.1)', color: '#f87171', border: '1px solid rgba(220,38,38,0.3)' }}
@@ -259,6 +334,163 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
           {error}
         </div>
       )}
+
+      {/* ═══ SLACK TAB ═══ */}
+      {activeTab === 'slack' && (
+        <>
+          {/* Add workspace modal */}
+          {showAddSlack && (
+            <div
+              className="rounded-xl border p-4 flex-shrink-0"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
+            >
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Add Slack Workspace</h3>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  className="caesar-input text-xs py-1.5 px-3 flex-1"
+                  placeholder="Workspace name (e.g. My Team)"
+                  value={newSlackName}
+                  onChange={e => setNewSlackName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddWorkspace()}
+                />
+                <input
+                  className="caesar-input text-xs py-1.5 px-3 flex-[2]"
+                  placeholder="Slack URL (e.g. https://myteam.slack.com)"
+                  value={newSlackUrl}
+                  onChange={e => setNewSlackUrl(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddWorkspace()}
+                />
+                <div className="flex gap-2">
+                  <button onClick={handleAddWorkspace} className="caesar-btn-primary text-xs px-4 py-1.5">
+                    Add
+                  </button>
+                  <button
+                    onClick={() => { setShowAddSlack(false); setNewSlackName(''); setNewSlackUrl(''); }}
+                    className="caesar-btn-ghost text-xs px-3 py-1.5"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {slackWorkspaces.length === 0 ? (
+            /* Empty state */
+            <div
+              className="flex-1 rounded-xl border flex flex-col items-center justify-center gap-4"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
+            >
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: 'var(--bg-elevated)' }}
+              >
+                <Hash size={28} style={{ color: 'var(--text-muted)' }} />
+              </div>
+              <div className="text-center">
+                <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Connect Slack</h3>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Add your Slack workspace URLs to access them here.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddSlack(true)}
+                className="caesar-btn-primary px-6 py-2.5 text-sm flex items-center gap-2"
+              >
+                <Plus size={14} />
+                Add Workspace
+              </button>
+            </div>
+          ) : (
+            /* Workspace tabs + iframe */
+            <div
+              className="flex-1 rounded-xl border overflow-hidden flex flex-col min-h-0"
+              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
+            >
+              {/* Workspace sub-tabs */}
+              <div
+                className="flex items-center gap-1 px-3 py-2 border-b overflow-x-auto flex-shrink-0"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {slackWorkspaces.map(ws => (
+                  <div key={ws.id} className="flex items-center gap-0.5 flex-shrink-0">
+                    <button
+                      onClick={() => setActiveWorkspace(ws.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+                      style={{
+                        color: activeWorkspace === ws.id ? '#6366f1' : 'var(--text-muted)',
+                        backgroundColor: activeWorkspace === ws.id ? 'rgba(99,102,241,0.1)' : 'transparent',
+                      }}
+                    >
+                      <Hash size={12} />
+                      {ws.name}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const active = slackWorkspaces.find(w => w.id === ws.id);
+                        if (active) window.open(active.url, '_blank');
+                      }}
+                      className="p-1 rounded hover:opacity-70 transition-opacity"
+                      style={{ color: 'var(--text-muted)' }}
+                      title="Open in browser"
+                    >
+                      <ExternalLink size={10} />
+                    </button>
+                    <button
+                      onClick={() => handleRemoveWorkspace(ws.id)}
+                      className="p-1 rounded hover:opacity-70 transition-opacity"
+                      style={{ color: 'var(--text-muted)' }}
+                      title="Remove workspace"
+                    >
+                      <Trash size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Iframe */}
+              {activeWorkspace && (() => {
+                const ws = slackWorkspaces.find(w => w.id === activeWorkspace);
+                if (!ws) return null;
+                return (
+                  <iframe
+                    key={ws.id}
+                    src={ws.url}
+                    className="flex-1 w-full border-0"
+                    style={{ minHeight: 0 }}
+                    allow="clipboard-write; clipboard-read"
+                    title={`Slack - ${ws.name}`}
+                  />
+                );
+              })()}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ═══ EMAIL TAB ═══ */}
+      {activeTab === 'email' && !isConnected && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--bg-elevated)' }}
+          >
+            <Mail size={28} style={{ color: 'var(--text-muted)' }} />
+          </div>
+          <div className="text-center">
+            <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Connect Gmail</h3>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Connect your Gmail account to view your inbox and send emails.
+            </p>
+          </div>
+          {error && <div className="text-xs" style={{ color: '#f87171' }}>{error}</div>}
+          <button onClick={handleConnect} disabled={connecting} className="caesar-btn-primary px-6 py-2.5">
+            {connecting ? 'Connecting…' : 'Connect Gmail'}
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'email' && isConnected && <>
 
       {/* Two-panel email client */}
       <div
@@ -538,6 +770,8 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
           )}
         </div>
       </div>
+
+      </>}
 
       {/* Compose / Reply modal */}
       {(composeOpen || replyTo) && (
