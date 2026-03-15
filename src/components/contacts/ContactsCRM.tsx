@@ -445,8 +445,10 @@ function FlashcardView({
 
   const setTag = useCallback(
     (c: Contact, tag: ContactTag) => {
-      const next = { ...c, tags: [tag] };
-      updateContact(next);
+      const tags = c.tags.includes(tag)
+        ? c.tags.filter((t) => t !== tag)
+        : [...c.tags, tag];
+      updateContact({ ...c, tags });
     },
     [updateContact]
   );
@@ -616,7 +618,7 @@ function FlashcardView({
             {/* Quick sort: set tag */}
             <div>
               <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
-                Set category
+                Tags
               </p>
               <div className="flex flex-wrap gap-2">
                 {contactTags.map((t) => (
