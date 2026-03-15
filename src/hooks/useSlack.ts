@@ -11,7 +11,7 @@ interface SlackState {
 }
 
 async function slackApi(method: string, params?: Record<string, any>): Promise<any> {
-  const res = await fetch('/api/slack-api', {
+  const res = await fetch('/api/slack?action=api', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ method, params }),
@@ -40,7 +40,7 @@ export function useSlack() {
 
   const checkStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/slack-status');
+      const res = await fetch('/api/slack?action=status');
       const json = await res.json();
       setState({
         status: json.status === 'connected' ? 'connected' : 'disconnected',
@@ -60,12 +60,12 @@ export function useSlack() {
   // ─── Connect / Disconnect ──────────────────────────────────────────────────
 
   const connect = useCallback(() => {
-    window.location.href = '/api/slack-oauth-start';
+    window.location.href = '/api/slack?action=oauth-start';
   }, []);
 
   const disconnect = useCallback(async () => {
     try {
-      await fetch('/api/slack-disconnect', { method: 'POST' });
+      await fetch('/api/slack?action=disconnect', { method: 'POST' });
     } catch {
       // best-effort
     }
