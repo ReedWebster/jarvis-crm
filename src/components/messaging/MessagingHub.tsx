@@ -1,34 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Mail, RefreshCw, PenSquare, Search, X, Download, Reply,
-  ArrowLeft, Paperclip, AlertCircle, Trash2, Hash, Plus, ExternalLink, Trash,
+  ArrowLeft, Paperclip, AlertCircle, Trash2, Hash, LogOut,
 } from 'lucide-react';
 import { useGmail, type GmailMessage } from '../../hooks/useGmail';
+import { useSlack } from '../../hooks/useSlack';
 import { EmailComposeModal } from '../email/EmailComposeModal';
+import { SlackPanel } from './SlackPanel';
 import type { Contact } from '../../types';
-
-// ─── Slack workspace persistence ─────────────────────────────────────────────
-
-interface SlackWorkspace {
-  id: string;
-  name: string;
-  url: string;
-}
-
-const SLACK_STORAGE_KEY = 'litehouse_slack_workspaces';
-
-function loadSlackWorkspaces(): SlackWorkspace[] {
-  try {
-    const raw = localStorage.getItem(SLACK_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveSlackWorkspaces(workspaces: SlackWorkspace[]) {
-  localStorage.setItem(SLACK_STORAGE_KEY, JSON.stringify(workspaces));
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,48 +111,18 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [trashingId, setTrashingId] = useState<string | null>(null);
 
-  // Slack state
-  const [slackWorkspaces, setSlackWorkspaces] = useState<SlackWorkspace[]>(loadSlackWorkspaces);
-  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
-  const [showAddSlack, setShowAddSlack] = useState(false);
-  const [newSlackName, setNewSlackName] = useState('');
-  const [newSlackUrl, setNewSlackUrl] = useState('');
+  // Slack
+  const slack = useSlack();
 
-  // Auto-select first workspace
+  // Handle ?slack=connected query param on redirect back from OAuth
   useEffect(() => {
-    if (!activeWorkspace && slackWorkspaces.length > 0) {
-      setActiveWorkspace(slackWorkspaces[0].id);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('slack') === 'connected') {
+      setActiveTab('slack');
+      // Clean up the URL
+      window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [slackWorkspaces, activeWorkspace]);
-
-  const handleAddWorkspace = () => {
-    const name = newSlackName.trim();
-    let url = newSlackUrl.trim();
-    if (!name || !url) return;
-    // Normalize URL: ensure it's a full URL
-    if (!url.startsWith('http')) url = `https://${url}`;
-    // If they just gave a workspace slug, build the Slack URL
-    if (!url.includes('.slack.com') && !url.includes('slack.com')) {
-      url = `https://app.slack.com/client/${url}`;
-    }
-    const ws: SlackWorkspace = { id: crypto.randomUUID(), name, url };
-    const updated = [...slackWorkspaces, ws];
-    setSlackWorkspaces(updated);
-    saveSlackWorkspaces(updated);
-    setActiveWorkspace(ws.id);
-    setNewSlackName('');
-    setNewSlackUrl('');
-    setShowAddSlack(false);
-  };
-
-  const handleRemoveWorkspace = (id: string) => {
-    const updated = slackWorkspaces.filter(w => w.id !== id);
-    setSlackWorkspaces(updated);
-    saveSlackWorkspaces(updated);
-    if (activeWorkspace === id) {
-      setActiveWorkspace(updated[0]?.id ?? null);
-    }
-  };
+  }, []);
 
   const load = useCallback(async (query?: string) => {
     setError(null);
@@ -311,14 +260,26 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
         )}
 
         {/* Slack-specific actions */}
-        {activeTab === 'slack' && (
+        {activeTab === 'slack' && slack.status === 'connected' && (
           <div className="flex items-center gap-2">
+            {slack.teamName && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{slack.teamName}</span>
+            )}
             <button
-              onClick={() => setShowAddSlack(true)}
-              className="caesar-btn-primary text-xs flex items-center gap-1.5 px-3 py-1.5"
+              onClick={() => slack.fetchChannels()}
+              disabled={slack.isLoading}
+              className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
             >
-              <Plus size={13} />
-              Add Workspace
+              <RefreshCw size={13} className={slack.isLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <button
+              onClick={() => slack.disconnect()}
+              className="caesar-btn-ghost text-xs flex items-center gap-1.5 px-3 py-1.5"
+              style={{ color: '#f87171' }}
+            >
+              <LogOut size={13} />
+              Disconnect
             </button>
           </div>
         )}
@@ -336,136 +297,47 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
       )}
 
       {/* ═══ SLACK TAB ═══ */}
-      {activeTab === 'slack' && (
-        <>
-          {/* Add workspace modal */}
-          {showAddSlack && (
-            <div
-              className="rounded-xl border p-4 flex-shrink-0"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
-            >
-              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Add Slack Workspace</h3>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  className="caesar-input text-xs py-1.5 px-3 flex-1"
-                  placeholder="Workspace name (e.g. My Team)"
-                  value={newSlackName}
-                  onChange={e => setNewSlackName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddWorkspace()}
-                />
-                <input
-                  className="caesar-input text-xs py-1.5 px-3 flex-[2]"
-                  placeholder="Slack URL (e.g. https://myteam.slack.com)"
-                  value={newSlackUrl}
-                  onChange={e => setNewSlackUrl(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddWorkspace()}
-                />
-                <div className="flex gap-2">
-                  <button onClick={handleAddWorkspace} className="caesar-btn-primary text-xs px-4 py-1.5">
-                    Add
-                  </button>
-                  <button
-                    onClick={() => { setShowAddSlack(false); setNewSlackName(''); setNewSlackUrl(''); }}
-                    className="caesar-btn-ghost text-xs px-3 py-1.5"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+      {activeTab === 'slack' && slack.status === 'loading' && (
+        <div className="flex-1 flex items-center justify-center">
+          <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+        </div>
+      )}
 
-          {slackWorkspaces.length === 0 ? (
-            /* Empty state */
-            <div
-              className="flex-1 rounded-xl border flex flex-col items-center justify-center gap-4"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
-            >
-              <div
-                className="w-16 h-16 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: 'var(--bg-elevated)' }}
-              >
-                <Hash size={28} style={{ color: 'var(--text-muted)' }} />
-              </div>
-              <div className="text-center">
-                <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Connect Slack</h3>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  Add your Slack workspace URLs to access them here.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAddSlack(true)}
-                className="caesar-btn-primary px-6 py-2.5 text-sm flex items-center gap-2"
-              >
-                <Plus size={14} />
-                Add Workspace
-              </button>
-            </div>
-          ) : (
-            /* Workspace tabs + iframe */
-            <div
-              className="flex-1 rounded-xl border overflow-hidden flex flex-col min-h-0"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}
-            >
-              {/* Workspace sub-tabs */}
-              <div
-                className="flex items-center gap-1 px-3 py-2 border-b overflow-x-auto flex-shrink-0"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                {slackWorkspaces.map(ws => (
-                  <div key={ws.id} className="flex items-center gap-0.5 flex-shrink-0">
-                    <button
-                      onClick={() => setActiveWorkspace(ws.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
-                      style={{
-                        color: activeWorkspace === ws.id ? '#6366f1' : 'var(--text-muted)',
-                        backgroundColor: activeWorkspace === ws.id ? 'rgba(99,102,241,0.1)' : 'transparent',
-                      }}
-                    >
-                      <Hash size={12} />
-                      {ws.name}
-                    </button>
-                    <button
-                      onClick={() => {
-                        const active = slackWorkspaces.find(w => w.id === ws.id);
-                        if (active) window.open(active.url, '_blank');
-                      }}
-                      className="p-1 rounded hover:opacity-70 transition-opacity"
-                      style={{ color: 'var(--text-muted)' }}
-                      title="Open in browser"
-                    >
-                      <ExternalLink size={10} />
-                    </button>
-                    <button
-                      onClick={() => handleRemoveWorkspace(ws.id)}
-                      className="p-1 rounded hover:opacity-70 transition-opacity"
-                      style={{ color: 'var(--text-muted)' }}
-                      title="Remove workspace"
-                    >
-                      <Trash size={10} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+      {activeTab === 'slack' && slack.status === 'disconnected' && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'var(--bg-elevated)' }}
+          >
+            <Hash size={28} style={{ color: 'var(--text-muted)' }} />
+          </div>
+          <div className="text-center">
+            <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Connect Slack</h3>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Connect your Slack account to view channels and messages.
+            </p>
+          </div>
+          <button
+            onClick={() => slack.connect()}
+            className="caesar-btn-primary px-6 py-2.5"
+          >
+            Connect Slack
+          </button>
+        </div>
+      )}
 
-              {/* Iframe */}
-              {activeWorkspace && (() => {
-                const ws = slackWorkspaces.find(w => w.id === activeWorkspace);
-                if (!ws) return null;
-                return (
-                  <iframe
-                    key={ws.id}
-                    src={ws.url}
-                    className="flex-1 w-full border-0"
-                    style={{ minHeight: 0 }}
-                    allow="clipboard-write; clipboard-read"
-                    title={`Slack - ${ws.name}`}
-                  />
-                );
-              })()}
-            </div>
-          )}
-        </>
+      {activeTab === 'slack' && slack.status === 'connected' && (
+        <SlackPanel
+          channels={slack.channels}
+          messages={slack.messages}
+          isLoading={slack.isLoading}
+          error={slack.error}
+          onFetchChannels={slack.fetchChannels}
+          onFetchMessages={slack.fetchMessages}
+          onSendMessage={slack.sendMessage}
+          onMarkRead={slack.markRead}
+          usersCache={slack.usersCache}
+        />
       )}
 
       {/* ═══ EMAIL TAB ═══ */}
