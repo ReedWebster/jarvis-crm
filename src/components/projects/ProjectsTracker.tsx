@@ -26,6 +26,9 @@ const PROJECT_SOCIALS: Record<string, SocialLink[]> = {
     { label: 'Instagram', url: 'https://www.instagram.com/abs.byu/',                          icon: <Instagram size={13} /> },
     { label: 'LinkedIn',  url: 'https://www.linkedin.com/company/ai-in-business-society',     icon: <Linkedin size={13} /> },
   ],
+  'Moat & Shield AI': [
+    { label: 'Website',   url: 'https://moatandshieldai.vercel.app/',                         icon: <Globe size={13} /> },
+  ],
 };
 
 export function ProjectsTracker({ projects, onNavigate }: Props) {

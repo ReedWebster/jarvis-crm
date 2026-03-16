@@ -83,6 +83,18 @@ export const DEFAULT_STATE: AppState = {
       createdAt: today,
     },
     {
+      id: 'proj_6',
+      name: 'Moat & Shield AI',
+      status: 'active',
+      health: 'green',
+      nextAction: 'Launch and grow client base',
+      dueDate: '',
+      keyContacts: ['Reed Webster (Owner)'],
+      notes: 'AI defense and strategy platform.',
+      links: 'https://moatandshieldai.vercel.app/',
+      createdAt: today,
+    },
+    {
       id: 'proj_5',
       name: 'C.A.E.S.A.R. System',
       status: 'active',
