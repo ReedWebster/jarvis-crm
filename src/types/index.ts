@@ -544,7 +544,7 @@ export interface AppState {
   timeCategories: TimeCategory[];
   timeBlocks: TimeBlock[];
   contacts: Contact[];
-  contactTags: Array<{ name: string; color: string }>;
+  contactTags: Array<{ name: string; color: string; parent?: string }>;
   courses: Course[];
   financialEntries: FinancialEntry[];
   savingsGoals: SavingsGoal[];

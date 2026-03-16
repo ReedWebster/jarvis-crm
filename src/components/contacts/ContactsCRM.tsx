@@ -45,7 +45,7 @@ import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
-type TagDef = { name: string; color: string };
+type TagDef = { name: string; color: string; parent?: string };
 
 const TAG_PALETTE_FALLBACK = [
   '#60a5fa','#34d399','#f472b6','#fb923c','#a78bfa',
@@ -60,6 +60,22 @@ function normalizeTag(t: unknown, i: number): TagDef {
 
 function getTagColor(tagName: string, allTags: TagDef[]): string {
   return allTags.find(t => t.name === tagName)?.color ?? '#6b7280';
+}
+
+/** Returns tags in parent-first order with depth so UIs can indent sub-tags */
+function buildTagHierarchy(tags: TagDef[]): Array<TagDef & { depth: number }> {
+  const result: Array<TagDef & { depth: number }> = [];
+  for (const t of tags.filter(t => !t.parent)) {
+    result.push({ ...t, depth: 0 });
+    for (const st of tags.filter(s => s.parent === t.name)) {
+      result.push({ ...st, depth: 1 });
+    }
+  }
+  // Orphaned sub-tags (parent was deleted) – show at top level
+  for (const t of tags.filter(t => t.parent && !tags.find(p => p.name === t.parent))) {
+    result.push({ ...t, depth: 0 });
+  }
+  return result;
 }
 
 const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Text', 'LinkedIn'];
@@ -315,19 +331,20 @@ function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogIn
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
               onMouseLeave={() => setTagMenuOpen(false)}
             >
-              {contactTags.filter(t => !contact.tags.includes(t.name)).map(t => (
-                <button
-                  key={t.name}
-                  onClick={(e) => { e.stopPropagation(); onUpdateTags([...contact.tags, t.name]); setTagMenuOpen(false); }}
-                  className="text-left text-xs px-2 py-1 rounded transition-colors hover:opacity-80"
-                  style={{ color: t.color }}
-                >
-                  {t.name}
-                </button>
-              ))}
-              {contactTags.filter(t => !contact.tags.includes(t.name)).length === 0 && (
-                <span className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>All tags added</span>
-              )}
+              {(() => {
+                const available = buildTagHierarchy(contactTags).filter(t => !contact.tags.includes(t.name));
+                if (available.length === 0) return <span className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>All tags added</span>;
+                return available.map(t => (
+                  <button
+                    key={t.name}
+                    onClick={(e) => { e.stopPropagation(); onUpdateTags([...contact.tags, t.name]); setTagMenuOpen(false); }}
+                    className="text-left text-xs py-1 rounded transition-colors hover:opacity-80"
+                    style={{ color: t.color, paddingLeft: t.depth > 0 ? '20px' : '8px' }}
+                  >
+                    {t.depth > 0 ? `└ ${t.name}` : t.name}
+                  </button>
+                ));
+              })()}
             </div>
           )}
         </div>
@@ -1029,7 +1046,7 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title, contactTags
         <div>
           <label className="caesar-label">Tags</label>
           <div className="flex flex-wrap gap-2 mt-1">
-            {contactTags.map((t) => {
+            {buildTagHierarchy(contactTags).map((t) => {
               const selected = form.tags.includes(t.name);
               return (
                 <button
@@ -1041,9 +1058,10 @@ function ContactFormModal({ isOpen, onClose, onSave, initial, title, contactTags
                     backgroundColor: selected ? `${t.color}30` : 'var(--bg-elevated)',
                     color: selected ? t.color : 'var(--text-muted)',
                     border: `1px solid ${selected ? t.color + '60' : 'var(--border)'}`,
+                    marginLeft: t.depth > 0 ? '8px' : '0',
                   }}
                 >
-                  {t.name}
+                  {t.depth > 0 ? `└ ${t.name}` : t.name}
                 </button>
               );
             })}
@@ -1498,9 +1516,10 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
   const { syncContacts, autoSync, deleteContact: deleteGoogleContact } = useGoogleContacts();
   const [isSyncing, setIsSyncing] = useState(false);
   const [manageTagsOpen, setManageTagsOpen] = useState(false);
-  const [editingTag, setEditingTag] = useState<{ original: string; value: string; color: string } | null>(null);
+  const [editingTag, setEditingTag] = useState<{ original: string; value: string; color: string; parent?: string } | null>(null);
   const [newTagValue, setNewTagValue] = useState('');
   const [newTagColor, setNewTagColor] = useState('#60a5fa');
+  const [newTagParent, setNewTagParent] = useState('');
 
   // Migrate old string[] tag format → TagDef[] on first load
   useEffect(() => {
@@ -1578,7 +1597,12 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         !search ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
         (c.company ?? '').toLowerCase().includes(search.toLowerCase());
-      const matchTag = !filterTag || c.tags.includes(filterTag as ContactTag);
+      const matchTag = !filterTag || c.tags.some(tag => {
+        if (tag === filterTag) return true;
+        // Also match contacts whose tag is a sub-tag of the selected parent
+        const def = contactTags.find(td => td.name === tag);
+        return def?.parent === filterTag;
+      });
       const matchFollowUp = !filterFollowUp || c.followUpNeeded;
       return matchSearch && matchTag && matchFollowUp;
     });
@@ -2037,20 +2061,20 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
               >
                 All Tags
               </button>
-              {contactTags.map((t) => (
+              {buildTagHierarchy(contactTags).map((t) => (
                 <button
                   key={t.name}
                   onClick={() => { setFilterTag(t.name); setShowTagDropdown(false); }}
-                  className="w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2"
-                  style={{ color: t.color }}
+                  className="w-full text-left py-2 text-sm transition-colors flex items-center gap-2"
+                  style={{ color: t.color, paddingLeft: t.depth > 0 ? '28px' : '12px', paddingRight: '12px' }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: t.color }}
+                    className="rounded-full flex-shrink-0"
+                    style={{ backgroundColor: t.color, width: t.depth > 0 ? '6px' : '8px', height: t.depth > 0 ? '6px' : '8px' }}
                   />
-                  {t.name}
+                  {t.depth > 0 ? `└ ${t.name}` : t.name}
                 </button>
               ))}
             </div>
@@ -2300,122 +2324,242 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
           <div className="caesar-card w-full max-w-md flex flex-col gap-4" style={{ maxHeight: '80vh', overflow: 'auto' }}>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Manage Tags</h2>
-              <button onClick={() => { setManageTagsOpen(false); setEditingTag(null); setNewTagValue(''); }}>
+              <button onClick={() => { setManageTagsOpen(false); setEditingTag(null); setNewTagValue(''); setNewTagParent(''); }}>
                 <X size={18} style={{ color: 'var(--text-muted)' }} />
               </button>
             </div>
 
-            {/* Existing tags */}
-            <div className="flex flex-col gap-2">
-              {contactTags.map((raw, i) => { const t = normalizeTag(raw, i); return (
-                <div key={t.name} className="flex items-center gap-2">
-                  {editingTag?.original === t.name ? (
-                    <>
-                      {/* Color picker */}
-                      <input
-                        type="color"
-                        value={editingTag.color}
-                        onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
-                        className="w-8 h-8 rounded cursor-pointer flex-shrink-0"
-                        style={{ border: 'none', padding: 0, background: 'none' }}
-                      />
-                      <input
-                        autoFocus
-                        value={editingTag.value}
-                        onChange={(e) => setEditingTag({ ...editingTag, value: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
+            {/* Existing tags — hierarchical */}
+            <div className="flex flex-col gap-1.5">
+              {/* Top-level tags + their sub-tags */}
+              {contactTags.filter(t => !t.parent).map((raw, i) => {
+                const t = normalizeTag(raw, i);
+                const subTags = contactTags.filter(st => st.parent === t.name);
+                return (
+                  <div key={t.name}>
+                    {/* Parent tag row */}
+                    <div className="flex items-center gap-2">
+                      {editingTag?.original === t.name ? (
+                        <>
+                          <input type="color" value={editingTag.color}
+                            onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
+                            className="w-8 h-8 rounded cursor-pointer flex-shrink-0"
+                            style={{ border: 'none', padding: 0, background: 'none' }} />
+                          <input autoFocus value={editingTag.value}
+                            onChange={(e) => setEditingTag({ ...editingTag, value: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const trimmed = editingTag.value.trim();
+                                if (!trimmed || (trimmed !== t.name && contactTags.some(x => x.name === trimmed))) return;
+                                setContactTags(contactTags.map(x => x.name === t.name ? { ...x, name: trimmed, color: editingTag.color } : x.parent === t.name ? { ...x, parent: trimmed } : x));
+                                setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === t.name ? trimmed : n) })));
+                                setEditingTag(null);
+                              } else if (e.key === 'Escape') { setEditingTag(null); }
+                            }}
+                            className="flex-1 px-2 py-1 rounded text-sm"
+                            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }} />
+                          <button onClick={() => {
                             const trimmed = editingTag.value.trim();
                             if (!trimmed || (trimmed !== t.name && contactTags.some(x => x.name === trimmed))) return;
-                            setContactTags(contactTags.map(x => x.name === t.name ? { name: trimmed, color: editingTag.color } : x));
+                            setContactTags(contactTags.map(x => x.name === t.name ? { ...x, name: trimmed, color: editingTag.color } : x.parent === t.name ? { ...x, parent: trimmed } : x));
                             setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === t.name ? trimmed : n) })));
                             setEditingTag(null);
-                          } else if (e.key === 'Escape') {
-                            setEditingTag(null);
-                          }
-                        }}
-                        className="flex-1 px-2 py-1 rounded text-sm"
-                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }}
-                      />
-                      <button
-                        onClick={() => {
+                          }}><Check size={16} style={{ color: 'var(--accent)' }} /></button>
+                          <button onClick={() => setEditingTag(null)}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                          <span className="flex-1 text-sm px-2 py-1 rounded font-medium"
+                            style={{ color: t.color, backgroundColor: `${t.color}15`, border: `1px solid ${t.color}40` }}>
+                            {t.name}
+                          </span>
+                          <button
+                            onClick={() => { setNewTagParent(t.name); setNewTagColor(t.color); setNewTagValue(''); }}
+                            title="Add sub-tag"
+                            className="text-xs px-1.5 py-0.5 rounded transition-colors"
+                            style={{ color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
+                          >+sub</button>
+                          <button onClick={() => setEditingTag({ original: t.name, value: t.name, color: t.color })} title="Rename / recolor">
+                            <Pencil size={14} style={{ color: 'var(--text-muted)' }} />
+                          </button>
+                          <button onClick={() => {
+                            if (!window.confirm(`Delete "${t.name}"? Sub-tags will become top-level.`)) return;
+                            setContactTags(contactTags.filter(x => x.name !== t.name).map(x => x.parent === t.name ? { ...x, parent: undefined } : x));
+                            setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.filter(n => n !== t.name) })));
+                          }} title="Delete"><Trash2 size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Sub-tag rows */}
+                    {subTags.map((rawSt) => {
+                      const st = normalizeTag(rawSt, contactTags.indexOf(rawSt));
+                      return (
+                        <div key={st.name} className="flex items-center gap-2 mt-1 pl-5">
+                          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>└</span>
+                          {editingTag?.original === st.name ? (
+                            <>
+                              <input type="color" value={editingTag.color}
+                                onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
+                                className="w-7 h-7 rounded cursor-pointer flex-shrink-0"
+                                style={{ border: 'none', padding: 0, background: 'none' }} />
+                              <input autoFocus value={editingTag.value}
+                                onChange={(e) => setEditingTag({ ...editingTag, value: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    const trimmed = editingTag.value.trim();
+                                    if (!trimmed || (trimmed !== st.name && contactTags.some(x => x.name === trimmed))) return;
+                                    setContactTags(contactTags.map(x => x.name === st.name ? { ...x, name: trimmed, color: editingTag.color } : x));
+                                    setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === st.name ? trimmed : n) })));
+                                    setEditingTag(null);
+                                  } else if (e.key === 'Escape') { setEditingTag(null); }
+                                }}
+                                className="flex-1 px-2 py-0.5 rounded text-xs"
+                                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }} />
+                              <button onClick={() => {
+                                const trimmed = editingTag.value.trim();
+                                if (!trimmed || (trimmed !== st.name && contactTags.some(x => x.name === trimmed))) return;
+                                setContactTags(contactTags.map(x => x.name === st.name ? { ...x, name: trimmed, color: editingTag.color } : x));
+                                setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === st.name ? trimmed : n) })));
+                                setEditingTag(null);
+                              }}><Check size={14} style={{ color: 'var(--accent)' }} /></button>
+                              <button onClick={() => setEditingTag(null)}><X size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: st.color }} />
+                              <span className="flex-1 text-xs px-2 py-0.5 rounded"
+                                style={{ color: st.color, backgroundColor: `${st.color}15`, border: `1px solid ${st.color}40` }}>
+                                {st.name}
+                              </span>
+                              <button onClick={() => setEditingTag({ original: st.name, value: st.name, color: st.color, parent: st.parent })} title="Rename / recolor">
+                                <Pencil size={12} style={{ color: 'var(--text-muted)' }} />
+                              </button>
+                              <button onClick={() => {
+                                if (!window.confirm(`Delete sub-tag "${st.name}"?`)) return;
+                                setContactTags(contactTags.filter(x => x.name !== st.name));
+                                setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.filter(n => n !== st.name) })));
+                              }} title="Delete"><Trash2 size={12} style={{ color: 'var(--text-muted)' }} /></button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+              {/* Orphaned sub-tags whose parent was deleted */}
+              {contactTags.filter(t => t.parent && !contactTags.find(p => p.name === t.parent)).map((raw, i) => {
+                const t = normalizeTag(raw, i);
+                return (
+                  <div key={t.name} className="flex items-center gap-2">
+                    {editingTag?.original === t.name ? (
+                      <>
+                        <input type="color" value={editingTag.color}
+                          onChange={(e) => setEditingTag({ ...editingTag, color: e.target.value })}
+                          className="w-8 h-8 rounded cursor-pointer flex-shrink-0"
+                          style={{ border: 'none', padding: 0, background: 'none' }} />
+                        <input autoFocus value={editingTag.value}
+                          onChange={(e) => setEditingTag({ ...editingTag, value: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const trimmed = editingTag.value.trim();
+                              if (!trimmed || (trimmed !== t.name && contactTags.some(x => x.name === trimmed))) return;
+                              setContactTags(contactTags.map(x => x.name === t.name ? { ...x, name: trimmed, color: editingTag.color } : x));
+                              setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === t.name ? trimmed : n) })));
+                              setEditingTag(null);
+                            } else if (e.key === 'Escape') { setEditingTag(null); }
+                          }}
+                          className="flex-1 px-2 py-1 rounded text-sm"
+                          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }} />
+                        <button onClick={() => {
                           const trimmed = editingTag.value.trim();
                           if (!trimmed || (trimmed !== t.name && contactTags.some(x => x.name === trimmed))) return;
-                          setContactTags(contactTags.map(x => x.name === t.name ? { name: trimmed, color: editingTag.color } : x));
+                          setContactTags(contactTags.map(x => x.name === t.name ? { ...x, name: trimmed, color: editingTag.color } : x));
                           setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.map(n => n === t.name ? trimmed : n) })));
                           setEditingTag(null);
-                        }}
-                      >
-                        <Check size={16} style={{ color: 'var(--accent)' }} />
-                      </button>
-                      <button onClick={() => setEditingTag(null)}>
-                        <X size={16} style={{ color: 'var(--text-muted)' }} />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
-                      <span
-                        className="flex-1 text-sm px-2 py-1 rounded font-medium"
-                        style={{ color: t.color, backgroundColor: `${t.color}15`, border: `1px solid ${t.color}40` }}
-                      >
-                        {t.name}
-                      </span>
-                      <button onClick={() => setEditingTag({ original: t.name, value: t.name, color: t.color })} title="Rename / recolor">
-                        <Pencil size={14} style={{ color: 'var(--text-muted)' }} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (!window.confirm(`Delete tag "${t.name}"? It will be removed from all contacts.`)) return;
+                        }}><Check size={16} style={{ color: 'var(--accent)' }} /></button>
+                        <button onClick={() => setEditingTag(null)}><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                        <span className="flex-1 text-sm px-2 py-1 rounded font-medium"
+                          style={{ color: t.color, backgroundColor: `${t.color}15`, border: `1px solid ${t.color}40` }}>
+                          {t.name}
+                        </span>
+                        <button onClick={() => setEditingTag({ original: t.name, value: t.name, color: t.color })} title="Rename / recolor">
+                          <Pencil size={14} style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                        <button onClick={() => {
+                          if (!window.confirm(`Delete tag "${t.name}"?`)) return;
                           setContactTags(contactTags.filter(x => x.name !== t.name));
                           setContacts(prev => prev.map(c => ({ ...c, tags: c.tags.filter(n => n !== t.name) })));
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 size={14} style={{ color: 'var(--text-muted)' }} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              );})}
+                        }} title="Delete"><Trash2 size={14} style={{ color: 'var(--text-muted)' }} /></button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Add new tag */}
-            <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-              <input
-                type="color"
-                value={newTagColor}
-                onChange={(e) => setNewTagColor(e.target.value)}
-                className="w-8 h-8 rounded cursor-pointer flex-shrink-0"
-                style={{ border: 'none', padding: 0, background: 'none' }}
-                title="Pick color"
-              />
-              <input
-                value={newTagValue}
-                onChange={(e) => setNewTagValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+            <div className="flex flex-col gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex gap-2">
+                <input
+                  type="color"
+                  value={newTagColor}
+                  onChange={(e) => setNewTagColor(e.target.value)}
+                  className="w-8 h-8 rounded cursor-pointer flex-shrink-0"
+                  style={{ border: 'none', padding: 0, background: 'none' }}
+                  title="Pick color"
+                />
+                <input
+                  value={newTagValue}
+                  onChange={(e) => setNewTagValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const trimmed = newTagValue.trim();
+                      if (!trimmed || contactTags.some(t => t.name === trimmed)) return;
+                      setContactTags([...contactTags, { name: trimmed, color: newTagColor, parent: newTagParent || undefined }]);
+                      setNewTagValue('');
+                      setNewTagParent('');
+                    }
+                  }}
+                  placeholder={newTagParent ? `Sub-tag under "${newTagParent}"…` : 'New tag name…'}
+                  className="flex-1 px-3 py-1.5 rounded text-sm"
+                  style={{ background: 'var(--bg-elevated)', border: `1px solid ${newTagParent ? 'var(--accent)' : 'var(--border)'}`, color: 'var(--text-primary)' }}
+                />
+                <button
+                  onClick={() => {
                     const trimmed = newTagValue.trim();
                     if (!trimmed || contactTags.some(t => t.name === trimmed)) return;
-                    setContactTags([...contactTags, { name: trimmed, color: newTagColor }]);
+                    setContactTags([...contactTags, { name: trimmed, color: newTagColor, parent: newTagParent || undefined }]);
                     setNewTagValue('');
-                  }
-                }}
-                placeholder="New tag name…"
-                className="flex-1 px-3 py-1.5 rounded text-sm"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-              />
-              <button
-                onClick={() => {
-                  const trimmed = newTagValue.trim();
-                  if (!trimmed || contactTags.some(t => t.name === trimmed)) return;
-                  setContactTags([...contactTags, { name: trimmed, color: newTagColor }]);
-                  setNewTagValue('');
-                }}
-                className="caesar-btn-primary px-3 py-1.5 text-sm"
-              >
-                Add
-              </button>
+                    setNewTagParent('');
+                  }}
+                  className="caesar-btn-primary px-3 py-1.5 text-sm"
+                >
+                  Add
+                </button>
+              </div>
+              {/* Parent selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Parent:</span>
+                <select
+                  value={newTagParent}
+                  onChange={(e) => setNewTagParent(e.target.value)}
+                  className="flex-1 px-2 py-1 rounded text-xs"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                >
+                  <option value="">None (top-level tag)</option>
+                  {contactTags.filter(t => !t.parent).map(t => (
+                    <option key={t.name} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
