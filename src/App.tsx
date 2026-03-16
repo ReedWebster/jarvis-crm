@@ -268,6 +268,20 @@ function MainApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts.length]);
 
+  // One-time migration: make Reed top-level president, all execs report to Reed
+  useEffect(() => {
+    if (absMembers.length === 0) return;
+    const reed = absMembers.find(m => m.id === 'reed');
+    if (!reed || reed.reportsTo === null) return; // already applied
+    setAbsMembers(prev => prev.map(m => {
+      if (m.id === 'reed') return { ...m, reportsTo: null };
+      if (m.reportsTo === 'luke') return { ...m, reportsTo: 'reed' };
+      if (m.id === 'luke') return { ...m, reportsTo: 'reed' };
+      return m;
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [absMembers.length]);
+
   // One-time migration: seed ABS org members as contacts
   useEffect(() => {
     if (contacts.length === 0) return;
