@@ -335,6 +335,94 @@ function createPodiumTower(x: number, z: number, h: number, mats: ArchMats): THR
   return g;
 }
 
+function createMoatShieldTower(cx: number, cz: number, logoTex: THREE.Texture): THREE.Group {
+  const g = new THREE.Group();
+  g.position.set(cx, 0, cz);
+
+  const glassMat = () => new THREE.MeshStandardMaterial({
+    color: '#0A2040', roughness: 0.04, metalness: 0.65, transparent: true, opacity: 0.82,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({ color: '#D4E8FF', roughness: 0.15, metalness: 0.85 });
+  const antMat  = new THREE.MeshStandardMaterial({ color: '#C8D8F0', roughness: 0.20, metalness: 0.80 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: '#60AAFF', emissive: '#60AAFF', emissiveIntensity: 1.2 });
+
+  // ── Helper: curtain-wall glass box with horizontal panel lines ──
+  const glassBox = (w: number, h: number, d: number, y: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glassMat());
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.position.set(0, y + h / 2, 0);
+    g.add(mesh);
+    // Horizontal panel lines on all 4 faces
+    const lineCount = Math.floor(h / 2.2);
+    const lineMat = new THREE.MeshStandardMaterial({ color: '#1A4060', roughness: 0.10, metalness: 0.50 });
+    for (let i = 1; i <= lineCount; i++) {
+      const ly = y + i * (h / (lineCount + 1));
+      // +Z face
+      const fz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.08), lineMat.clone());
+      fz.position.set(0, ly, d / 2 + 0.02); g.add(fz);
+      // -Z face
+      const bz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.08), lineMat.clone());
+      bz.position.set(0, ly, -d / 2 - 0.02); bz.rotation.y = Math.PI; g.add(bz);
+      // +X face
+      const rx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.08), lineMat.clone());
+      rx.position.set(w / 2 + 0.02, ly, 0); rx.rotation.y = Math.PI / 2; g.add(rx);
+      // -X face
+      const lx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.08), lineMat.clone());
+      lx.position.set(-w / 2 - 0.02, ly, 0); lx.rotation.y = -Math.PI / 2; g.add(lx);
+    }
+    return mesh;
+  };
+
+  // ── Trim ledge ring ──
+  const ledge = (w: number, d: number, y: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 0.5, d + 1.2), trimMat.clone());
+    mesh.castShadow = true; mesh.position.set(0, y, 0); g.add(mesh);
+  };
+
+  // BASE: 42×42, h 0→32
+  glassBox(42, 32, 42, 0);
+  ledge(42, 42, 32.25);
+
+  // MID SETBACK: 30×30, h 32→44
+  glassBox(30, 12, 30, 32.5);
+  ledge(30, 30, 44.75);
+
+  // CROWN: 20×20, h 45→54
+  glassBox(20, 9, 20, 45.25);
+  ledge(20, 20, 54.5);
+
+  // ANTENNA SPIRE: 1.2×1.2, h 55→68
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.0, 13, 8), antMat.clone());
+  spire.castShadow = true; spire.position.set(0, 55 + 6.5, 0); g.add(spire);
+  // Glowing tip
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 8), glowMat.clone());
+  tip.position.set(0, 68.5, 0); g.add(tip);
+
+  // ── LOGO PANELS on all 4 faces of mid setback (at ~48 height) ──
+  // Logo is 14 wide × 8 tall, placed at the upper portion of the mid section
+  const logoH = 48; // center height of logo
+  const logoW = 14, logoPH = 8;
+  const logoMat = new THREE.MeshStandardMaterial({
+    map: logoTex, transparent: true, alphaTest: 0.05,
+    emissive: '#FFFFFF', emissiveIntensity: 0.25,
+    roughness: 0.1, metalness: 0.1,
+  });
+  // +Z face
+  const lp1 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
+  lp1.position.set(0, logoH, 15.02); g.add(lp1);
+  // -Z face
+  const lp2 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
+  lp2.position.set(0, logoH, -15.02); lp2.rotation.y = Math.PI; g.add(lp2);
+  // +X face
+  const lp3 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
+  lp3.position.set(15.02, logoH, 0); lp3.rotation.y = Math.PI / 2; g.add(lp3);
+  // -X face
+  const lp4 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
+  lp4.position.set(-15.02, logoH, 0); lp4.rotation.y = -Math.PI / 2; g.add(lp4);
+
+  return g;
+}
+
 function makeTree(x: number, z: number, rng: () => number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
@@ -1839,7 +1927,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
 
     // ── Zone assignment ────────────────────────────────────────────────────────
     const ZONE_LABELS: Record<ZoneType, string[]> = {
-      downtown: ['Financial Core','Central Tower','Commerce Plaza','Exchange Sq','Metro Center','Skyline Block','Capital Row','Civic Hub','Crown Heights'],
+      downtown: ['Financial Core','Central Tower','Commerce Plaza','Exchange Sq','Moat & Shield AI','Skyline Block','Capital Row','Civic Hub','Crown Heights'],
       midrise:  ['Midtown West','Uptown East','Park Ave','Gallery Row','The Arcade','Merchant Row','Harbor Gate','River Bend','Lakeside'],
       mixed:    ['Arts Quarter','University Row','Market Street','Innovation Mile','Craft District','Bricktown','The Yards','Riverside','Garden Block'],
       low:      ['Oak St','Maple Ave','Pine Court','Birch Lane','Cedar Row','Elm Park','Chestnut Way','Aspen Hill','Valley View'],
@@ -1851,6 +1939,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const allBuildingMeshes: THREE.Mesh[] = [];
     const blockMeshMap = new Map<THREE.Mesh, BlockInfo>();
     const blockInfoToMeshes = new Map<BlockInfo, THREE.Mesh[]>();
+
+    const moatShieldLogoTex = new THREE.TextureLoader().load('/moat-and-shield-ai.png');
 
     function getZone(col: number, row: number): ZoneType {
       const dist = Math.sqrt(col * col + row * row);
@@ -1876,9 +1966,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         const cz = row * STEP;
         const zone = getZone(col, row);
         const isBYU = col === 2 && row === 2;
+        const isMoatShield = col === -1 && row === 0;
         const labelPool = ZONE_LABELS[zone];
         const labelIdx  = ((Math.abs(col) * 7 + Math.abs(row) * 13) ^ (col < 0 ? 3 : 5)) % labelPool.length;
-        const label = isBYU ? 'BYU Campus' : labelPool[labelIdx];
+        const label = isBYU ? 'BYU Campus' : isMoatShield ? 'Moat & Shield AI' : labelPool[labelIdx];
         const info: BlockInfo = { col, row, cx, cz, zone, label };
         blocks.push(info);
 
@@ -2012,6 +2103,23 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           });
           blockInfoToMeshes.set(info, byuMeshes);
           cityGroup.add(stadium);
+          continue;
+        }
+
+        if (isMoatShield) {
+          const tower = createMoatShieldTower(cx, cz, moatShieldLogoTex);
+          const mshmMeshes: THREE.Mesh[] = [];
+          tower.traverse(obj => {
+            if (obj instanceof THREE.Mesh) {
+              obj.userData.blockInfo = info;
+              allBuildingMeshes.push(obj);
+              blockMeshMap.set(obj, info);
+              mshmMeshes.push(obj);
+            }
+          });
+          blockInfoToMeshes.set(info, mshmMeshes);
+          blockArchetypeMapRef.current.set(`${col},${row}`, { arch: 'podiumTower', height: 68 });
+          cityGroup.add(tower);
           continue;
         }
 
