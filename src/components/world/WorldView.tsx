@@ -331,14 +331,203 @@ function makeTree(x: number, z: number, rng: () => number): THREE.Group {
 
 // ─── BYU STADIUM ──────────────────────────────────────────────────────────────
 
+function buildFieldTexture(): THREE.CanvasTexture {
+  const W = 1024, H = 512;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d')!;
+
+  // Field dimensions in canvas coords:
+  // Total canvas = 28 units wide × 15 units tall (game field + end zones)
+  // End zones = 3 units each side → 10.7% of width each
+  const EZ = Math.round(W * (3 / 28));     // end-zone width in px
+  const PLAY_W = W - 2 * EZ;               // playing-field width in px
+
+  // --- Alternating grass stripes (10-yard bands) ---
+  const stripeCount = 10; // 10 bands across playing field
+  const stripeW = PLAY_W / stripeCount;
+  const dark  = '#1E5C28';
+  const light = '#2A7034';
+  for (let i = 0; i < stripeCount; i++) {
+    ctx.fillStyle = i % 2 === 0 ? dark : light;
+    ctx.fillRect(EZ + i * stripeW, 0, stripeW, H);
+  }
+
+  // --- End zones ---
+  ctx.fillStyle = '#0A2240';
+  ctx.fillRect(0, 0, EZ, H);
+  ctx.fillRect(W - EZ, 0, EZ, H);
+
+  // End-zone diagonal stripes for texture
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 4;
+  for (let s = -H; s < EZ + H; s += 18) {
+    ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(s + H, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W - EZ + s, 0); ctx.lineTo(W - EZ + s + H, H); ctx.stroke();
+  }
+  ctx.restore();
+
+  // End-zone text
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `bold ${Math.round(H * 0.16)}px Arial Black, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // "BYU" – west end zone (left)
+  ctx.translate(EZ / 2, H / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('BYU', 0, 0);
+  ctx.restore();
+  // "COUGARS" – east end zone (right)
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `bold ${Math.round(H * 0.11)}px Arial Black, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.translate(W - EZ / 2, H / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.fillText('COUGARS', 0, 0);
+  ctx.restore();
+
+  // --- Yard lines (every 10 yards = every stripeW) ---
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 3;
+  for (let i = 0; i <= stripeCount; i++) {
+    const lx = EZ + i * stripeW;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, H); ctx.stroke();
+  }
+  // End-zone boundary lines (thicker)
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(EZ, 0); ctx.lineTo(EZ, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W - EZ, 0); ctx.lineTo(W - EZ, H); ctx.stroke();
+
+  // --- Hash marks (two rows between each yard line) ---
+  const hashInset = H * 0.28;   // hash position from top/bottom
+  const hashLen   = H * 0.055;
+  ctx.lineWidth = 2;
+  for (let i = 0; i <= stripeCount; i++) {
+    const lx = EZ + i * stripeW;
+    // top hash
+    ctx.beginPath(); ctx.moveTo(lx - hashLen / 2, hashInset); ctx.lineTo(lx + hashLen / 2, hashInset); ctx.stroke();
+    // bottom hash
+    ctx.beginPath(); ctx.moveTo(lx - hashLen / 2, H - hashInset); ctx.lineTo(lx + hashLen / 2, H - hashInset); ctx.stroke();
+  }
+
+  // --- Field numbers (10, 20, 30, 40, 50, 40, 30, 20, 10) ---
+  const nums = [10, 20, 30, 40, 50, 40, 30, 20, 10];
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `bold ${Math.round(H * 0.13)}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < nums.length; i++) {
+    const nx = EZ + (i + 0.5) * stripeW;
+    // top number (upside-down for correct orientation when viewed from north)
+    ctx.save();
+    ctx.translate(nx, H * 0.18);
+    ctx.rotate(Math.PI);
+    ctx.fillText(String(nums[i]), 0, 0);
+    ctx.restore();
+    // bottom number
+    ctx.fillText(String(nums[i]), nx, H * 0.82);
+  }
+
+  // --- BYU "Y" logo at midfield ---
+  const cx = W / 2, cy = H / 2;
+  const R = H * 0.22;
+
+  // Oval background
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, R * 1.1, R, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#002E5D';
+  ctx.fill();
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.restore();
+
+  // Draw "Y" — bold serif block letter
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  const ySize = R * 1.1;
+  ctx.font = `900 ${ySize}px Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Y', cx, cy);
+  ctx.restore();
+
+  return new THREE.CanvasTexture(cv);
+}
+
+function buildSeatTexture(rows = 8): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 128;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#002E5D';
+  ctx.fillRect(0, 0, 256, 128);
+  const rowH = 128 / rows;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  for (let r = 1; r < rows; r++) {
+    ctx.beginPath(); ctx.moveTo(0, r * rowH); ctx.lineTo(256, r * rowH); ctx.stroke();
+  }
+  // Subtle seat dots
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  const seatW = 16;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < 256 / seatW; c++) {
+      ctx.fillRect(c * seatW + 2, r * rowH + 2, seatW - 4, rowH - 3);
+    }
+  }
+  return new THREE.CanvasTexture(cv);
+}
+
+function buildScoreboardTexture(label: string): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 256;
+  const ctx = cv.getContext('2d')!;
+  // Background
+  ctx.fillStyle = '#080E18';
+  ctx.fillRect(0, 0, 512, 256);
+  // Blue header band
+  ctx.fillStyle = '#002E5D';
+  ctx.fillRect(0, 0, 512, 72);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 38px Arial Black, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 256, 36);
+  // Score boxes
+  ctx.strokeStyle = '#3366AA';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, 90, 220, 130);
+  ctx.strokeRect(272, 90, 220, 130);
+  ctx.fillStyle = '#3366AA';
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.fillText('HOME', 130, 110);
+  ctx.fillText('GUEST', 382, 110);
+  ctx.fillStyle = '#FFDD00';
+  ctx.font = 'bold 64px Arial Black, sans-serif';
+  ctx.fillText('24', 130, 165);
+  ctx.fillText('17', 382, 165);
+  return new THREE.CanvasTexture(cv);
+}
+
 function createStadium(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
-  const byuBlue  = new THREE.MeshStandardMaterial({ color: '#002E5D', roughness: 0.82 });
-  const byuWhite = new THREE.MeshStandardMaterial({ color: '#E8EEF4', roughness: 0.80 });
-  const fieldMat = new THREE.MeshStandardMaterial({ color: '#2A6630', roughness: 0.90 });
-  const ezMat    = new THREE.MeshStandardMaterial({ color: '#1A3E70', roughness: 0.90 });
-  const boardMat = new THREE.MeshStandardMaterial({ color: '#080E18', roughness: 0.85 });
+
+  const seatTex   = buildSeatTexture(9);
+  const seatMat   = () => new THREE.MeshStandardMaterial({ map: seatTex, roughness: 0.85 });
+  const byuBlue   = new THREE.MeshStandardMaterial({ color: '#002E5D', roughness: 0.82 });
+  const byuWhite  = new THREE.MeshStandardMaterial({ color: '#E8EEF4', roughness: 0.80 });
+  const boardMat  = new THREE.MeshStandardMaterial({ color: '#080E18', roughness: 0.85 });
+  const trackMat  = new THREE.MeshStandardMaterial({ color: '#B85030', roughness: 0.88 });
+  const glassMat  = new THREE.MeshStandardMaterial({ color: '#1A2A3A', roughness: 0.1, metalness: 0.5, transparent: true, opacity: 0.82 });
+  const concMat   = new THREE.MeshStandardMaterial({ color: '#444A52', roughness: 0.95 });
+  const tunnelMat = new THREE.MeshStandardMaterial({ color: '#111318', roughness: 0.95 });
 
   const box = (w: number, h: number, d: number, mat: THREE.MeshStandardMaterial, px = 0, py = 0, pz = 0, rx = 0, rz = 0) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat.clone());
@@ -346,62 +535,117 @@ function createStadium(x: number, z: number): THREE.Group {
     m.castShadow = m.receiveShadow = true; g.add(m); return m;
   };
 
-  // Playing field
-  const field = new THREE.Mesh(new THREE.PlaneGeometry(28, 15), fieldMat);
-  field.rotation.x = -Math.PI / 2; field.position.y = 0.3;
-  field.receiveShadow = true; g.add(field);
-  // Yard lines
-  for (let i = -12; i <= 12; i += 2.33) {
-    const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 15),
-      new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.7 }));
-    ln.rotation.x = -Math.PI / 2; ln.position.set(i, 0.32, 0); g.add(ln);
+  // ── Playing field (canvas texture) ──
+  const fieldTex = buildFieldTexture();
+  fieldTex.anisotropy = 8;
+  const fieldMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(28, 15),
+    new THREE.MeshStandardMaterial({ map: fieldTex, roughness: 0.85 })
+  );
+  fieldMesh.rotation.x = -Math.PI / 2;
+  fieldMesh.position.y = 0.31;
+  fieldMesh.receiveShadow = true;
+  g.add(fieldMesh);
+
+  // ── Rubberized track around field ──
+  const track = new THREE.Mesh(new THREE.PlaneGeometry(32, 19), trackMat.clone());
+  track.rotation.x = -Math.PI / 2; track.position.y = 0.29;
+  track.receiveShadow = true; g.add(track);
+  // Inner track cutout via separate green apron
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(28.4, 15.4),
+    new THREE.MeshStandardMaterial({ color: '#1E5C28', roughness: 0.9 }));
+  apron.rotation.x = -Math.PI / 2; apron.position.y = 0.295;
+  apron.receiveShadow = true; g.add(apron);
+
+  // ── Concrete base under stands ──
+  box(48, 0.5, 48, concMat, 0, -0.1, 0);
+
+  // ── Lower seating tiers (4 sides) with seat texture ──
+  box(36, 2.5, 4.5, seatMat(),   0,  1.2, -11.5, 0.30,  0);   // north
+  box(36, 2.5, 4.5, seatMat(),   0,  1.2,  11.5, -0.30, 0);   // south
+  box( 4.5, 2.5, 23, seatMat(),  17.5, 1.2, 0,   0,  0.30);  // east
+  box( 4.5, 2.5, 23, seatMat(), -17.5, 1.2, 0,   0, -0.30);  // west
+
+  // ── Upper seating tiers with seat texture ──
+  box(38, 3, 5.5, seatMat(),   0, 4.0, -15.5, 0.35,  0);   // north
+  box(38, 3, 5.5, seatMat(),   0, 4.0,  15.5, -0.35, 0);   // south
+  box( 5.5, 3, 27, seatMat(),  21.5, 4.0, 0,  0,  0.35);  // east
+  box( 5.5, 3, 27, seatMat(), -21.5, 4.0, 0,  0, -0.35); // west
+
+  // ── Concourse walkways (under stands, concrete) ──
+  box(36, 0.3, 2.5, concMat,  0, 0.25, -9.5);   // north walkway
+  box(36, 0.3, 2.5, concMat,  0, 0.25,  9.5);   // south walkway
+  box(2.5, 0.3, 23, concMat,  15, 0.25, 0);     // east walkway
+  box(2.5, 0.3, 23, concMat, -15, 0.25, 0);     // west walkway
+
+  // ── Tunnel portals (dark openings in lower tier) ──
+  for (const tz of [-5, 5]) {
+    box(2.5, 1.8, 0.3, tunnelMat,  17.5, 0.9, tz);  // east tunnels
+    box(2.5, 1.8, 0.3, tunnelMat, -17.5, 0.9, tz);  // west tunnels
   }
-  // End zones
-  const ez1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 15), ezMat);
-  ez1.rotation.x = -Math.PI / 2; ez1.position.set(-14.5, 0.31, 0); g.add(ez1);
-  const ez2 = new THREE.Mesh(new THREE.PlaneGeometry(3, 15), ezMat.clone());
-  ez2.rotation.x = -Math.PI / 2; ez2.position.set(14.5, 0.31, 0); g.add(ez2);
+  // End-zone tunnels
+  box(3, 1.8, 0.3, tunnelMat, 0, 0.9, -11.4);
+  box(3, 1.8, 0.3, tunnelMat, 0, 0.9,  11.4);
 
-  // Lower seating tiers (4 sides, angled toward field)
-  box(36, 2.5, 4.5, byuBlue,   0,  1.2, -11.5, 0.30,  0);   // north
-  box(36, 2.5, 4.5, byuBlue,   0,  1.2,  11.5, -0.30, 0);   // south
-  box( 4.5, 2.5, 23, byuBlue,  17.5, 1.2, 0,   0,  0.30);  // east
-  box( 4.5, 2.5, 23, byuBlue, -17.5, 1.2, 0,   0, -0.30);  // west
+  // ── White rim at top of upper tier ──
+  box(40, 0.35, 0.5, byuWhite,  0, 5.8, -18.5);
+  box(40, 0.35, 0.5, byuWhite,  0, 5.8,  18.5);
+  box( 0.5, 0.35, 30, byuWhite,  24, 5.8, 0);
+  box( 0.5, 0.35, 30, byuWhite, -24, 5.8, 0);
 
-  // Upper seating tiers
-  box(38, 3, 5.5, byuBlue,   0, 4.0, -15.5, 0.35,  0);   // north
-  box(38, 3, 5.5, byuBlue,   0, 4.0,  15.5, -0.35, 0);   // south
-  box( 5.5, 3, 27, byuBlue,  21.5, 4.0, 0,  0,  0.35);  // east
-  box( 5.5, 3, 27, byuBlue, -21.5, 4.0, 0,  0, -0.35); // west
-
-  // White rim at top of upper tier
-  box(40, 0.35, 0.5, byuWhite,  0, 5.8, -18.5); // north rim
-  box(40, 0.35, 0.5, byuWhite,  0, 5.8,  18.5); // south rim
-  box( 0.5, 0.35, 30, byuWhite,  24, 5.8, 0);   // east rim
-  box( 0.5, 0.35, 30, byuWhite, -24, 5.8, 0);   // west rim
-
-  // Corner concourse fills (plug the gaps between stands)
+  // ── Corner concourse fills ──
   for (const [cx2, cz2] of [[-20,-14],[20,-14],[-20,14],[20,14]] as [number,number][]) {
     box(8, 5, 8, byuBlue, cx2, 2.5, cz2);
   }
 
-  // Light towers (4 corners)
+  // ── Press box (west upper deck, midfield) ──
+  box(14, 2.5, 2.2, glassMat, -24.5, 5.8, 0);    // glass front
+  box(14, 2.5, 2.2, byuBlue,  -25.8, 5.8, 0);    // back wall
+  box(14, 0.3, 2.2, byuWhite, -24.5, 7.2, 0);    // roof
+  box(14, 0.3, 2.2, byuWhite, -24.5, 4.45, 0);   // floor
+  box(0.3, 2.5, 2.2, byuWhite, -17.65, 5.8, 0);  // left wall
+  box(0.3, 2.5, 2.2, byuWhite, -31.35, 5.8, 0);  // right wall
+
+  // ── Light towers (4 corners) — taller, with light cluster ──
   for (const [lx, lz] of [[-23,-17],[23,-17],[-23,17],[23,17]] as [number,number][]) {
-    box(0.5, 16, 0.5, byuWhite, lx, 8,  lz); // pole
-    box(3.0, 0.4, 0.4, byuWhite, lx, 15.5, lz); // arm
+    box(0.5, 20, 0.5, byuWhite, lx, 10, lz);      // pole
+    box(4.0, 0.4, 0.5, byuWhite, lx, 19.5, lz);   // main arm
+    box(0.4, 0.4, 3.0, byuWhite, lx, 19.5, lz);   // cross arm
+    // light cluster (bright white boxes)
+    for (const [ox, oz] of [[-1,0],[0,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+      const lm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.5),
+        new THREE.MeshStandardMaterial({ color: '#FFFAE0', emissive: '#FFFAE0', emissiveIntensity: 1.2 }));
+      lm.position.set(lx + ox, 20.2, lz + oz);
+      lm.castShadow = false; g.add(lm);
+    }
   }
 
-  // Scoreboard (north end, behind end zone)
-  box(0.5, 10, 0.5, byuWhite, 0, 5, -20); // pole
-  box(9, 4.5, 0.6, boardMat,  0, 10, -20); // screen
-  box(9.6, 0.4, 0.8, byuWhite, 0, 12.5, -20); // top trim
+  // ── Scoreboards (both ends) with canvas texture ──
+  const boardTexN = buildScoreboardTexture('LaVell Edwards Stadium');
+  const boardTexS = buildScoreboardTexture('BYU COUGARS');
+  // North scoreboard
+  box(0.5, 10, 0.5, byuWhite, 0, 5, -20.5);
+  const screenN = new THREE.Mesh(new THREE.PlaneGeometry(11, 5.5),
+    new THREE.MeshStandardMaterial({ map: boardTexN, roughness: 0.5, emissive: '#112244', emissiveIntensity: 0.4 }));
+  screenN.position.set(0, 11, -20.2); g.add(screenN);
+  box(11.8, 0.4, 0.8, byuWhite,  0, 13.8, -20.5);
+  box(11.8, 0.4, 0.8, byuBlue,   0, 8.3,  -20.5);
+  // South scoreboard
+  box(0.5, 10, 0.5, byuWhite, 0, 5, 20.5);
+  const screenS = new THREE.Mesh(new THREE.PlaneGeometry(11, 5.5),
+    new THREE.MeshStandardMaterial({ map: boardTexS, roughness: 0.5, emissive: '#112244', emissiveIntensity: 0.4 }));
+  screenS.position.set(0, 11, 20.2);
+  screenS.rotation.y = Math.PI;
+  g.add(screenS);
+  box(11.8, 0.4, 0.8, byuWhite,  0, 13.8, 20.5);
+  box(11.8, 0.4, 0.8, byuBlue,   0, 8.3,  20.5);
 
-  // Goal posts (2 end zones)
+  // ── Goal posts (2 end zones) ──
   for (const gpx of [-16, 16]) {
-    box(0.2, 4, 0.2, byuWhite, gpx, 4.5, 0);
-    box(5.5, 0.2, 0.2, byuWhite, gpx, 6.5, 0);
-    box(0.2, 1.8, 0.2, byuWhite, gpx - 2.5, 5.6, 0);
-    box(0.2, 1.8, 0.2, byuWhite, gpx + 2.5, 5.6, 0);
+    box(0.2, 4.5, 0.2, byuWhite, gpx, 4.5, 0);     // base pole
+    box(5.5, 0.2, 0.2, byuWhite, gpx, 6.8, 0);     // crossbar
+    box(0.2, 2.2, 0.2, byuWhite, gpx - 2.5, 7.9, 0); // left upright
+    box(0.2, 2.2, 0.2, byuWhite, gpx + 2.5, 7.9, 0); // right upright
   }
 
   return g;
