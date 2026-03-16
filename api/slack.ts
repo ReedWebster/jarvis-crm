@@ -36,35 +36,41 @@ export default async function handler(req: any, res: any) {
 // ─── OAuth Start ─────────────────────────────────────────────────────────────
 
 async function handleOAuthStart(_req: any, res: any) {
-  const clientId = process.env.SLACK_CLIENT_ID;
-  const redirectUri = process.env.SLACK_REDIRECT_URI;
+  try {
+    const clientId = process.env.SLACK_CLIENT_ID;
+    const redirectUri = process.env.SLACK_REDIRECT_URI;
 
-  if (!clientId || !redirectUri) {
+    if (!clientId || !redirectUri) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: 'Slack OAuth is not configured.',
+        detail: `CLIENT_ID=${!!clientId}, REDIRECT_URI=${!!redirectUri}`,
+      }));
+      return;
+    }
+
+    const state = 'litehouse-slack';
+    const userScope = encodeURIComponent(
+      'channels:read,channels:history,groups:read,groups:history,im:read,im:history,mpim:read,mpim:history,users:read,chat:write',
+    );
+    const encodedRedirect = encodeURIComponent(redirectUri);
+
+    const authUrl =
+      `https://slack.com/oauth/v2/authorize` +
+      `?client_id=${clientId}` +
+      `&redirect_uri=${encodedRedirect}` +
+      `&user_scope=${userScope}` +
+      `&state=${state}`;
+
+    res.statusCode = 302;
+    res.setHeader('Location', authUrl);
+    res.end();
+  } catch (e: any) {
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      error: 'Slack OAuth is not configured.',
-      detail: 'Set SLACK_CLIENT_ID and SLACK_REDIRECT_URI in your environment.',
-    }));
-    return;
+    res.end(JSON.stringify({ error: 'oauth-start crashed', detail: e?.message, stack: e?.stack }));
   }
-
-  const state = 'litehouse-slack';
-  const userScope = encodeURIComponent(
-    'channels:read,channels:history,groups:read,groups:history,im:read,im:history,mpim:read,mpim:history,users:read,chat:write',
-  );
-  const encodedRedirect = encodeURIComponent(redirectUri);
-
-  const authUrl =
-    `https://slack.com/oauth/v2/authorize` +
-    `?client_id=${clientId}` +
-    `&redirect_uri=${encodedRedirect}` +
-    `&user_scope=${userScope}` +
-    `&state=${state}`;
-
-  res.statusCode = 302;
-  res.setHeader('Location', authUrl);
-  res.end();
 }
 
 // ─── OAuth Callback ──────────────────────────────────────────────────────────
