@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
     callToAction ? `Call to action: ${callToAction}` : '',
     '',
     'Return JSON with this shape:',
-    '{ "drafts": [ { "platform": "linkedin" | "instagram" | "twitter", "content": "..." }, ... ] }',
+    '{ "drafts": [ { "platform": "linkedin" | "twitter", "content": "..." }, ... ] }',
   ].join('\n');
 
   const systemPrompt = [
@@ -50,7 +50,7 @@ export default async function handler(req: any, res: any) {
     '- keep insights grounded and real',
     '',
     'Task:',
-    'Return platform-specific drafts optimized for LinkedIn, Instagram, and Twitter/X.',
+    'Return platform-specific drafts optimized for LinkedIn and Twitter/X.',
     'You must respond with pure JSON and no extra text.',
   ].join('\n');
 

@@ -430,9 +430,19 @@ function FlashcardView({
   onBackToGrid,
 }: FlashcardViewProps) {
   const [index, setIndex] = useState(0);
+  const [pendingTags, setPendingTags] = useState<ContactTag[]>([]);
+  const [pendingFollowUp, setPendingFollowUp] = useState<boolean | null>(null);
   const touchStartX = useRef<number | null>(null);
   const contact = deck[index] ?? null;
   const total = deck.length;
+
+  // Reset pending state when the card changes
+  useEffect(() => {
+    if (contact) {
+      setPendingTags([...contact.tags]);
+      setPendingFollowUp(contact.followUpNeeded ?? false);
+    }
+  }, [contact?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateContact = useCallback(
     (updated: Contact) => {
@@ -443,35 +453,34 @@ function FlashcardView({
     [setContacts]
   );
 
-  const setTag = useCallback(
-    (c: Contact, tag: ContactTag) => {
-      const tags = c.tags.includes(tag)
-        ? c.tags.filter((t) => t !== tag)
-        : [...c.tags, tag];
-      updateContact({ ...c, tags });
+  const commitAndAdvance = useCallback(
+    (direction: 'next' | 'prev') => {
+      if (contact) {
+        const followUp = pendingFollowUp ?? contact.followUpNeeded ?? false;
+        updateContact({
+          ...contact,
+          tags: pendingTags,
+          followUpNeeded: followUp,
+          followUpDate: followUp ? contact.followUpDate || todayStr() : '',
+        });
+      }
+      setIndex((i) =>
+        direction === 'next'
+          ? i >= total - 1 ? 0 : i + 1
+          : i <= 0 ? total - 1 : i - 1
+      );
     },
-    [updateContact]
+    [contact, pendingTags, pendingFollowUp, updateContact, total]
   );
 
-  const setFollowUp = useCallback(
-    (c: Contact, needed: boolean) => {
-      const next = {
-        ...c,
-        followUpNeeded: needed,
-        followUpDate: needed ? c.followUpDate || todayStr() : '',
-      };
-      updateContact(next);
-    },
-    [updateContact]
-  );
+  const goPrev = useCallback(() => commitAndAdvance('prev'), [commitAndAdvance]);
+  const goNext = useCallback(() => commitAndAdvance('next'), [commitAndAdvance]);
 
-  const goPrev = useCallback(() => {
-    setIndex((i) => (i <= 0 ? total - 1 : i - 1));
-  }, [total]);
-
-  const goNext = useCallback(() => {
-    setIndex((i) => (i >= total - 1 ? 0 : i + 1));
-  }, [total]);
+  const togglePendingTag = useCallback((tag: ContactTag) => {
+    setPendingTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }, []);
 
   const SWIPE_THRESHOLD = 50;
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -596,9 +605,9 @@ function FlashcardView({
                 <Clock size={12} />
                 Last contact: {formatDate(contact.lastContacted)}
               </div>
-              {contact.tags.length > 0 && (
+              {pendingTags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {contact.tags.map((tag) => (
+                  {pendingTags.map((tag) => (
                     <span
                       key={tag}
                       className="px-2 py-0.5 rounded-md text-xs font-medium"
@@ -615,22 +624,22 @@ function FlashcardView({
               )}
             </div>
 
-            {/* Quick sort: set tag */}
+            {/* Quick sort: set tags (multi-select — changes saved when you navigate) */}
             <div>
               <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
-                Tags
+                Tags {pendingTags.length > 0 && <span className="normal-case ml-1 opacity-60">({pendingTags.length} selected)</span>}
               </p>
               <div className="flex flex-wrap gap-2">
                 {contactTags.map((t) => (
                   <button
                     key={t.name}
                     type="button"
-                    onClick={() => setTag(contact, t.name)}
+                    onClick={() => togglePendingTag(t.name)}
                     className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all border"
                     style={{
-                      borderColor: contact.tags.includes(t.name) ? t.color : 'var(--border)',
-                      backgroundColor: contact.tags.includes(t.name) ? `${t.color}20` : 'transparent',
-                      color: contact.tags.includes(t.name) ? t.color : 'var(--text-secondary)',
+                      borderColor: pendingTags.includes(t.name) ? t.color : 'var(--border)',
+                      backgroundColor: pendingTags.includes(t.name) ? `${t.color}20` : 'transparent',
+                      color: pendingTags.includes(t.name) ? t.color : 'var(--text-secondary)',
                     }}
                   >
                     {t.name}
@@ -647,26 +656,26 @@ function FlashcardView({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setFollowUp(contact, true)}
+                  onClick={() => setPendingFollowUp(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    contact.followUpNeeded ? 'ring-2 ring-amber-500/60' : ''
+                    pendingFollowUp === true ? 'ring-2 ring-amber-500/60' : ''
                   }`}
                   style={{
-                    backgroundColor: contact.followUpNeeded ? 'rgba(245,158,11,0.2)' : 'var(--bg-elevated)',
-                    color: contact.followUpNeeded ? '#f59e0b' : 'var(--text-muted)',
+                    backgroundColor: pendingFollowUp === true ? 'rgba(245,158,11,0.2)' : 'var(--bg-elevated)',
+                    color: pendingFollowUp === true ? '#f59e0b' : 'var(--text-muted)',
                   }}
                 >
                   Yes
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFollowUp(contact, false)}
+                  onClick={() => setPendingFollowUp(false)}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    !contact.followUpNeeded ? 'ring-2 ring-emerald-500/40' : ''
+                    pendingFollowUp === false ? 'ring-2 ring-emerald-500/40' : ''
                   }`}
                   style={{
-                    backgroundColor: !contact.followUpNeeded ? 'rgba(16,185,129,0.15)' : 'var(--bg-elevated)',
-                    color: !contact.followUpNeeded ? '#10b981' : 'var(--text-muted)',
+                    backgroundColor: pendingFollowUp === false ? 'rgba(16,185,129,0.15)' : 'var(--bg-elevated)',
+                    color: pendingFollowUp === false ? '#10b981' : 'var(--text-muted)',
                   }}
                 >
                   No
@@ -689,11 +698,12 @@ function FlashcardView({
         </button>
         <button
           onClick={goNext}
-          className="caesar-btn-primary p-3 rounded-xl touch-target-min"
-          title="Next (→ or Space)"
-          aria-label="Next contact"
+          className="caesar-btn-primary flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold touch-target-min"
+          title="Save & Next (→ or Space)"
+          aria-label="Save tags and go to next contact"
         >
-          <ChevronRight size={24} />
+          {pendingTags.length > 0 ? 'Save & Next' : 'Skip'}
+          <ChevronRight size={18} />
         </button>
       </div>
     </div>

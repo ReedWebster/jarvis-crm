@@ -369,7 +369,7 @@ export interface TodoItem {
 
 // ─── SOCIAL / BRAND OPERATIONS ───────────────────────────────────────────────
 
-export type SocialPlatform = 'instagram' | 'linkedin' | 'twitter' | 'facebook';
+export type SocialPlatform = 'linkedin' | 'twitter';
 
 export type SocialAccountStatus = 'connected' | 'disconnected' | 'needs-reauth';
 
@@ -388,10 +388,8 @@ export interface SocialPost {
   creatorUserId: string;
   platforms: SocialPlatform[];
   baseContent: string;
-  instagramContent?: string;
   linkedinContent?: string;
   twitterContent?: string;
-  facebookContent?: string;
   mediaUrls?: string[];          // stored as public URLs once uploaded
   perPlatformMedia?: Partial<Record<SocialPlatform, string[]>>;
   status: SocialPostStatus;
