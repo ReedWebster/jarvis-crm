@@ -136,6 +136,7 @@ interface CourseCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onAddAssignment: () => void;
+  onAddExam: () => void;
   onAssignmentStatusChange: (courseId: string, assignmentId: string, newStatus: AssignmentStatus) => void;
 }
 
@@ -144,6 +145,7 @@ function CourseCard({
   onEdit,
   onDelete,
   onAddAssignment,
+  onAddExam,
   onAssignmentStatusChange,
 }: CourseCardProps) {
   const color = course.color || 'var(--text-muted)';
@@ -281,14 +283,23 @@ function CourseCard({
         </div>
       )}
 
-      {/* Add Assignment */}
-      <button
-        onClick={onAddAssignment}
-        className="caesar-btn-ghost flex items-center justify-center gap-2 text-xs w-full py-2"
-      >
-        <Plus size={13} />
-        Add Assignment
-      </button>
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={onAddAssignment}
+          className="caesar-btn-ghost flex items-center justify-center gap-2 text-xs flex-1 py-2"
+        >
+          <Plus size={13} />
+          Add Assignment
+        </button>
+        <button
+          onClick={onAddExam}
+          className="caesar-btn-ghost flex items-center justify-center gap-2 text-xs flex-1 py-2"
+        >
+          <Calendar size={13} />
+          Add Exam
+        </button>
+      </div>
     </div>
   );
 }
@@ -621,6 +632,87 @@ function AssignmentFormModal({
   );
 }
 
+// ─── EXAM FORM MODAL ──────────────────────────────────────────────────────────
+
+interface ExamFormData {
+  courseId: string;
+  title: string;
+  date: string;
+}
+
+interface ExamFormModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (data: ExamFormData) => void;
+  courses: Course[];
+  initialCourseId?: string;
+}
+
+function ExamFormModal({ isOpen, onClose, onSave, courses, initialCourseId }: ExamFormModalProps) {
+  const [form, setForm] = useState<ExamFormData>({ courseId: '', title: '', date: todayStr() });
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setForm({
+        courseId: initialCourseId ?? (courses[0]?.id ?? ''),
+        title: '',
+        date: todayStr(),
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.courseId) return;
+    onSave(form);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Add Exam" size="sm">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div>
+          <label className="caesar-label">Course *</label>
+          <select
+            className="caesar-input w-full"
+            value={form.courseId}
+            onChange={(e) => setForm((f) => ({ ...f, courseId: e.target.value }))}
+            required
+          >
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="caesar-label">Exam Title *</label>
+          <input
+            className="caesar-input w-full"
+            placeholder="e.g. Midterm Exam"
+            value={form.title}
+            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            required
+          />
+        </div>
+        <div>
+          <label className="caesar-label">Date *</label>
+          <input
+            className="caesar-input w-full"
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+            required
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="caesar-btn-ghost">Cancel</button>
+          <button type="submit" className="caesar-btn-primary">Save Exam</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ─── ASSIGNMENT KANBAN ────────────────────────────────────────────────────────
 
 interface KanbanProps {
@@ -867,6 +959,10 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
   const [addAssignmentOpen, setAddAssignmentOpen] = useState(false);
   const [prefillCourseId, setPrefillCourseId] = useState<string>('');
 
+  // Exam modals
+  const [addExamOpen, setAddExamOpen] = useState(false);
+  const [examPrefillCourseId, setExamPrefillCourseId] = useState<string>('');
+
   // ── Course CRUD ──────────────────────────────────────────────────────────────
 
   const handleAddCourse = (data: CourseFormData) => {
@@ -921,6 +1017,11 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
     setAddAssignmentOpen(true);
   };
 
+  const openAddExamForCourse = (courseId: string) => {
+    setExamPrefillCourseId(courseId);
+    setAddExamOpen(true);
+  };
+
   // ── Assignment CRUD ──────────────────────────────────────────────────────────
 
   const handleAddAssignment = (data: AssignmentFormData) => {
@@ -962,6 +1063,19 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
           : c
       )
     );
+  };
+
+  const handleAddExam = (data: ExamFormData) => {
+    const newExam = { id: generateId(), title: data.title, date: data.date };
+    setCourses((prev) =>
+      (Array.isArray(prev) ? prev : []).map((c) =>
+        c.id === data.courseId
+          ? { ...c, examDates: [...c.examDates, newExam] }
+          : c
+      )
+    );
+    setAddExamOpen(false);
+    setExamPrefillCourseId('');
   };
 
   const handleDeleteAssignment = (courseId: string, assignmentId: string) => {
@@ -1015,6 +1129,7 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
                 onEdit={() => openEditCourse(course)}
                 onDelete={() => handleDeleteCourse(course.id)}
                 onAddAssignment={() => openAddAssignmentForCourse(course.id)}
+                onAddExam={() => openAddExamForCourse(course.id)}
                 onAssignmentStatusChange={handleAssignmentStatusChange}
               />
             ))}
@@ -1069,6 +1184,15 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
         courses={courses}
         initial={{ courseId: prefillCourseId || courses[0]?.id }}
         title="Add Assignment"
+      />
+
+      {/* Add Exam Modal */}
+      <ExamFormModal
+        isOpen={addExamOpen}
+        onClose={() => { setAddExamOpen(false); setExamPrefillCourseId(''); }}
+        onSave={handleAddExam}
+        courses={courses}
+        initialCourseId={examPrefillCourseId || courses[0]?.id}
       />
     </div>
   );
