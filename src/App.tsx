@@ -50,6 +50,7 @@ import { WorldView } from './components/world/WorldView';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
+import { ABSHub, getABSContacts } from './components/abs/ABSHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
 import { QuickCaptureSheet } from './components/shared/QuickCaptureSheet';
@@ -86,6 +87,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   social: 'Social Command Center',
   dochub: 'Doc Hub',
   messaging: 'Messaging',
+  abs: 'AI in Business Society',
 };
 
 // Route to TeamView for co-founders; all hooks live in MainApp so Rules of Hooks are satisfied
@@ -264,6 +266,14 @@ function MainApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts.length]);
 
+  // One-time migration: seed ABS org members as contacts
+  useEffect(() => {
+    if (contacts.length === 0) return;
+    if (contacts.some(c => c.id === 'abs_luke')) return;
+    setContacts(prev => [...prev, ...getABSContacts()]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts.length]);
+
   // One-time migration: inject M COM 320-010 course from Canvas calendar feed if not already present
   useEffect(() => {
     if (courses.length === 0) return;
@@ -425,6 +435,8 @@ function MainApp() {
         );
       case 'messaging':
         return <MessagingHub contacts={contacts} />;
+      case 'abs':
+        return <ABSHub />;
       default:
         return null;
     }
