@@ -2104,7 +2104,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         const cx = col * STEP;
         const cz = row * STEP;
         const zone = getZone(col, row);
-        const isBYU = col === 2 && row === 2;
+        const isBYU = col === 1 && row === 1;
         const isMoatShield = col === -1 && row === 0;
         const labelPool = ZONE_LABELS[zone];
         const labelIdx  = ((Math.abs(col) * 7 + Math.abs(row) * 13) ^ (col < 0 ? 3 : 5)) % labelPool.length;
@@ -2652,7 +2652,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           floor, allInteriorMeshesRef
         );
         setTotalFloors(nFloors);
-        const isBYUStadium = block.col === 2 && block.row === 2;
+        const isBYUStadium = block.col === 1 && block.row === 1;
         const onRoof = isBYUStadium || floor === nFloors - 1;
         const bHeight = archData?.height ?? 10;
         sun.intensity  = onRoof ? 1.8 : 0.3;
@@ -2852,7 +2852,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const ctx = floorPlanRef.current.getContext('2d');
     if (!ctx) return;
     const archData = blockArchetypeMapRef.current.get(`${selectedBlock.col},${selectedBlock.row}`);
-    const isBYUBlock = selectedBlock.col === 2 && selectedBlock.row === 2;
+    const isBYUBlock = selectedBlock.col === 1 && selectedBlock.row === 1;
     drawFloorPlan(ctx, isBYUBlock ? 'stadium' : (archData?.arch ?? 'midrise'), ZONE_COLORS[selectedBlock.zone]);
   }, [selectedBlock]);
 
