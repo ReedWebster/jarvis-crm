@@ -50,7 +50,8 @@ import { WorldView } from './components/world/WorldView';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
-import { ABSHub, getABSContacts } from './components/abs/ABSHub';
+import { ABSHub, getABSContacts, INITIAL_MEMBERS } from './components/abs/ABSHub';
+import type { ABSMember } from './components/abs/ABSHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
 import { QuickCaptureSheet } from './components/shared/QuickCaptureSheet';
@@ -209,6 +210,7 @@ function MainApp() {
   const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
   const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
   const [morningBriefing, setMorningBriefing] = useSupabaseStorage<import('./types').MorningBriefing | null>('jarvis:morning_briefing', null);
+  const [absMembers, setAbsMembers] = useSupabaseStorage<ABSMember[]>('jarvis:absMembers', INITIAL_MEMBERS);
   const [districtTagMap, setDistrictTagMap] = useSupabaseStorage<Record<string, string>>('jarvis:districtTagMap', {
     'Financial Core': 'Investor',   'Central Tower': 'Investor',    'Capital Row': 'Investor',
     'Exchange Sq': 'Client',        'Commerce Plaza': 'Partner',    'Metro Center': 'Colleague',
@@ -436,7 +438,7 @@ function MainApp() {
       case 'messaging':
         return <MessagingHub contacts={contacts} />;
       case 'abs':
-        return <ABSHub />;
+        return <ABSHub members={absMembers} setMembers={setAbsMembers} />;
       default:
         return null;
     }
