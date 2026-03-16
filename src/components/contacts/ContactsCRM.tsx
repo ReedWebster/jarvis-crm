@@ -33,13 +33,14 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
-import type { Contact, ContactTag, ContactInteraction } from '../../types';
+import type { Contact, ContactTag, ContactInteraction, Project } from '../../types';
 import { generateId, todayStr, calcRelationshipHealth, getHealthColor, formatDate } from '../../utils';
 import { useToast } from '../shared/Toast';
 import { Modal } from '../shared/Modal';
 import { Badge } from '../shared/Badge';
 import { EmailComposeModal } from '../email/EmailComposeModal';
 import { EmailThread } from '../email/EmailThread';
+import { PhoneLink } from '../shared/PhoneLink';
 import { useGoogleContacts } from '../../hooks/useGoogleContacts';
 import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
 
@@ -87,6 +88,7 @@ interface Props {
   setContacts: (v: Contact[] | ((p: Contact[]) => Contact[])) => void;
   contactTags: TagDef[];
   setContactTags: (v: TagDef[] | ((p: TagDef[]) => TagDef[])) => void;
+  projects?: Project[];
   onNavigateToNetworking?: () => void;
 }
 
@@ -279,10 +281,10 @@ function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogIn
           </div>
         )}
         {contact.phone && (
-          <div className="flex items-center gap-1.5">
+          <PhoneLink phone={contact.phone} className="flex items-center gap-1.5">
             <Phone size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{contact.phone}</span>
-          </div>
+          </PhoneLink>
         )}
         {(contact as any).linkedin && (
           <div className="flex items-center gap-1.5">
@@ -1143,12 +1145,13 @@ interface ContactDetailModalProps {
   onClose: () => void;
   contact: Contact | null;
   contactTags: TagDef[];
+  projects?: Project[];
   onUpdate: (updated: Contact) => void;
   onSendEmail?: () => void;
   onViewEmails?: () => void;
 }
 
-function ContactDetailModal({ isOpen, onClose, contact, contactTags, onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
+function ContactDetailModal({ isOpen, onClose, contact, contactTags, projects = [], onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
   const [newInteraction, setNewInteraction] = useState<Omit<ContactInteraction, 'id'>>(emptyInteraction());
   const [showAddInteraction, setShowAddInteraction] = useState(false);
 
@@ -1196,10 +1199,10 @@ function ContactDetailModal({ isOpen, onClose, contact, contactTags, onUpdate, o
               </div>
             )}
             {contact.phone && (
-              <div className="flex items-center gap-2">
+              <PhoneLink phone={contact.phone} className="flex items-center gap-2">
                 <Phone size={14} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contact.phone}</span>
-              </div>
+              </PhoneLink>
             )}
             {(contact as any).linkedin && (
               <div className="flex items-center gap-2">
@@ -1303,6 +1306,52 @@ function ContactDetailModal({ isOpen, onClose, contact, contactTags, onUpdate, o
             <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               {contact.notes}
             </p>
+          </div>
+        )}
+
+        {/* Linked Projects */}
+        {projects.length > 0 && (
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Projects</p>
+            <div className="flex flex-wrap gap-1.5">
+              {contact.linkedProjects.map((projId) => {
+                const proj = projects.find(p => p.id === projId);
+                if (!proj) return null;
+                return (
+                  <span
+                    key={projId}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                    style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+                  >
+                    {proj.name}
+                    <button
+                      onClick={() => onUpdate({ ...contact, linkedProjects: contact.linkedProjects.filter(id => id !== projId) })}
+                      title="Unlink project"
+                    >
+                      <X size={10} style={{ color: 'var(--text-muted)' }} />
+                    </button>
+                  </span>
+                );
+              })}
+              {/* Add project dropdown */}
+              {projects.filter(p => !contact.linkedProjects.includes(p.id)).length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    onUpdate({ ...contact, linkedProjects: [...contact.linkedProjects, e.target.value] });
+                    e.target.value = '';
+                  }}
+                  className="px-2 py-1 rounded-lg text-xs cursor-pointer"
+                  style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
+                >
+                  <option value="">+ Add project…</option>
+                  {projects.filter(p => !contact.linkedProjects.includes(p.id)).map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
         )}
 
@@ -1511,7 +1560,7 @@ function shuffleArray<T>(arr: T[]): T[] {
   return out;
 }
 
-export default function ContactsCRM({ contacts, setContacts, contactTags, setContactTags, onNavigateToNetworking }: Props) {
+export default function ContactsCRM({ contacts, setContacts, contactTags, setContactTags, projects = [], onNavigateToNetworking }: Props) {
   const toast = useToast();
   const { syncContacts, autoSync, deleteContact: deleteGoogleContact } = useGoogleContacts();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -2285,6 +2334,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         onClose={() => { setDetailModalOpen(false); setSelectedContact(null); }}
         contact={selectedContact}
         contactTags={contactTags}
+        projects={projects}
         onUpdate={handleUpdateContact}
         onSendEmail={() => selectedContact && openCompose(selectedContact)}
         onViewEmails={() => selectedContact && openThread(selectedContact)}

@@ -365,6 +365,7 @@ function MainApp() {
             setContacts={setContacts}
             contactTags={contactTags}
             setContactTags={setContactTags}
+            projects={projects}
             onNavigateToNetworking={() => setActiveSection('world')}
           />
         );
