@@ -44,15 +44,26 @@ const STATUS_LABELS: Record<AssignmentStatus, string> = {
 };
 
 const STATUS_COLORS: Record<AssignmentStatus, string> = {
-  'not-started': '#555555',
-  'in-progress': '#888888',
-  'submitted':   '#aaaaaa',
-  'graded':      '#333333',
+  'not-started': '#6b7280',
+  'in-progress': '#3b82f6',
+  'submitted':   '#a855f7',
+  'graded':      '#22c55e',
 };
 
 const COURSE_COLORS = [
-  '#111111','#222222','#333333','#444444','#555555',
-  '#666666','#777777','#888888','#999999','#aaaaaa',
+  // Neutrals
+  '#6b7280','#9ca3af',
+  // Reds / Pinks
+  '#ef4444','#f43f5e','#ec4899',
+  // Oranges / Yellows
+  '#f97316','#eab308',
+  // Greens
+  '#22c55e','#10b981','#14b8a6',
+  // Blues
+  '#3b82f6','#6366f1','#0ea5e9',
+  // Purples
+  '#a855f7','#8b5cf6',
+  // Custom (shown as a color input)
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -399,7 +410,7 @@ function CourseFormModal({ isOpen, onClose, onSave, initial, title }: CourseForm
         {/* Color Picker */}
         <div>
           <label className="caesar-label">Course Color</label>
-          <div className="flex flex-wrap gap-2 mt-1">
+          <div className="flex flex-wrap gap-2 mt-1 items-center">
             {COURSE_COLORS.map((c) => (
               <button
                 key={c}
@@ -413,6 +424,27 @@ function CourseFormModal({ isOpen, onClose, onSave, initial, title }: CourseForm
                 }}
               />
             ))}
+            {/* Custom color swatch */}
+            <label
+              className="w-7 h-7 rounded-full cursor-pointer transition-all duration-150 flex items-center justify-center overflow-hidden"
+              title="Custom color"
+              style={{
+                background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
+                boxShadow: !COURSE_COLORS.includes(form.color) ? '0 0 0 2px var(--bg-card), 0 0 0 4px var(--border)' : 'none',
+                transform: !COURSE_COLORS.includes(form.color) ? 'scale(1.15)' : 'scale(1)',
+              }}
+            >
+              <input
+                type="color"
+                className="opacity-0 w-full h-full cursor-pointer absolute"
+                value={form.color}
+                onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+              />
+            </label>
+            {/* Current custom hex */}
+            {!COURSE_COLORS.includes(form.color) && (
+              <span className="text-xs font-mono" style={{ color: form.color }}>{form.color}</span>
+            )}
           </div>
         </div>
 
