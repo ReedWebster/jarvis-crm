@@ -345,7 +345,7 @@ function MainApp() {
       case 'identity':
         return <CoreIdentityPanel identity={identity} setIdentity={setIdentity} />;
       case 'projects':
-        return <ProjectsTracker projects={projects} setProjects={setProjects} />;
+        return <ProjectsTracker projects={projects} setProjects={setProjects} onNavigate={setActiveSection} />;
       case 'time':
         return (
           <Calendar
