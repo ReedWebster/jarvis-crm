@@ -5,6 +5,7 @@ import {
   Pencil, Plus, Trash2, Check,
 } from 'lucide-react';
 import type { Contact } from '../../types';
+import { PhoneLink } from '../shared/PhoneLink';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -413,8 +414,8 @@ function MemberModal({ member, allMembers, onEdit, onClose }: {
                 <Phone size={14} style={{ color: 'var(--text-muted)' }} />{member.phone}
               </div>
               <div className="flex gap-1">
-                <a href={`tel:${member.phone.replace(/\D/g, '')}`} className="px-2 py-1 rounded text-xs"
-                  style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>Call</a>
+                <PhoneLink phone={member.phone} className="px-2 py-1 rounded text-xs"
+                  style={{ backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>Call / Text</PhoneLink>
                 <button onClick={() => copy(member.phone!)} className="p-1 rounded" style={{ color: 'var(--text-muted)' }}><Copy size={12} /></button>
               </div>
             </div>
@@ -578,13 +579,13 @@ function DirectoryTab({ members, onSelect, onEdit }: {
                     </td>
                     <td className="py-2.5 px-4 hidden lg:table-cell">
                       {m.phone && (
-                        <a href={`tel:${m.phone.replace(/\D/g,'')}`} className="text-xs font-mono transition-colors"
+                        <PhoneLink phone={m.phone} className="text-xs font-mono transition-colors"
                           style={{ color: 'var(--text-muted)' }}
                           onClick={e => e.stopPropagation()}
                           onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
                           onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}>
                           {m.phone}
-                        </a>
+                        </PhoneLink>
                       )}
                     </td>
                     <td className="py-2.5 px-4 hidden lg:table-cell">
@@ -706,10 +707,10 @@ function OrgNode({ member, allMembers, depth, expanded, onToggle, onSelect, onEd
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           {member.phone && (
-            <a href={`tel:${member.phone.replace(/\D/g,'')}`} className="p-1.5 rounded" style={{ color: cfg.color }}
+            <PhoneLink phone={member.phone} className="p-1.5 rounded" style={{ color: cfg.color }}
               onClick={e => e.stopPropagation()}>
               <Phone size={13} />
-            </a>
+            </PhoneLink>
           )}
           <button onClick={e => { e.stopPropagation(); onEdit(member); }}
             className="p-1.5 rounded transition-colors"

@@ -6,6 +6,7 @@ import {
   Upload, Download, Eye, FileCheck, FilePlus, Printer, PenLine,
 } from 'lucide-react';
 import { differenceInDays } from 'date-fns';
+import { PhoneLink } from '../shared/PhoneLink';
 import { PDFDocument, rgb } from 'pdf-lib';
 import type { Client, ClientPayment, ClientStatus, PaymentStatus, ClientContractInfo } from '../../types';
 import { generateId, todayStr, formatDate } from '../../utils';
@@ -381,9 +382,9 @@ function ClientCard({ client, onEdit, onDelete }: { client: Client; onEdit: () =
             </a>
           )}
           {client.phone && (
-            <a href={`tel:${client.phone}`} className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <PhoneLink phone={client.phone} className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
               <Phone size={11} />{client.phone}
-            </a>
+            </PhoneLink>
           )}
         </div>
       )}
