@@ -69,6 +69,32 @@ export function SocialHub({
     return null;
   });
 
+  // Meta (Instagram + Facebook)
+  const [metaStatus, setMetaStatus] = useState<'unknown' | 'disconnected' | 'connected' | 'needs-reauth'>('unknown');
+  const [metaProfile, setMetaProfile] = useState<{ name?: string; picture?: string; instagramAccounts?: { username: string }[] } | null>(null);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [metaBanner, setMetaBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const m = params.get('meta');
+    if (m === 'connected') return { type: 'success', msg: 'Instagram & Facebook connected successfully!' };
+    if (m === 'error') return { type: 'error', msg: params.get('msg') || 'Meta connection failed.' };
+    return null;
+  });
+
+  // X (Twitter)
+  const [xStatus, setXStatus] = useState<'unknown' | 'disconnected' | 'connected' | 'needs-reauth'>('unknown');
+  const [xProfile, setXProfile] = useState<{ name?: string; username?: string; picture?: string } | null>(null);
+  const [xLoading, setXLoading] = useState(false);
+  const [xError, setXError] = useState<string | null>(null);
+  const [xBanner, setXBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const x = params.get('x');
+    if (x === 'connected') return { type: 'success', msg: 'X connected successfully!' };
+    if (x === 'error') return { type: 'error', msg: params.get('msg') || 'X connection failed.' };
+    return null;
+  });
+
   const groupedPosts = useMemo(() => {
     const groups: Record<string, SocialPost[]> = {};
     [...socialPosts].forEach(p => {
@@ -112,6 +138,67 @@ export function SocialHub({
     load();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setMetaLoading(true);
+      setMetaError(null);
+      try {
+        const res = await fetch('/api/meta-status');
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setMetaError(json?.error || 'Failed to load Meta status');
+          setMetaStatus('unknown');
+        } else {
+          setMetaStatus(json?.status ?? 'disconnected');
+          if (json?.name || json?.picture) {
+            setMetaProfile({ name: json.name, picture: json.picture, instagramAccounts: json.instagramAccounts });
+          }
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setMetaError(err?.message ?? 'Failed to load Meta status');
+        setMetaStatus('unknown');
+      } finally {
+        if (!cancelled) setMetaLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setXLoading(true);
+      setXError(null);
+      try {
+        const res = await fetch('/api/x-status');
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setXError(json?.error || 'Failed to load X status');
+          setXStatus('unknown');
+        } else {
+          setXStatus(json?.status ?? 'disconnected');
+          if (json?.name || json?.username) {
+            setXProfile({ name: json.name, username: json.username, picture: json.picture });
+          }
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setXError(err?.message ?? 'Failed to load X status');
+        setXStatus('unknown');
+      } finally {
+        if (!cancelled) setXLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
       {/* Header */}
@@ -133,23 +220,28 @@ export function SocialHub({
         </div>
       </div>
 
-      {/* LinkedIn callback banner */}
-      {linkedinBanner && (
+      {/* OAuth callback banners */}
+      {[
+        { banner: linkedinBanner, clear: () => setLinkedinBanner(null) },
+        { banner: metaBanner, clear: () => setMetaBanner(null) },
+        { banner: xBanner, clear: () => setXBanner(null) },
+      ].map(({ banner, clear }, i) => banner && (
         <div
+          key={i}
           className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3"
           style={{
-            backgroundColor: linkedinBanner.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-            color: linkedinBanner.type === 'success' ? '#22c55e' : '#ef4444',
-            border: `1px solid ${linkedinBanner.type === 'success' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            backgroundColor: banner.type === 'success' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+            color: banner.type === 'success' ? '#22c55e' : '#ef4444',
+            border: `1px solid ${banner.type === 'success' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
           }}
         >
-          <span>{linkedinBanner.msg}</span>
+          <span>{banner.msg}</span>
           <button type="button" onClick={() => {
-            setLinkedinBanner(null);
+            clear();
             window.history.replaceState({}, '', window.location.pathname);
           }} style={{ opacity: 0.7 }}>✕</button>
         </div>
-      )}
+      ))}
 
       {/* Tabs */}
       <div
@@ -379,10 +471,42 @@ export function SocialHub({
             {(Object.keys(PLATFORM_META) as SocialPlatform[]).map(platform => {
               const existing = socialAccounts.find(a => a.platform === platform);
               const statusFromState = existing?.status ?? 'disconnected';
-              const status =
-                platform === 'linkedin'
-                  ? (linkedinStatus === 'unknown' ? statusFromState : (linkedinStatus as SocialAccount['status']))
-                  : statusFromState;
+
+              const liveStatus =
+                platform === 'linkedin' ? linkedinStatus :
+                platform === 'instagram' || platform === 'facebook' ? metaStatus :
+                platform === 'twitter' ? xStatus :
+                'unknown';
+
+              const status = liveStatus === 'unknown' ? statusFromState : (liveStatus as SocialAccount['status']);
+              const isLoading =
+                platform === 'linkedin' ? linkedinLoading :
+                platform === 'instagram' || platform === 'facebook' ? metaLoading :
+                platform === 'twitter' ? xLoading :
+                false;
+              const platformError =
+                platform === 'linkedin' ? linkedinError :
+                platform === 'instagram' || platform === 'facebook' ? metaError :
+                platform === 'twitter' ? xError :
+                null;
+
+              const profileName =
+                platform === 'linkedin' ? linkedinProfile?.name :
+                platform === 'instagram'
+                  ? (metaProfile?.instagramAccounts?.[0]?.username
+                      ? `@${metaProfile.instagramAccounts[0].username}`
+                      : metaProfile?.name)
+                  : platform === 'facebook' ? metaProfile?.name :
+                platform === 'twitter'
+                  ? (xProfile?.username ? `@${xProfile.username}` : xProfile?.name)
+                  : existing?.accountName;
+
+              const oauthStartPath =
+                platform === 'linkedin' ? '/api/linkedin-oauth-start' :
+                platform === 'instagram' || platform === 'facebook' ? '/api/meta-oauth-start' :
+                platform === 'twitter' ? '/api/x-oauth-start' :
+                undefined;
+
               const label = PLATFORM_META[platform].label;
               const color =
                 status === 'connected' ? '#22c55e' :
@@ -392,6 +516,10 @@ export function SocialHub({
                 status === 'connected' ? 'Connected' :
                 status === 'needs-reauth' ? 'Needs Reauth' :
                 'Disconnected';
+
+              const connectLabel = isLoading
+                ? 'Checking…'
+                : status === 'connected' ? `Reconnect ${label}` : `Connect ${label}`;
 
               return (
                 <div key={platform} className="caesar-card flex flex-col gap-3">
@@ -407,13 +535,9 @@ export function SocialHub({
                         <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                           {label}
                         </p>
-                        {platform === 'linkedin' && linkedinProfile?.name ? (
+                        {profileName ? (
                           <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {linkedinProfile.name}
-                          </p>
-                        ) : existing?.accountName ? (
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {existing.accountName}
+                            {profileName}
                           </p>
                         ) : null}
                       </div>
@@ -428,15 +552,14 @@ export function SocialHub({
                   <button
                     type="button"
                     className="caesar-btn-ghost flex items-center justify-center gap-1 text-xs"
-                    onClick={platform === 'linkedin' ? () => { window.location.href = '/api/linkedin-oauth-start'; } : undefined}
+                    disabled={isLoading || !oauthStartPath}
+                    onClick={oauthStartPath ? () => { window.location.href = oauthStartPath; } : undefined}
                   >
-                    {platform === 'linkedin'
-                      ? (linkedinLoading ? 'Checking…' : status === 'connected' ? 'Reconnect' : 'Connect LinkedIn')
-                      : status === 'connected' ? 'Disconnect' : 'Connect'}
+                    {connectLabel}
                   </button>
-                  {platform === 'linkedin' && linkedinError && (
+                  {platformError && (
                     <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>
-                      {linkedinError}
+                      {platformError}
                     </p>
                   )}
                 </div>
