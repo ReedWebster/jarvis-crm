@@ -114,7 +114,7 @@ export function SocialHub({
       setLinkedinLoading(true);
       setLinkedinError(null);
       try {
-        const res = await fetch('/api/linkedin-status');
+        const res = await fetch('/api/social-status?provider=linkedin');
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok) {
@@ -145,7 +145,7 @@ export function SocialHub({
       setMetaLoading(true);
       setMetaError(null);
       try {
-        const res = await fetch('/api/meta-status');
+        const res = await fetch('/api/social-status?provider=meta');
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok) {
@@ -175,7 +175,7 @@ export function SocialHub({
       setXLoading(true);
       setXError(null);
       try {
-        const res = await fetch('/api/x-status');
+        const res = await fetch('/api/social-status?provider=x');
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok) {
@@ -502,9 +502,9 @@ export function SocialHub({
                   : existing?.accountName;
 
               const oauthStartPath =
-                platform === 'linkedin' ? '/api/linkedin-oauth-start' :
-                platform === 'instagram' || platform === 'facebook' ? '/api/meta-oauth-start' :
-                platform === 'twitter' ? '/api/x-oauth-start' :
+                platform === 'linkedin' ? '/api/oauth-start?provider=linkedin' :
+                platform === 'instagram' || platform === 'facebook' ? '/api/oauth-start?provider=meta' :
+                platform === 'twitter' ? '/api/oauth-start?provider=x' :
                 undefined;
 
               const label = PLATFORM_META[platform].label;

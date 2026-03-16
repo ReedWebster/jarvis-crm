@@ -286,7 +286,7 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
                 Connect Google to include Gmail + Calendar in your briefing
               </span>
               <a
-                href="/api/google-oauth-start"
+                href="/api/oauth-start?provider=google"
                 className="text-xs font-medium py-0.5 px-2 rounded transition-colors"
                 style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
               >
