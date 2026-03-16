@@ -1797,31 +1797,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
     }
 
-    // ── Broadway diagonal road ─────────────────────────────────────────────────
-    // Like NYC's Broadway cutting diagonally across the grid (NW→SE)
-    {
-      const diagLen  = GRID_EXTENT * 2.8;
-      const diagAngle = Math.atan2(GRID_EXTENT * 0.55, GRID_EXTENT);
-      const diagW    = ROAD_W + 2;
-      const diagRoad = new THREE.Mesh(new THREE.PlaneGeometry(diagW, diagLen), roadMat.clone());
-      diagRoad.rotation.x = -Math.PI / 2;
-      diagRoad.rotation.z = diagAngle;
-      diagRoad.position.set(-GRID_EXTENT * 0.1, 0.018, 0);
-      diagRoad.receiveShadow = true;
-      cityGroup.add(diagRoad);
-      // Sidewalks alongside diagonal
-      for (const side of [-1, 1]) {
-        const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.8, diagLen), swalkMat.clone());
-        sw.rotation.x = -Math.PI / 2;
-        sw.rotation.z = diagAngle;
-        sw.position.set(-GRID_EXTENT * 0.1 + side * Math.cos(diagAngle + Math.PI / 2) * (diagW / 2 + 0.9),
-                         0.019,
-                         side * Math.sin(diagAngle + Math.PI / 2) * (diagW / 2 + 0.9));
-        sw.receiveShadow = true;
-        cityGroup.add(sw);
-      }
-    }
-
     // ── Creek system ────────────────────────────────────────────────────────────
     // A winding waterway cutting through the city from NW to SE
     {
