@@ -727,6 +727,211 @@ function makeExteriorTexture(rng: () => number, elevationFloor: number): THREE.C
   return new THREE.CanvasTexture(canvas);
 }
 
+// ─── STADIUM INTERIOR ─────────────────────────────────────────────────────────
+
+function buildStadiumInterior(
+  group: THREE.Group,
+  floor: number,
+  interiorMeshesRef: { current: THREE.Mesh[] },
+): number {
+  disposeGroup(group);
+  interiorMeshesRef.current = [];
+
+  const byuBlue  = new THREE.MeshStandardMaterial({ color: '#002E5D', roughness: 0.82 });
+  const byuWhite = new THREE.MeshStandardMaterial({ color: '#E8EEF4', roughness: 0.80 });
+  const trackMat = new THREE.MeshStandardMaterial({ color: '#B85030', roughness: 0.88 });
+  const concMat  = new THREE.MeshStandardMaterial({ color: '#444A52', roughness: 0.95 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: '#1A2A3A', roughness: 0.1, metalness: 0.5, transparent: true, opacity: 0.82 });
+  const tunnelMat = new THREE.MeshStandardMaterial({ color: '#111318', roughness: 0.95 });
+
+  const seatTex  = buildSeatTexture(9);
+  const seatMat  = () => new THREE.MeshStandardMaterial({ map: seatTex, roughness: 0.85 });
+
+  const box = (w: number, h: number, d: number, mat: THREE.MeshStandardMaterial, px = 0, py = 0, pz = 0, rx = 0, rz = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat.clone());
+    m.position.set(px, py, pz); m.rotation.x = rx; m.rotation.z = rz;
+    m.castShadow = m.receiveShadow = true; group.add(m); return m;
+  };
+
+  // ── FLOOR 0: Field Level ────────────────────────────────────────────────────
+  if (floor === 0) {
+    // Concrete base / foundation
+    box(56, 0.4, 40, concMat, 0, -0.2, 0);
+
+    // Track ring
+    const track = new THREE.Mesh(new THREE.PlaneGeometry(36, 22), trackMat.clone());
+    track.rotation.x = -Math.PI / 2; track.position.y = 0.21; track.receiveShadow = true; group.add(track);
+
+    // Green apron between track and field
+    const apron = new THREE.Mesh(new THREE.PlaneGeometry(30.5, 16.5),
+      new THREE.MeshStandardMaterial({ color: '#1E5C28', roughness: 0.9 }));
+    apron.rotation.x = -Math.PI / 2; apron.position.y = 0.215; apron.receiveShadow = true; group.add(apron);
+
+    // Playing field with full BYU texture
+    const fieldTex = buildFieldTexture();
+    fieldTex.anisotropy = 8;
+    const fieldMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(28, 15),
+      new THREE.MeshStandardMaterial({ map: fieldTex, roughness: 0.85 })
+    );
+    fieldMesh.rotation.x = -Math.PI / 2; fieldMesh.position.y = 0.22;
+    fieldMesh.receiveShadow = true; group.add(fieldMesh);
+
+    // ── Seating tiers ──────────────────────────────────────────────────────
+    // Lower tiers
+    box(36, 2.5, 4.5, seatMat(),   0,  1.2, -11.5, 0.30,  0);
+    box(36, 2.5, 4.5, seatMat(),   0,  1.2,  11.5, -0.30, 0);
+    box( 4.5, 2.5, 23, seatMat(),  17.5, 1.2, 0,   0,  0.30);
+    box( 4.5, 2.5, 23, seatMat(), -17.5, 1.2, 0,   0, -0.30);
+    // Upper tiers
+    box(38, 3, 5.5, seatMat(),   0, 4.0, -15.5, 0.35,  0);
+    box(38, 3, 5.5, seatMat(),   0, 4.0,  15.5, -0.35, 0);
+    box( 5.5, 3, 27, seatMat(),  21.5, 4.0, 0,  0,  0.35);
+    box( 5.5, 3, 27, seatMat(), -21.5, 4.0, 0,  0, -0.35);
+    // White rim
+    box(40, 0.35, 0.5, byuWhite,  0, 5.8, -18.5);
+    box(40, 0.35, 0.5, byuWhite,  0, 5.8,  18.5);
+    box( 0.5, 0.35, 30, byuWhite,  24, 5.8, 0);
+    box( 0.5, 0.35, 30, byuWhite, -24, 5.8, 0);
+    // Corner fills
+    for (const [cx2, cz2] of [[-20,-14],[20,-14],[-20,14],[20,14]] as [number,number][]) {
+      box(8, 5, 8, byuBlue, cx2, 2.5, cz2);
+    }
+    // Tunnel portals
+    for (const tz of [-5, 5]) {
+      box(2.5, 1.8, 0.3, tunnelMat,  17.5, 0.9, tz);
+      box(2.5, 1.8, 0.3, tunnelMat, -17.5, 0.9, tz);
+    }
+    box(3, 1.8, 0.3, tunnelMat, 0, 0.9, -11.4);
+    box(3, 1.8, 0.3, tunnelMat, 0, 0.9,  11.4);
+
+    // ── Light towers ───────────────────────────────────────────────────────
+    for (const [lx, lz] of [[-23,-17],[23,-17],[-23,17],[23,17]] as [number,number][]) {
+      box(0.5, 20, 0.5, byuWhite, lx, 10, lz);
+      box(4.0, 0.4, 0.5, byuWhite, lx, 19.5, lz);
+      box(0.4, 0.4, 3.0, byuWhite, lx, 19.5, lz);
+      for (const [ox, oz] of [[-1,0],[0,0],[1,0],[0,-1],[0,1]] as [number,number][]) {
+        const lm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.5),
+          new THREE.MeshStandardMaterial({ color: '#FFFAE0', emissive: '#FFFAE0', emissiveIntensity: 1.2 }));
+        lm.position.set(lx + ox, 20.2, lz + oz); group.add(lm);
+      }
+    }
+
+    // ── Scoreboards ────────────────────────────────────────────────────────
+    const boardTexN = buildScoreboardTexture('LaVell Edwards Stadium');
+    const boardTexS = buildScoreboardTexture('BYU COUGARS');
+    box(0.5, 10, 0.5, byuWhite, 0, 5, -20.5);
+    const screenN = new THREE.Mesh(new THREE.PlaneGeometry(11, 5.5),
+      new THREE.MeshStandardMaterial({ map: boardTexN, roughness: 0.5, emissive: '#112244', emissiveIntensity: 0.4 }));
+    screenN.position.set(0, 11, -20.2); group.add(screenN);
+    box(11.8, 0.4, 0.8, byuWhite,  0, 13.8, -20.5);
+    box(11.8, 0.4, 0.8, byuBlue,   0, 8.3,  -20.5);
+    box(0.5, 10, 0.5, byuWhite, 0, 5, 20.5);
+    const screenS = new THREE.Mesh(new THREE.PlaneGeometry(11, 5.5),
+      new THREE.MeshStandardMaterial({ map: boardTexS, roughness: 0.5, emissive: '#112244', emissiveIntensity: 0.4 }));
+    screenS.position.set(0, 11, 20.2); screenS.rotation.y = Math.PI; group.add(screenS);
+    box(11.8, 0.4, 0.8, byuWhite,  0, 13.8, 20.5);
+    box(11.8, 0.4, 0.8, byuBlue,   0, 8.3,  20.5);
+
+    // ── Goal posts ─────────────────────────────────────────────────────────
+    for (const gpx of [-16, 16]) {
+      box(0.2, 4.5, 0.2, byuWhite, gpx, 4.5, 0);
+      box(5.5, 0.2, 0.2, byuWhite, gpx, 6.8, 0);
+      box(0.2, 2.2, 0.2, byuWhite, gpx - 2.5, 7.9, 0);
+      box(0.2, 2.2, 0.2, byuWhite, gpx + 2.5, 7.9, 0);
+    }
+
+    // ── Press box (west upper deck, visible from field) ─────────────────
+    box(14, 2.5, 2.2, glassMat, -24.5, 5.8, 0);
+    box(14, 2.5, 2.2, byuBlue,  -25.8, 5.8, 0);
+    box(14, 0.3, 2.2, byuWhite, -24.5, 7.2, 0);
+    box(14, 0.3, 2.2, byuWhite, -24.5, 4.45, 0);
+    box(0.3, 2.5, 2.2, byuWhite, -17.65, 5.8, 0);
+    box(0.3, 2.5, 2.2, byuWhite, -31.35, 5.8, 0);
+  }
+
+  // ── FLOOR 1: Upper Concourse / Press Box ────────────────────────────────────
+  if (floor === 1) {
+    const concFloor = new THREE.Mesh(new THREE.PlaneGeometry(50, 14),
+      new THREE.MeshStandardMaterial({ color: '#4A5058', roughness: 0.95 }));
+    concFloor.rotation.x = -Math.PI / 2; concFloor.position.y = 0; concFloor.receiveShadow = true; group.add(concFloor);
+
+    // Glass rail at the front (south edge, looking toward field)
+    const rail = new THREE.Mesh(new THREE.PlaneGeometry(48, 1.2),
+      new THREE.MeshStandardMaterial({ color: '#B0CCDC', roughness: 0.04, metalness: 0.18, transparent: true, opacity: 0.5 }));
+    rail.position.set(0, 0.6, -6.5); group.add(rail);
+    box(48, 0.08, 0.08, byuWhite, 0, 1.25, -6.5); // top rail cap
+
+    // Parapet / back wall
+    box(50, 2.0, 0.4, byuBlue, 0, 1.0, 6.5);
+    // Outer wall segments (east/west)
+    box(0.4, 2.0, 14, byuBlue, -24.8, 1.0, 0);
+    box(0.4, 2.0, 14, byuBlue,  24.8, 1.0, 0);
+
+    // Broadcast booth tables + monitors
+    const deskMat  = new THREE.MeshStandardMaterial({ color: '#C8D4E0', roughness: 0.7 });
+    const monMat   = new THREE.MeshStandardMaterial({ color: '#1C2030', roughness: 0.5 });
+    const scrMat   = new THREE.MeshStandardMaterial({ color: '#2060A0', roughness: 0.2, emissive: new THREE.Color('#0840A0'), emissiveIntensity: 0.35 });
+    const chairMat = new THREE.MeshStandardMaterial({ color: '#A8B8CC', roughness: 0.85 });
+
+    for (const dx of [-18, -9, 0, 9, 18]) {
+      // Desk
+      const desk = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.07, 1.0), deskMat.clone());
+      desk.position.set(dx, 0.8, -4.0); desk.castShadow = true; group.add(desk);
+      desk.userData.interiorElement = { type: 'desk', label: 'Broadcast Booth' };
+      interiorMeshesRef.current.push(desk);
+      // Legs
+      for (const [lx, lz] of [[-2.5,-0.4],[2.5,-0.4],[-2.5,0.4],[2.5,0.4]] as [number,number][]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), deskMat.clone());
+        leg.position.set(dx + lx, 0.4, -4.0 + lz); group.add(leg);
+      }
+      // Monitor
+      const mon = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 0.07), monMat.clone());
+      mon.position.set(dx, 1.38, -4.2); group.add(mon);
+      const scr = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.88, 0.01), scrMat.clone());
+      scr.position.set(dx, 1.38, -4.16); group.add(scr);
+      // Chair
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.55), chairMat.clone());
+      seat.position.set(dx, 0.46, -3.3); group.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.06), chairMat.clone());
+      back.position.set(dx, 0.76, -3.05); group.add(back);
+    }
+
+    // Ceiling light strips
+    const lightMat = new THREE.MeshStandardMaterial({
+      color: '#D8E8FF', emissive: new THREE.Color('#A8C4F0'), emissiveIntensity: 0.9, roughness: 0.2,
+    });
+    for (let s = -20; s <= 20; s += 10) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.06, 11), lightMat.clone());
+      strip.position.set(s, 3.95, 0); group.add(strip);
+    }
+    // Ceiling panel
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(50, 14),
+      new THREE.MeshStandardMaterial({ color: '#F2F6FF', roughness: 0.8 }));
+    ceil.rotation.x = Math.PI / 2; ceil.position.y = 4.0; group.add(ceil);
+
+    // City-view backdrop behind glass rail
+    const extTex = (() => {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+      const c = cv.getContext('2d')!;
+      c.fillStyle = '#87CEEB'; c.fillRect(0, 0, 512, 80);
+      c.fillStyle = '#5588AA'; c.fillRect(0, 80, 512, 48);
+      // Silhouette buildings
+      c.fillStyle = '#1A2A3A';
+      for (let i = 0; i < 14; i++) {
+        const bx = i * 38, bw = 18 + (i % 3) * 8, bh = 30 + (i % 5) * 15;
+        c.fillRect(bx, 80 - bh, bw, bh);
+      }
+      return new THREE.CanvasTexture(cv);
+    })();
+    const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(48, 4),
+      new THREE.MeshBasicMaterial({ map: extTex, side: THREE.DoubleSide }));
+    backdrop.position.set(0, 1.5, -9); group.add(backdrop);
+  }
+
+  return 2; // 2 floors: field level + upper concourse
+}
+
 function buildInteriorScene(
   group: THREE.Group,
   block: BlockInfo,
@@ -737,6 +942,11 @@ function buildInteriorScene(
 ): number {
   disposeGroup(group);
   interiorMeshesRef.current = [];
+
+  // BYU stadium gets its own interior — not an office
+  if (block.col === 2 && block.row === 2) {
+    return buildStadiumInterior(group, floor, interiorMeshesRef);
+  }
 
   const rng = seededRandom(`interior-${block.col}-${block.row}-f${floor}`);
 
@@ -1036,7 +1246,35 @@ function drawFloorPlan(ctx: CanvasRenderingContext2D, arch: string, zoneColor: s
   ctx.strokeStyle = zoneColor + '99'; ctx.lineWidth = 1.5;
   ctx.strokeRect(3, 3, W - 6, H - 6);
   ctx.strokeStyle = zoneColor + '55'; ctx.lineWidth = 1;
-  if (arch === 'tower' || arch === 'spire') {
+  if (arch === 'stadium') {
+    // Outer bowl outline
+    ctx.strokeStyle = '#E8EEF4AA'; ctx.lineWidth = 2;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+    // Seating sections
+    ctx.fillStyle = '#002E5D55';
+    ctx.fillRect(3, 3, W - 6, H * 0.18);           // north stands
+    ctx.fillRect(3, H - H * 0.18 - 3, W - 6, H * 0.18); // south stands
+    ctx.fillRect(3, H * 0.18, W * 0.12, H * 0.64); // west stands
+    ctx.fillRect(W - W * 0.12 - 3, H * 0.18, W * 0.12, H * 0.64); // east stands
+    // Track ring
+    ctx.strokeStyle = '#B8503066'; ctx.lineWidth = 3;
+    const tx = W * 0.12 + 3, ty = H * 0.18 + 3, tw = W * 0.76 - 6, th = H * 0.64 - 6;
+    ctx.strokeRect(tx, ty, tw, th);
+    // Playing field (green)
+    const fx = tx + tw * 0.06, fy = ty + th * 0.08, fw = tw * 0.88, fh = th * 0.84;
+    ctx.fillStyle = '#2A703488'; ctx.fillRect(fx, fy, fw, fh);
+    ctx.strokeStyle = '#FFFFFF55'; ctx.lineWidth = 1;
+    ctx.strokeRect(fx, fy, fw, fh);
+    // Yard lines
+    for (let i = 1; i < 10; i++) {
+      const lx = fx + fw * i / 10;
+      ctx.beginPath(); ctx.moveTo(lx, fy); ctx.lineTo(lx, fy + fh); ctx.stroke();
+    }
+    // "50" at midfield
+    ctx.fillStyle = '#FFFFFFCC'; ctx.font = `bold ${Math.round(H * 0.16)}px Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('50', W / 2, H / 2);
+  } else if (arch === 'tower' || arch === 'spire') {
     // Central elevator core
     const cw = W * 0.28, ch = H * 0.38;
     ctx.strokeRect((W - cw) / 2, (H - ch) / 2, cw, ch);
@@ -1875,11 +2113,28 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           floor, allInteriorMeshesRef
         );
         setTotalFloors(nFloors);
-        const onRoof = floor === nFloors - 1;
+        const isBYUStadium = block.col === 2 && block.row === 2;
+        const onRoof = isBYUStadium || floor === nFloors - 1;
         const bHeight = archData?.height ?? 10;
         sun.intensity  = onRoof ? 1.8 : 0.3;
         hemi.intensity = onRoof ? 2.0 : 1.4;
-        if (onRoof) {
+        if (isBYUStadium) {
+          // Stadium is always open-air — city hidden so only bowl is visible
+          cityGroup.visible = false;
+          interiorGroupRef.current.position.set(0, 0, 0);
+          scene.fog = null;
+          if (floor === 0) {
+            // Field level: wide angle to see full bowl
+            orbitRadius = 52;
+            orbitPhi    = 1.1;
+            orbitTarget.set(0, 3.0, 0);
+          } else {
+            // Upper concourse / press box level
+            orbitRadius = 36;
+            orbitPhi    = 0.85;
+            orbitTarget.set(0, 1.5, 0);
+          }
+        } else if (onRoof) {
           cityGroup.visible = true;
           interiorGroupRef.current.position.set(block.cx, bHeight, block.cz);
           orbitRadius = 60;
@@ -2058,7 +2313,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const ctx = floorPlanRef.current.getContext('2d');
     if (!ctx) return;
     const archData = blockArchetypeMapRef.current.get(`${selectedBlock.col},${selectedBlock.row}`);
-    drawFloorPlan(ctx, archData?.arch ?? 'midrise', ZONE_COLORS[selectedBlock.zone]);
+    const isBYUBlock = selectedBlock.col === 2 && selectedBlock.row === 2;
+    drawFloorPlan(ctx, isBYUBlock ? 'stadium' : (archData?.arch ?? 'midrise'), ZONE_COLORS[selectedBlock.zone]);
   }, [selectedBlock]);
 
   return (
