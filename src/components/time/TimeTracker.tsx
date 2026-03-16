@@ -199,7 +199,7 @@ function getMinutesAtClientY(
 const GOOGLE_EVENT_COLOR = '#4285f4';
 
 function EventBlock({
-  block, categories, top, height, colPct, widthPct, onClick, onMoveStart, isDragging,
+  block, categories, top, height, colPct, widthPct, onClick, onMoveStart, onResizeStart, isDragging,
 }: {
   block: TimeBlock;
   categories: TimeCategory[];
@@ -209,6 +209,7 @@ function EventBlock({
   widthPct: number;
   onClick: () => void;
   onMoveStart?: (e: React.MouseEvent) => void;
+  onResizeStart?: (e: React.MouseEvent) => void;
   isDragging?: boolean;
 }) {
   const isGoogleEvent = !!block.googleEventId;
@@ -265,6 +266,26 @@ function EventBlock({
         <span style={{ fontSize: 10, color: `${color}bb`, lineHeight: 1.2 }}>
           {formatTime(block.startTime)} – {formatTime(block.endTime)}
         </span>
+      )}
+      {/* Resize handle — bottom edge drag to extend event */}
+      {!isGoogleEvent && onResizeStart && (
+        <div
+          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onResizeStart(e); }}
+          style={{
+            position: 'absolute',
+            bottom: 0, left: 0, right: 0,
+            height: 10,
+            cursor: 'ns-resize',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            width: 22, height: 2, borderRadius: 1,
+            backgroundColor: color, opacity: 0.55,
+          }} />
+        </div>
       )}
     </div>
   );
@@ -534,11 +555,88 @@ function useDragMove(
   return { moveGhost, startMove };
 }
 
+// ─── RESIZE EVENT ─────────────────────────────────────────────────────────────
+
+interface ResizeGhost { blockId: string; startMin: number; endMin: number; color: string; }
+
+function ResizeGhostBlock({ startMin, endMin, color }: { startMin: number; endMin: number; color: string }) {
+  const top = (startMin / 60) * HOUR_HEIGHT;
+  const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 22);
+  return (
+    <div style={{
+      position: 'absolute', top: top + 1, height: height - 2,
+      left: 2, right: 2,
+      backgroundColor: `${color}18`,
+      border: `2px dashed ${color}`,
+      borderRadius: 6, zIndex: 4, pointerEvents: 'none',
+      display: 'flex', alignItems: 'flex-end', padding: '3px 6px',
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 600, color }}>
+        {minutesToTimeStr(startMin).replace(/^0/, '')} – {minutesToTimeStr(endMin).replace(/^0/, '')}
+      </span>
+    </div>
+  );
+}
+
+function useResizeEvent(
+  scrollRef: React.RefObject<HTMLDivElement>,
+  onComplete: (blockId: string, newEndTime: string) => void,
+) {
+  const [resizeGhost, setResizeGhost] = useState<ResizeGhost | null>(null);
+  const resizeRef = useRef<{ blockId: string; startMin: number; containerEl: HTMLElement } | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const startResize = useCallback((
+    e: React.MouseEvent,
+    block: TimeBlock,
+    color: string,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const containerEl = (e.currentTarget as HTMLElement).closest('[data-cal-col]') as HTMLElement | null;
+    if (!containerEl) return;
+
+    const startMin = timeToMinutes(block.startTime);
+    const endMin   = timeToMinutes(block.endTime);
+    resizeRef.current = { blockId: block.id, startMin, containerEl };
+    setResizeGhost({ blockId: block.id, startMin, endMin, color });
+
+    const onMouseMove = (me: MouseEvent) => {
+      if (!resizeRef.current) return;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (!resizeRef.current) return;
+        const rawEnd = getMinutesAtClientY(resizeRef.current.containerEl, scrollRef.current, me.clientY);
+        const newEnd = Math.min(snapToGrid(Math.max(rawEnd, resizeRef.current.startMin + 15)), 24 * 60);
+        setResizeGhost(prev => prev ? { ...prev, endMin: newEnd } : null);
+      });
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      setResizeGhost(prev => {
+        if (prev && resizeRef.current) {
+          onComplete(resizeRef.current.blockId, minutesToTimeStr(prev.endMin));
+        }
+        resizeRef.current = null;
+        return null;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [scrollRef, onComplete]);
+
+  return { resizeGhost, startResize };
+}
+
 // ─── DAY VIEW ─────────────────────────────────────────────────────────────────
 
 function AppleDayView({
   date, blocks, categories, currentTimePx, isToday,
-  onCreateBlock, onClickBlock, onMoveBlock, scrollRef,
+  onCreateBlock, onClickBlock, onMoveBlock, onResizeBlock, scrollRef,
 }: {
   date: string;
   blocks: TimeBlock[];
@@ -548,12 +646,14 @@ function AppleDayView({
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
   onMoveBlock: (blockId: string, newDate: string, newStartTime: string, newEndTime: string) => void;
+  onResizeBlock: (blockId: string, newEndTime: string) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
 }) {
   const layout = useMemo(() => buildOverlapLayout(blocks), [blocks]);
   const total = getTotalHours(blocks);
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
   const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
+  const { resizeGhost, startResize } = useResizeEvent(scrollRef, onResizeBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -603,6 +703,7 @@ function AppleDayView({
             {blocks.map((block) => {
               const info = layout.get(block.id);
               if (!info) return null;
+              const color = getCategoryColor(block.categoryId, categories);
               return (
                 <EventBlock
                   key={block.id} block={block} categories={categories}
@@ -611,7 +712,8 @@ function AppleDayView({
                   colPct={(100 / info.totalCols) * info.col}
                   widthPct={100 / info.totalCols}
                   onClick={() => onClickBlock(block)}
-                  onMoveStart={(e) => startMove(e, block, date, getCategoryColor(block.categoryId, categories), () => onClickBlock(block))}
+                  onMoveStart={(e) => startMove(e, block, date, color, () => onClickBlock(block))}
+                  onResizeStart={(e) => startResize(e, block, color)}
                   isDragging={moveGhost?.blockId === block.id}
                 />
               );
@@ -621,6 +723,9 @@ function AppleDayView({
             )}
             {moveGhost && moveGhost.date === date && (
               <MoveGhostBlock startMin={moveGhost.startMin} endMin={moveGhost.endMin} color={moveGhost.color} />
+            )}
+            {resizeGhost && resizeGhost.blockId && (
+              <ResizeGhostBlock startMin={resizeGhost.startMin} endMin={resizeGhost.endMin} color={resizeGhost.color} />
             )}
             {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
           </div>
@@ -634,7 +739,7 @@ function AppleDayView({
 
 function AppleWeekView({
   weekDays, timeBlocks, categories, currentTimePx, today,
-  onCreateBlock, onClickBlock, onMoveBlock, scrollRef,
+  onCreateBlock, onClickBlock, onMoveBlock, onResizeBlock, scrollRef,
 }: {
   weekDays: Date[];
   timeBlocks: TimeBlock[];
@@ -644,10 +749,12 @@ function AppleWeekView({
   onCreateBlock: (date: string, startTime: string, endTime: string) => void;
   onClickBlock: (block: TimeBlock) => void;
   onMoveBlock: (blockId: string, newDate: string, newStartTime: string, newEndTime: string) => void;
+  onResizeBlock: (blockId: string, newEndTime: string) => void;
   scrollRef: React.RefObject<HTMLDivElement>;
 }) {
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
   const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
+  const { resizeGhost, startResize } = useResizeEvent(scrollRef, onResizeBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -703,6 +810,7 @@ function AppleWeekView({
                 {dayBlocks.map((block) => {
                   const info = layout.get(block.id);
                   if (!info) return null;
+                  const color = getCategoryColor(block.categoryId, categories);
                   return (
                     <EventBlock
                       key={block.id} block={block} categories={categories}
@@ -711,7 +819,8 @@ function AppleWeekView({
                       colPct={(100 / info.totalCols) * info.col}
                       widthPct={100 / info.totalCols}
                       onClick={() => onClickBlock(block)}
-                      onMoveStart={(e) => startMove(e, block, dayStr, getCategoryColor(block.categoryId, categories), () => onClickBlock(block))}
+                      onMoveStart={(e) => startMove(e, block, dayStr, color, () => onClickBlock(block))}
+                      onResizeStart={(e) => startResize(e, block, color)}
                       isDragging={moveGhost?.blockId === block.id}
                     />
                   );
@@ -721,6 +830,9 @@ function AppleWeekView({
                 )}
                 {moveGhost?.date === dayStr && (
                   <MoveGhostBlock startMin={moveGhost.startMin} endMin={moveGhost.endMin} color={moveGhost.color} />
+                )}
+                {resizeGhost && (
+                  <ResizeGhostBlock startMin={resizeGhost.startMin} endMin={resizeGhost.endMin} color={resizeGhost.color} />
                 )}
                 {isToday && currentTimePx !== null && <CurrentTimeIndicator topPx={currentTimePx} />}
               </div>
@@ -1089,6 +1201,12 @@ export function Calendar({
     ));
   }, [setTimeBlocks]);
 
+  const handleResizeBlock = useCallback((blockId: string, newEndTime: string) => {
+    setTimeBlocks((prev) => prev.map((b) =>
+      b.id === blockId ? { ...b, endTime: newEndTime } : b
+    ));
+  }, [setTimeBlocks]);
+
   const handleLogSubmit = () => {
     if (!logForm.categoryId || calcDurationHours(logForm.startTime, logForm.endTime) <= 0) return;
 
@@ -1248,6 +1366,7 @@ export function Calendar({
             onCreateBlock={handleCreateBlock}
             onClickBlock={openEditModal}
             onMoveBlock={handleMoveBlock}
+            onResizeBlock={handleResizeBlock}
             scrollRef={scrollRef}
           />
         )}
@@ -1261,6 +1380,7 @@ export function Calendar({
             onCreateBlock={handleCreateBlock}
             onClickBlock={openEditModal}
             onMoveBlock={handleMoveBlock}
+            onResizeBlock={handleResizeBlock}
             scrollRef={scrollRef}
           />
         )}

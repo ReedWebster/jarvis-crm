@@ -54,34 +54,6 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (provider === 'meta') {
-    const appId = process.env.META_APP_ID;
-    const redirectUri = process.env.META_REDIRECT_URI;
-    if (!appId || !redirectUri) {
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Meta OAuth is not configured.' }));
-      return;
-    }
-    const scope = [
-      'instagram_business_basic',
-      'instagram_business_content_publish',
-      'pages_show_list',
-      'pages_manage_posts',
-      'pages_read_engagement',
-    ].join(',');
-    const authUrl =
-      `https://www.facebook.com/v20.0/dialog/oauth` +
-      `?client_id=${appId}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=${encodeURIComponent(scope)}` +
-      `&state=litehouse-meta` +
-      `&response_type=code`;
-    res.writeHead(302, { Location: authUrl });
-    res.end();
-    return;
-  }
-
   if (provider === 'x') {
     const clientId = process.env.X_CLIENT_ID;
     const redirectUri = process.env.X_REDIRECT_URI;
@@ -113,5 +85,5 @@ export default async function handler(req: any, res: any) {
 
   res.statusCode = 400;
   res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ error: 'Missing or invalid provider. Use ?provider=google|linkedin|meta|x' }));
+  res.end(JSON.stringify({ error: 'Missing or invalid provider. Use ?provider=google|linkedin|x' }));
 }

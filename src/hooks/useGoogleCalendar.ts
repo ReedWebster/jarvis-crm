@@ -1,11 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TimeBlock, TimeCategory } from '../types';
+import { supabase } from '../lib/supabase';
 import {
   GOOGLE_CLIENT_ID,
   ALL_GOOGLE_SCOPES,
   getLocalToken,
   saveLocalToken,
   hasEverConsented,
+  loadTokenFromSupabase,
+  saveTokenToSupabase,
 } from './googleSharedAuth';
 
 interface GISResponse {
@@ -218,39 +221,60 @@ export function useGoogleCalendar() {
   const [googleEvents, setGoogleEvents] = useState<TimeBlock[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const tokenClientRef = useRef<{ requestAccessToken: (o?: { prompt?: string }) => void } | null>(null);
+  const userIdRef = useRef<string | null>(null);
 
-  // Silently refresh the token on mount if the user has previously consented
+  // Track the Supabase user ID
   useEffect(() => {
-    if (getLocalToken()) return; // token still valid
-    if (!hasEverConsented()) return; // never consented
-    // Token expired but user has consented before — silently get a new one (no popup)
-    const tryRefresh = () => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      userIdRef.current = session?.user.id ?? null;
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      userIdRef.current = session?.user.id ?? null;
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // On mount: restore from Supabase first, then fall back to silent GIS refresh
+  useEffect(() => {
+    if (getLocalToken()) { setIsConnected(true); return; }
+
+    const tryRefreshGIS = () => {
       if (!window.google?.accounts?.oauth2) return;
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: ALL_GOOGLE_SCOPES,
         callback: (response: GISResponse) => {
           if (!response.error && response.access_token && response.expires_in) {
-            saveLocalToken(response.access_token, response.expires_in);
+            const expiresAt = saveLocalToken(response.access_token, response.expires_in);
             setIsConnected(true);
+            const uid = userIdRef.current;
+            if (uid) saveTokenToSupabase(uid, response.access_token, expiresAt);
           }
-          // silent failure — user will be prompted when they trigger a sync
         },
       });
       client.requestAccessToken({ prompt: '' });
     };
-    // GIS script may not be loaded yet — wait for it
-    if (window.google?.accounts?.oauth2) {
-      tryRefresh();
-    } else {
-      const interval = setInterval(() => {
-        if (window.google?.accounts?.oauth2) {
-          clearInterval(interval);
-          tryRefresh();
-        }
-      }, 200);
-      return () => clearInterval(interval);
-    }
+
+    const waitAndRefresh = () => {
+      if (window.google?.accounts?.oauth2) {
+        tryRefreshGIS();
+      } else {
+        const interval = setInterval(() => {
+          if (window.google?.accounts?.oauth2) { clearInterval(interval); tryRefreshGIS(); }
+        }, 200);
+        return () => clearInterval(interval);
+      }
+    };
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const uid = session?.user.id;
+      if (uid) {
+        const restored = await loadTokenFromSupabase(uid);
+        if (restored) { setIsConnected(true); return; }
+      }
+      // Supabase had no valid token — try silent GIS refresh if user has consented before
+      if (hasEverConsented()) waitAndRefresh();
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getToken = useCallback((silent: boolean): Promise<string> => {
@@ -267,8 +291,10 @@ export function useGoogleCalendar() {
             reject(new Error(response.error ?? 'No access token'));
             return;
           }
-          saveLocalToken(response.access_token, response.expires_in);
+          const expiresAt = saveLocalToken(response.access_token, response.expires_in);
           setIsConnected(true);
+          const uid = userIdRef.current;
+          if (uid) saveTokenToSupabase(uid, response.access_token, expiresAt);
           resolve(response.access_token);
         },
       });

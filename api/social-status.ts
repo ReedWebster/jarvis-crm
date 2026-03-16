@@ -13,7 +13,6 @@ export default async function handler(req: any, res: any) {
 
   const keyMap: Record<string, string> = {
     linkedin: 'linkedin_auth',
-    meta: 'meta_auth',
     x: 'x_auth',
   };
 
@@ -21,7 +20,7 @@ export default async function handler(req: any, res: any) {
   if (!dbKey) {
     res.statusCode = 400;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Missing or invalid provider. Use ?provider=linkedin|meta|x' }));
+    res.end(JSON.stringify({ error: 'Missing or invalid provider. Use ?provider=linkedin|x' }));
     return;
   }
 

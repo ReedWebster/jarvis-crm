@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, BarChart2, Inbox, Settings, Plus, RefreshCw, CheckCircle2, XCircle, Clock, Hash, Instagram, Linkedin, Twitter, Facebook, Sparkles } from 'lucide-react';
+import { Calendar, BarChart2, Inbox, Settings, Plus, RefreshCw, CheckCircle2, XCircle, Clock, Hash, Linkedin, Twitter, Sparkles } from 'lucide-react';
 import type { Contact, SocialAccount, SocialApprovalItem, SocialPlatform, SocialPost } from '../../types';
 import { Modal } from '../shared/Modal';
 
@@ -16,10 +16,8 @@ interface SocialHubProps {
 }
 
 const PLATFORM_META: Record<SocialPlatform, { label: string; icon: React.ReactNode }> = {
-  instagram: { label: 'Instagram', icon: <Instagram size={14} /> },
   linkedin:  { label: 'LinkedIn',  icon: <Linkedin size={14} /> },
   twitter:   { label: 'Twitter/X', icon: <Twitter size={14} /> },
-  facebook:  { label: 'Facebook',  icon: <Facebook size={14} /> },
 };
 
 function formatDateLabel(iso: string | undefined): string {
@@ -66,19 +64,6 @@ export function SocialHub({
     const li = params.get('linkedin');
     if (li === 'connected') return { type: 'success', msg: 'LinkedIn connected successfully!' };
     if (li === 'error') return { type: 'error', msg: params.get('msg') || 'LinkedIn connection failed.' };
-    return null;
-  });
-
-  // Meta (Instagram + Facebook)
-  const [metaStatus, setMetaStatus] = useState<'unknown' | 'disconnected' | 'connected' | 'needs-reauth'>('unknown');
-  const [metaProfile, setMetaProfile] = useState<{ name?: string; picture?: string; instagramAccounts?: { username: string }[] } | null>(null);
-  const [metaLoading, setMetaLoading] = useState(false);
-  const [metaError, setMetaError] = useState<string | null>(null);
-  const [metaBanner, setMetaBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const m = params.get('meta');
-    if (m === 'connected') return { type: 'success', msg: 'Instagram & Facebook connected successfully!' };
-    if (m === 'error') return { type: 'error', msg: params.get('msg') || 'Meta connection failed.' };
     return null;
   });
 
@@ -142,36 +127,6 @@ export function SocialHub({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setMetaLoading(true);
-      setMetaError(null);
-      try {
-        const res = await fetch('/api/social-status?provider=meta');
-        const json = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setMetaError(json?.error || 'Failed to load Meta status');
-          setMetaStatus('unknown');
-        } else {
-          setMetaStatus(json?.status ?? 'disconnected');
-          if (json?.name || json?.picture) {
-            setMetaProfile({ name: json.name, picture: json.picture, instagramAccounts: json.instagramAccounts });
-          }
-        }
-      } catch (err: any) {
-        if (cancelled) return;
-        setMetaError(err?.message ?? 'Failed to load Meta status');
-        setMetaStatus('unknown');
-      } finally {
-        if (!cancelled) setMetaLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
       setXLoading(true);
       setXError(null);
       try {
@@ -223,7 +178,6 @@ export function SocialHub({
       {/* OAuth callback banners */}
       {[
         { banner: linkedinBanner, clear: () => setLinkedinBanner(null) },
-        { banner: metaBanner, clear: () => setMetaBanner(null) },
         { banner: xBanner, clear: () => setXBanner(null) },
       ].map(({ banner, clear }, i) => banner && (
         <div
@@ -474,36 +428,27 @@ export function SocialHub({
 
               const liveStatus =
                 platform === 'linkedin' ? linkedinStatus :
-                platform === 'instagram' || platform === 'facebook' ? metaStatus :
                 platform === 'twitter' ? xStatus :
                 'unknown';
 
               const status = liveStatus === 'unknown' ? statusFromState : (liveStatus as SocialAccount['status']);
               const isLoading =
                 platform === 'linkedin' ? linkedinLoading :
-                platform === 'instagram' || platform === 'facebook' ? metaLoading :
                 platform === 'twitter' ? xLoading :
                 false;
               const platformError =
                 platform === 'linkedin' ? linkedinError :
-                platform === 'instagram' || platform === 'facebook' ? metaError :
                 platform === 'twitter' ? xError :
                 null;
 
               const profileName =
                 platform === 'linkedin' ? linkedinProfile?.name :
-                platform === 'instagram'
-                  ? (metaProfile?.instagramAccounts?.[0]?.username
-                      ? `@${metaProfile.instagramAccounts[0].username}`
-                      : metaProfile?.name)
-                  : platform === 'facebook' ? metaProfile?.name :
                 platform === 'twitter'
                   ? (xProfile?.username ? `@${xProfile.username}` : xProfile?.name)
                   : existing?.accountName;
 
               const oauthStartPath =
                 platform === 'linkedin' ? '/api/oauth-start?provider=linkedin' :
-                platform === 'instagram' || platform === 'facebook' ? '/api/oauth-start?provider=meta' :
                 platform === 'twitter' ? '/api/oauth-start?provider=x' :
                 undefined;
 
