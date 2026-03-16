@@ -264,6 +264,14 @@ function MainApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contacts.length]);
 
+  // One-time migration: inject M COM 320-010 course from Canvas calendar feed if not already present
+  useEffect(() => {
+    if (courses.length === 0) return;
+    if (courses.some(c => c.id === 'course_mcom320')) return;
+    setCourses(prev => [DEFAULT_STATE.courses[0], ...prev]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses.length]);
+
   const handleStatusChange = (status: StatusMode) => {
     setIdentity(prev => ({ ...prev, status }));
   };
