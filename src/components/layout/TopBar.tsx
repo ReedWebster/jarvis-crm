@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Zap, Sun, Moon, Flame, Menu, LogOut, Bell, Users } from 'lucide-react';
+import { Zap, Sun, Moon, Flame, Menu, LogOut, Bell, Users, Building2 } from 'lucide-react';
 import type { StatusMode, Identity } from '../../types';
 import type { Theme } from '../../hooks/useTheme';
+import type { NavSection } from './Sidebar';
 import { supabase } from '../../lib/supabase';
 
 const STATUS_CONFIG: Record<StatusMode, { label: string; color: string; glow: string }> = {
@@ -22,9 +23,10 @@ interface TopBarProps {
   onMenuOpen: () => void;
   urgentCount?: number;
   onNotificationClick?: () => void;
+  onNavigate?: (section: NavSection) => void;
 }
 
-export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, theme, onMenuOpen, urgentCount = 0, onNotificationClick }: TopBarProps) {
+export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, isDark, theme, onMenuOpen, urgentCount = 0, onNotificationClick, onNavigate }: TopBarProps) {
   const now = new Date();
   const statusCfg = STATUS_CONFIG[identity.status];
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -140,6 +142,19 @@ export function TopBar({ identity, sectionTitle, onStatusChange, onThemeToggle, 
             {urgentCount > 9 ? '9+' : urgentCount}
           </span>
         )}
+      </button>
+
+      {/* Clients button */}
+      <button
+        onClick={() => onNavigate?.('recruitment')}
+        className="hidden md:flex items-center gap-1.5 px-3 h-9 rounded-lg border transition-all duration-200 hover:border-[var(--border-strong)]"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+        title="Clients"
+        onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+      >
+        <Building2 size={14} />
+        <span className="text-xs font-medium">Clients</span>
       </button>
 
       {/* Team page link — hidden on mobile */}

@@ -504,6 +504,7 @@ function MainApp() {
           onMenuOpen={() => setMobileSidebarOpen(true)}
           urgentCount={urgentCount}
           onNotificationClick={() => { requestPermission(); setInsightsPanelOpen(true); }}
+          onNavigate={setActiveSection}
         />
 
         {/* Main Content */}

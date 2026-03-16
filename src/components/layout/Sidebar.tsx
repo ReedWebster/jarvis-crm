@@ -57,7 +57,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'financial',  label: 'Financial',        icon: <DollarSign size={18} /> },
   { id: 'goals',      label: 'Goal Hierarchy',   icon: <Target size={18} /> },
   { id: 'reading',    label: 'Reading Pipeline', icon: <BookOpen size={18} /> },
-  { id: 'recruitment',label: 'Clients',           icon: <Building2 size={18} /> },
   { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
   { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
   { id: 'world',      label: 'World View',       icon: <Globe size={18} /> },
