@@ -93,35 +93,42 @@ function makeArchSpecificMats(arch: string): ArchMats {
   const base = makeArchMats();
   switch (arch) {
     case 'tower': case 'spire': case 'podiumTower': {
-      const tex = makeBuildingTexture('curtain'); tex.repeat.set(0.6, 1.2);
+      const tex = getCachedArchTex('curtain'); tex.repeat.set(0.6, 1.2);
       base.main  = new THREE.MeshStandardMaterial({ map: tex, color: '#C8DCF0', roughness: 0.22, metalness: 0.38 });
       base.glass = new THREE.MeshStandardMaterial({ color: '#88C0E8', roughness: 0.02, metalness: 0.45, transparent: true, opacity: 0.65 });
       break;
     }
     case 'slab': {
-      const tex = makeBuildingTexture('strip'); tex.repeat.set(0.5, 0.8);
+      const tex = getCachedArchTex('strip'); tex.repeat.set(0.5, 0.8);
       base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.90 });
       break;
     }
     case 'residential': {
-      const tex = makeBuildingTexture('residential'); tex.repeat.set(0.5, 0.8);
+      const tex = getCachedArchTex('residential'); tex.repeat.set(0.5, 0.8);
       base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92 });
       base.alt  = new THREE.MeshStandardMaterial({ map: tex, color: '#E8DCBC', roughness: 0.90 });
       break;
     }
     case 'warehouse': {
-      const tex = makeBuildingTexture('warehouse'); tex.repeat.set(1, 0.6);
+      const tex = getCachedArchTex('warehouse'); tex.repeat.set(1, 0.6);
       base.main = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.84, metalness: 0.18 });
       base.alt  = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.84, metalness: 0.18 });
       break;
     }
     case 'midrise': case 'campus': {
-      const tex = makeBuildingTexture('campus'); tex.repeat.set(0.5, 1.0);
+      const tex = getCachedArchTex('campus'); tex.repeat.set(0.5, 1.0);
       base.main = new THREE.MeshStandardMaterial({ map: tex, color: '#BED4EE', roughness: 0.40, metalness: 0.22 });
       break;
     }
   }
   return base;
+}
+
+// Module-level texture cache — 5 types, created once and shared across all buildings
+const ARCH_TEX_CACHE = new Map<string, THREE.CanvasTexture>();
+function getCachedArchTex(type: 'curtain' | 'strip' | 'residential' | 'warehouse' | 'campus'): THREE.CanvasTexture {
+  if (!ARCH_TEX_CACHE.has(type)) ARCH_TEX_CACHE.set(type, makeBuildingTexture(type));
+  return ARCH_TEX_CACHE.get(type)!;
 }
 
 function archBox(w: number, h: number, d: number, mat: THREE.MeshStandardMaterial): THREE.Mesh {
@@ -947,7 +954,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight('#ffffff', 2.5);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near   = 1;
     sun.shadow.camera.far    = 800;
     sun.shadow.camera.left   = -320;
@@ -961,11 +968,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const hemi = new THREE.HemisphereLight('#C8D8F0', '#E8EEE4', 0.5);
     scene.add(hemi);
 
-    // Night light meshes (populated during building loop)
-    const nightLightMeshes: THREE.Mesh[] = [];
-    const nightAmbient = new THREE.PointLight('#FF9030', 0, 700);
-    nightAmbient.position.set(0, 50, 0);
-    scene.add(nightAmbient);
+    // Night lights removed — always daytime, no night light meshes needed
 
     // ── Time of day ───────────────────────────────────────────────────────────
     function applyTimeOfDay() {
@@ -979,9 +982,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       hemi.intensity = cfg.hemiIntensity;
       scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
-      // Night lights always off (always daytime)
-      for (const m of nightLightMeshes) m.visible = false;
-      nightAmbient.intensity = 0;
     }
     applyTimeOfDay();
     const todInterval = setInterval(applyTimeOfDay, 60_000);
@@ -1183,6 +1183,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const blocks: BlockInfo[] = [];
     const allBuildingMeshes: THREE.Mesh[] = [];
     const blockMeshMap = new Map<THREE.Mesh, BlockInfo>();
+    const blockInfoToMeshes = new Map<BlockInfo, THREE.Mesh[]>();
 
     function getZone(col: number, row: number): ZoneType {
       const dist = Math.sqrt(col * col + row * row);
@@ -1233,13 +1234,16 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         // BYU Campus — spawn stadium instead of regular buildings
         if (isBYU) {
           const stadium = createStadium(cx, cz);
+          const byuMeshes: THREE.Mesh[] = [];
           stadium.traverse(obj => {
             if (obj instanceof THREE.Mesh) {
               obj.userData.blockInfo = info;
               allBuildingMeshes.push(obj);
               blockMeshMap.set(obj, info);
+              byuMeshes.push(obj);
             }
           });
+          blockInfoToMeshes.set(info, byuMeshes);
           cityGroup.add(stadium);
           continue;
         }
@@ -1329,35 +1333,13 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
               obj.userData.blockInfo = info;
               allBuildingMeshes.push(obj);
               blockMeshMap.set(obj, info);
+              const arr = blockInfoToMeshes.get(info);
+              if (arr) arr.push(obj);
+              else blockInfoToMeshes.set(info, [obj]);
             }
           });
           cityGroup.add(group);
 
-          // Night window lights (NYC-style scattered lit windows)
-          const archH = blockArchetypeMapRef.current.get(`${col},${row}`)?.height ?? 6;
-          const nlW = p.arch === 'slab' ? 16 : p.arch === 'warehouse' ? 18 : 8;
-          const nlD = p.arch === 'slab' ? 7  : p.arch === 'warehouse' ? 12 : 8;
-          const nlRng = seededRandom(`nl-${p.arch}-${col}-${row}`);
-          const nlN = 8 + Math.floor(nlRng() * 14);
-          const nlColors = ['#FFE88A', '#FFD060', '#FFF0B0', '#FFE0A0', '#E8F0FF', '#FFDCA0'];
-          for (let li = 0; li < nlN; li++) {
-            const side = Math.floor(nlRng() * 4);
-            const wy = 0.8 + nlRng() * Math.max(1, archH - 1.5);
-            let wx = 0, wz = 0, rotY = 0;
-            if (side === 0) { wx = (nlRng()-0.5)*nlW*0.8; wz = nlD/2+0.06; rotY = 0; }
-            else if (side === 1) { wx = (nlRng()-0.5)*nlW*0.8; wz = -nlD/2-0.06; rotY = Math.PI; }
-            else if (side === 2) { wx = nlW/2+0.06; wz = (nlRng()-0.5)*nlD*0.8; rotY = Math.PI/2; }
-            else { wx = -nlW/2-0.06; wz = (nlRng()-0.5)*nlD*0.8; rotY = -Math.PI/2; }
-            const nlM = new THREE.Mesh(
-              new THREE.PlaneGeometry(0.52, 0.42),
-              new THREE.MeshBasicMaterial({ color: nlColors[Math.floor(nlRng()*nlColors.length)], transparent: true, opacity: 0.88 })
-            );
-            nlM.position.set(cx + wx, wy, cz + wz);
-            nlM.rotation.y = rotY;
-            nlM.visible = false;
-            cityGroup.add(nlM);
-            nightLightMeshes.push(nlM);
-          }
         }
 
         const treeRng = seededRandom(`trees-${col}-${row}`);
@@ -1371,14 +1353,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
     }
 
-    // Night lights always off (always daytime)
-    for (const m of nightLightMeshes) m.visible = false;
-    nightAmbient.intensity = 0;
-
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
     let isDragging = false, isPanning = false;
     let lastX = 0, lastY = 0, clickStartX = 0, clickStartY = 0;
-    const clickPt  = new THREE.Vector2();
+    const clickPt   = new THREE.Vector2();
+    const hoverPt   = new THREE.Vector2();
     const raycaster     = new THREE.Raycaster();
     const hoverRaycaster = new THREE.Raycaster();
     const zoomRaycaster  = new THREE.Raycaster();
@@ -1412,13 +1391,16 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         } else {
           orbitTheta += dx * 0.005;
         }
+        minimapDirty = true;
         updateCameraOrbit();
       } else if (viewModeRef.current === 'city') {
         // Hover highlight
         const rect = canvas.getBoundingClientRect();
-        const mx = (e.clientX - rect.left) / rect.width * 2 - 1;
-        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        hoverRaycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
+        hoverPt.set(
+          (e.clientX - rect.left) / rect.width * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        hoverRaycaster.setFromCamera(hoverPt, camera);
         const hits = hoverRaycaster.intersectObjects(allBuildingMeshes, false);
         const newBlock = hits.length > 0 ? (blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null) : null;
         if (newBlock !== hoveredBlock) {
@@ -1426,11 +1408,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           hoveredMeshes.length = 0;
           hoveredBlock = newBlock;
           if (newBlock) {
-            for (const [mesh, info] of blockMeshMap) {
-              if (info === newBlock) {
-                (mesh.material as THREE.MeshStandardMaterial).emissive?.setHex(0x1A2A3A);
-                hoveredMeshes.push(mesh);
-              }
+            const meshes = blockInfoToMeshes.get(newBlock) ?? [];
+            for (const mesh of meshes) {
+              (mesh.material as THREE.MeshStandardMaterial).emissive?.setHex(0x1A2A3A);
+              hoveredMeshes.push(mesh);
             }
           }
         }
@@ -1465,9 +1446,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           const info = blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null;
           selectedBlockState = info;
           setSelectedBlock(info);
+          minimapDirty = true;
         } else {
           selectedBlockState = null;
           setSelectedBlock(null);
+          minimapDirty = true;
         }
       }
     };
@@ -1546,6 +1529,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── Minimap ───────────────────────────────────────────────────────────────
     if (mmCanvas) { mmCanvas.width = 160; mmCanvas.height = 160; }
     const mmCtx = mmCanvas?.getContext('2d') ?? null;
+    let minimapDirty = true;
     const MM_SCALE = 72 / (HALF * STEP + STEP / 2);
 
     function drawMinimap() {
@@ -1582,8 +1566,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         mmCtx.strokeStyle = `rgba(255,255,255,${pulse.t * 0.9})`; mmCtx.lineWidth = 1.5; mmCtx.stroke();
         pulse.t -= 0.04;
         if (pulse.t <= 0) mmPulseRef.current = null;
+        else minimapDirty = true; // keep redrawing while pulse is active
       }
       mmCtx.restore();
+      minimapDirty = false;
     }
 
     // ── Minimap click-to-teleport ─────────────────────────────────────────────
@@ -1600,6 +1586,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       );
       // Pulse ring at clicked pixel
       mmPulseRef.current = { px: e.clientX - rect.left, pz: e.clientY - rect.top, t: 1.0 };
+      minimapDirty = true;
     };
     mmCanvas?.addEventListener('click', onMinimapClick);
 
@@ -1754,6 +1741,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           orbitTarget.copy(minimapPanRef.current);
           minimapPanRef.current = null;
         }
+        minimapDirty = true;
         updateCameraOrbit();
       }
 
@@ -1763,6 +1751,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         orbitRadius = Math.max(60, Math.min(500, orbitRadius + zoomVelocity));
         if (orbitRadius === prev) zoomVelocity = 0;
         zoomVelocity *= 0.82;
+        minimapDirty = true;
         updateCameraOrbit();
       }
 
@@ -1797,7 +1786,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
 
       composer.render();
-      if (viewModeRef.current === 'city') drawMinimap();
+      if (viewModeRef.current === 'city' && minimapDirty) drawMinimap();
     }
     animate();
 
