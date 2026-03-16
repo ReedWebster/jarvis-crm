@@ -37,8 +37,8 @@ export default async function handler(req: any, res: any) {
 
 async function handleOAuthStart(_req: any, res: any) {
   try {
-    const clientId = process.env.SLACK_CLIENT_ID;
-    const redirectUri = process.env.SLACK_REDIRECT_URI;
+    const clientId = process.env.SLACK_CLIENT_ID?.trim();
+    const redirectUri = process.env.SLACK_REDIRECT_URI?.trim();
 
     if (!clientId || !redirectUri) {
       res.statusCode = 500;
@@ -96,9 +96,9 @@ async function handleOAuthCallback(_req: any, res: any, url: URL) {
     return;
   }
 
-  const clientId = process.env.SLACK_CLIENT_ID;
-  const clientSecret = process.env.SLACK_CLIENT_SECRET;
-  const redirectUri = process.env.SLACK_REDIRECT_URI;
+  const clientId = process.env.SLACK_CLIENT_ID?.trim();
+  const clientSecret = process.env.SLACK_CLIENT_SECRET?.trim();
+  const redirectUri = process.env.SLACK_REDIRECT_URI?.trim();
 
   if (!clientId || !clientSecret || !redirectUri) {
     res.statusCode = 500;
