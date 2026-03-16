@@ -158,9 +158,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const claudeResponse = await r.json();
-    const content = Array.isArray(claudeResponse.content) && claudeResponse.content[0]?.text
+    let content = Array.isArray(claudeResponse.content) && claudeResponse.content[0]?.text
       ? claudeResponse.content[0].text
       : '';
+
+    // Strip markdown code fences if present
+    content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
     let sections;
     try {

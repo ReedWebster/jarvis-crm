@@ -82,9 +82,12 @@ export default async function handler(req: any, res: any) {
     }
 
     const data = await r.json();
-    const content = Array.isArray(data.content) && data.content[0]?.text
+    let content = Array.isArray(data.content) && data.content[0]?.text
       ? data.content[0].text
       : '';
+
+    // Strip markdown code fences if present
+    content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
     let parsed;
     try {
