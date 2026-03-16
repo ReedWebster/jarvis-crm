@@ -89,6 +89,34 @@ function makeBuildingTexture(type: 'curtain' | 'strip' | 'residential' | 'wareho
   return tex;
 }
 
+// ─── BUILDING COLOR PALETTES ──────────────────────────────────────────────────
+// Returns { main, alt, trim } hex strings — deterministic per block position
+function buildingColorPalette(col: number, row: number, zone: string, arch: string): { main: string; alt: string; trim: string } | null {
+  // Glass-dominant arches keep their texture-based color; palette tints don't apply
+  if (arch === 'tower' || arch === 'spire' || arch === 'podiumTower') {
+    const rng = seededRandom(`pal-${col}-${row}`);
+    // 50% get cold glass (default), 50% get dark steel
+    if (rng() < 0.5) return null; // keep default cold glass
+    return { main: '#606870', alt: '#505860', trim: '#384048' }; // dark steel
+  }
+  if (zone === 'downtown') return null; // downtown non-tower keeps texture defaults
+
+  const rng = seededRandom(`pal-${col}-${row}`);
+  const palettes = [
+    { main: '#DDD4C4', alt: '#C8BEA8', trim: '#B8A898' }, // warm stone
+    { main: '#B8BCC4', alt: '#A8ACB4', trim: '#989CA4' }, // concrete
+    { main: '#C8907C', alt: '#B87C68', trim: '#D4A090' }, // terracotta
+    { main: '#E4D8C0', alt: '#D4C8A8', trim: '#C8B898' }, // cream brick
+    { main: '#D8CC9C', alt: '#C8BC8C', trim: '#B8AA7C' }, // sandstone
+  ];
+  // Residential/low/mixed lean toward warmer palettes; midrise/campus are neutral
+  const warmWeight = (zone === 'residential' || zone === 'low' || zone === 'mixed') ? 0.6 : 0.3;
+  const idx = rng() < warmWeight
+    ? Math.floor(rng() * 3) + 2  // terracotta, cream brick, sandstone
+    : Math.floor(rng() * 2);     // warm stone, concrete
+  return palettes[Math.min(idx, palettes.length - 1)];
+}
+
 function makeArchSpecificMats(arch: string): ArchMats {
   const base = makeArchMats();
   switch (arch) {
@@ -310,21 +338,52 @@ function createPodiumTower(x: number, z: number, h: number, mats: ArchMats): THR
 function makeTree(x: number, z: number, rng: () => number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
-  const trunkH = 1.8 + rng() * 0.8;
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.10, 0.16, trunkH, 8),
-    new THREE.MeshStandardMaterial({ color: '#B8C8D8', roughness: 0.9 })
-  );
-  trunk.position.y = trunkH / 2; trunk.castShadow = true; g.add(trunk);
-  const colors = ['#C8D8C0', '#B8CCAC', '#D0DCC8'];
-  for (let i = 0; i < 3; i++) {
-    const r = 0.9 + rng() * 0.5;
-    const canopy = new THREE.Mesh(
-      new THREE.SphereGeometry(r, 8, 8),
-      new THREE.MeshStandardMaterial({ color: colors[i % 3], roughness: 0.8 })
+  const scale = 0.7 + rng() * 0.8; // 0.7× – 1.5× size variation
+  g.scale.setScalar(scale);
+
+  const isConifer = rng() < 0.40; // 40% conifers, 60% deciduous
+
+  if (isConifer) {
+    // ── Conifer / Evergreen: stacked cones ──
+    const trunkH = 1.4 + rng() * 0.4;
+    const trunkMat = new THREE.MeshStandardMaterial({ color: '#6B4C30', roughness: 0.95 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.13, trunkH, 7), trunkMat);
+    trunk.position.y = trunkH / 2; trunk.castShadow = true; g.add(trunk);
+    const coniferColors = ['#2A5C30', '#1E4A24', '#326638', '#284E2A'];
+    const layers = 3;
+    for (let i = 0; i < layers; i++) {
+      const r = 1.2 - i * 0.28;
+      const h = 1.8 - i * 0.3;
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(r, h, 8),
+        new THREE.MeshStandardMaterial({ color: coniferColors[i % coniferColors.length], roughness: 0.85 })
+      );
+      cone.position.y = trunkH + 0.6 + i * (h * 0.55);
+      cone.castShadow = true; cone.receiveShadow = true; g.add(cone);
+    }
+  } else {
+    // ── Deciduous: multi-sphere canopy ──
+    const trunkH = 1.6 + rng() * 1.0;
+    const trunkColor = rng() < 0.5 ? '#7A6040' : '#8A7050';
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.16, trunkH, 8),
+      new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.95 })
     );
-    canopy.position.set((rng() - 0.5) * 0.6, trunkH + r * 0.7 + i * 0.25, (rng() - 0.5) * 0.6);
-    canopy.castShadow = true; canopy.receiveShadow = true; g.add(canopy);
+    trunk.position.y = trunkH / 2; trunk.castShadow = true; g.add(trunk);
+    const leafColors = ['#4A8040', '#5A9448', '#3E7038', '#62A050', '#528840', '#3A6830'];
+    const nSpheres = 5 + Math.floor(rng() * 3); // 5–7 spheres
+    for (let i = 0; i < nSpheres; i++) {
+      const r = 0.75 + rng() * 0.55;
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 11, 9),
+        new THREE.MeshStandardMaterial({ color: leafColors[Math.floor(rng() * leafColors.length)], roughness: 0.82 })
+      );
+      const ox = (rng() - 0.5) * 1.1;
+      const oy = trunkH + r * 0.65 + (rng() - 0.3) * 0.9;
+      const oz = (rng() - 0.5) * 1.1;
+      sphere.position.set(ox, oy, oz);
+      sphere.castShadow = true; sphere.receiveShadow = true; g.add(sphere);
+    }
   }
   return g;
 }
@@ -1228,12 +1287,12 @@ interface SkyConfig {
 }
 
 function getSkyConfig(_hour: number): SkyConfig {
-  // Always bright midday
+  // Warm midday haze — slightly more depth via fog, warmer horizon
   return {
-    zenith: '#7BB8D4', horizon: '#E8F0F8',
-    fogColor: 0xE8F0F8, fogDensity: 0.0014,
+    zenith: '#6AA8CC', horizon: '#EEE8DC',
+    fogColor: 0xEEE8DC, fogDensity: 0.0020,
     sunIntensity: 2.6, hemiIntensity: 0.65,
-    sunX: 0, sunY: 200, sunZ: -120,
+    sunX: 80, sunY: 200, sunZ: -120,
   };
 }
 
@@ -1586,6 +1645,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       road.receiveShadow = true;
       cityGroup.add(road);
       // Segmented sidewalks between intersections
+      const curbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadZs.length - 1; s++) {
         const zStart = roadZs[s]   + ROAD_W / 2 + 0.15;
         const zEnd   = roadZs[s+1] - ROAD_W / 2 - 0.15;
@@ -1598,6 +1658,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           sw.position.set(xPos + side * (ROAD_W / 2 + 0.8), 0.012, zMid);
           sw.receiveShadow = true;
           cityGroup.add(sw);
+          // Curb strip between road and sidewalk
+          const curb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, segLen), curbMat.clone());
+          curb.position.set(xPos + side * (ROAD_W / 2 + 0.11), 0.06, zMid);
+          curb.receiveShadow = true; curb.castShadow = true;
+          cityGroup.add(curb);
         }
       }
       // Dashes — skip near intersections
@@ -1618,6 +1683,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       road.receiveShadow = true;
       cityGroup.add(road);
       // Segmented sidewalks between intersections
+      const hCurbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadXs.length - 1; s++) {
         const xStart = roadXs[s]   + ROAD_W / 2 + 0.15;
         const xEnd   = roadXs[s+1] - ROAD_W / 2 - 0.15;
@@ -1630,6 +1696,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           sw.position.set(xMid, 0.012, zPos + side * (ROAD_W / 2 + 0.8));
           sw.receiveShadow = true;
           cityGroup.add(sw);
+          // Curb strip
+          const curb = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.12, 0.22), hCurbMat.clone());
+          curb.position.set(xMid, 0.06, zPos + side * (ROAD_W / 2 + 0.11));
+          curb.receiveShadow = true; curb.castShadow = true;
+          cityGroup.add(curb);
         }
       }
       // Dashes — skip near intersections
@@ -1704,7 +1775,49 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
 
         if (zone === 'park') {
           const rng = seededRandom(`park-${col}-${row}`);
-          for (let t = 0; t < 12; t++) {
+          // Grass base
+          const grass = new THREE.Mesh(
+            new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2),
+            new THREE.MeshStandardMaterial({ color: '#4A8040', roughness: 0.95 })
+          );
+          grass.rotation.x = -Math.PI / 2; grass.position.set(cx, 0.005, cz);
+          grass.receiveShadow = true; cityGroup.add(grass);
+          // Gravel cross-paths
+          const gravelMat = new THREE.MeshStandardMaterial({ color: '#B0A890', roughness: 0.92 });
+          for (const [pw, pd, px, pz] of [
+            [BLOCK_SIZE - 4, 2.0, cx, cz] as const,
+            [2.0, BLOCK_SIZE - 4, cx, cz] as const,
+          ]) {
+            const path = new THREE.Mesh(new THREE.PlaneGeometry(pw, pd), gravelMat.clone());
+            path.rotation.x = -Math.PI / 2; path.position.set(px, 0.007, pz);
+            path.receiveShadow = true; cityGroup.add(path);
+          }
+          // Benches near path intersections
+          const benchMat = new THREE.MeshStandardMaterial({ color: '#8A7048', roughness: 0.85 });
+          const legMat   = new THREE.MeshStandardMaterial({ color: '#606060', roughness: 0.9 });
+          for (const [bx, bz] of [[-7, -7], [7, 7], [-7, 7]] as [number,number][]) {
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 0.6), benchMat.clone());
+            seat.position.set(cx + bx, 0.47, cz + bz); seat.castShadow = true; cityGroup.add(seat);
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.55, 0.08), benchMat.clone());
+            back.position.set(cx + bx, 0.75, cz + bz - 0.26); back.castShadow = true; cityGroup.add(back);
+            for (const lx of [-0.9, 0.9]) {
+              const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.5), legMat.clone());
+              leg.position.set(cx + bx + lx, 0.22, cz + bz); cityGroup.add(leg);
+            }
+          }
+          // Fountain at center of even-row parks
+          if (row % 2 === 0) {
+            const fountainMat = new THREE.MeshStandardMaterial({ color: '#8898A8', roughness: 0.7 });
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.5, 0.45, 16), fountainMat.clone());
+            base.position.set(cx, 0.22, cz); base.castShadow = true; cityGroup.add(base);
+            const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.18, 16),
+              new THREE.MeshStandardMaterial({ color: '#5090B8', roughness: 0.2, transparent: true, opacity: 0.75 }));
+            basin.position.set(cx, 0.44, cz); cityGroup.add(basin);
+            const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8), fountainMat.clone());
+            spout.position.set(cx, 0.7, cz); cityGroup.add(spout);
+          }
+          // Trees (22, with roadside scatter)
+          for (let t = 0; t < 22; t++) {
             const tx = cx + (rng() - 0.5) * (BLOCK_SIZE - 10);
             const tz = cz + (rng() - 0.5) * (BLOCK_SIZE - 10);
             cityGroup.add(makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`)));
@@ -1800,6 +1913,13 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
 
           let group: THREE.Group;
           const am = makeArchSpecificMats(p.arch);
+          // Apply per-block color palette tint to non-glass buildings
+          const pal = buildingColorPalette(col, row, zone, p.arch);
+          if (pal) {
+            am.main  = new THREE.MeshStandardMaterial({ color: pal.main, roughness: am.main.roughness, metalness: am.main.metalness, map: am.main.map ?? undefined });
+            am.alt   = new THREE.MeshStandardMaterial({ color: pal.alt,  roughness: am.alt.roughness,  metalness: am.alt.metalness  });
+            am.trim  = new THREE.MeshStandardMaterial({ color: pal.trim, roughness: am.trim.roughness, metalness: am.trim.metalness });
+          }
           switch (p.arch) {
             case 'tower':       group = createTower(wx, wz, h, am); break;
             case 'podiumTower': group = createPodiumTower(wx, wz, h, am); break;
@@ -2353,16 +2473,16 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
             }}>{districtLabel}</div>
           )}
 
-          {/* Top-right controls: Bird's eye */}
+          {/* Bottom-right: Bird's eye button (moved away from info card) */}
           <button
             className="wv-top-btn"
             onClick={() => { birdEyeTargetRef.current = { phi: 0.06, radius: 220 }; }}
             title="Bird's eye view"
             style={{
-              position: 'absolute', top: 14, right: 14, zIndex: 10,
+              position: 'absolute', bottom: 14, right: 14, zIndex: 10,
               background: 'rgba(8,12,24,0.80)', border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 8, padding: '6px 11px', color: '#8899B4',
-              cursor: 'pointer', fontSize: 11, fontWeight: 600,
+              borderRadius: 8, padding: '7px 13px', color: '#8899B4',
+              cursor: 'pointer', fontSize: 12, fontWeight: 600,
               backdropFilter: 'blur(10px)', letterSpacing: '0.04em',
               transition: 'background 0.15s, color 0.15s',
             }}
@@ -2371,8 +2491,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           {/* Controls hint */}
           <div style={{
             position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.07)',
-            borderRadius: 20, padding: '4px 14px', color: '#4A5568', fontSize: 10,
+            background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: 20, padding: '4px 14px', color: '#64748b', fontSize: 10,
             pointerEvents: 'none', whiteSpace: 'nowrap', letterSpacing: '0.04em',
           }}>
             Drag · Scroll · Right-drag to pan · Click to inspect
@@ -2459,17 +2579,17 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
             <canvas ref={minimapRef} width={160} height={160} style={{ display: 'block' }} />
           </div>
 
-          {/* Zone legend */}
+          {/* Zone legend — compact, no water row */}
           <div style={{
             position: 'absolute', top: 14, left: 14,
             background: 'rgba(6,10,20,0.82)', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 10, padding: '10px 12px', zIndex: 10, backdropFilter: 'blur(12px)',
+            borderRadius: 8, padding: '8px 10px', zIndex: 10, backdropFilter: 'blur(12px)',
             boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
           }}>
-            {(['downtown','midrise','mixed','low','park','water'] as const).map(zone => (
-              <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0, boxShadow: `0 0 4px ${ZONE_COLORS[zone]}80` }} />
-                <span style={{ fontSize: 10, color: '#6B7A8D', textTransform: 'capitalize', letterSpacing: '0.04em' }}>{zone}</span>
+            {(['downtown','midrise','mixed','low','park'] as const).map(zone => (
+              <div key={zone} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <div style={{ width: 7, height: 7, borderRadius: 2, background: ZONE_COLORS[zone], flexShrink: 0 }} />
+                <span style={{ fontSize: 9, color: '#6B7A8D', textTransform: 'capitalize', letterSpacing: '0.04em' }}>{zone}</span>
               </div>
             ))}
           </div>
@@ -2523,11 +2643,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
                     key={i}
                     onClick={() => changeFloorCallbackRef.current?.(i)}
                     style={{
-                      width: 32, height: 26,
+                      width: 38, height: 30,
                       background: active ? 'rgba(80,140,220,0.3)' : 'transparent',
                       border: active ? '1px solid rgba(100,160,240,0.5)' : '1px solid rgba(255,255,255,0.08)',
                       borderRadius: 5, color: active ? '#c8ddff' : '#64748b',
-                      fontSize: 10, cursor: 'pointer', fontWeight: active ? 700 : 400,
+                      fontSize: 11, cursor: 'pointer', fontWeight: active ? 700 : 400,
                     }}
                   >
                     {i === totalFloors - 1 ? 'Roof ⬆' : i + 1}
