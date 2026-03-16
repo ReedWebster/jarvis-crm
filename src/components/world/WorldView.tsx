@@ -322,6 +322,84 @@ function makeTree(x: number, z: number, rng: () => number): THREE.Group {
   return g;
 }
 
+// ─── BYU STADIUM ──────────────────────────────────────────────────────────────
+
+function createStadium(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const byuBlue  = new THREE.MeshStandardMaterial({ color: '#002E5D', roughness: 0.82 });
+  const byuWhite = new THREE.MeshStandardMaterial({ color: '#E8EEF4', roughness: 0.80 });
+  const fieldMat = new THREE.MeshStandardMaterial({ color: '#2A6630', roughness: 0.90 });
+  const ezMat    = new THREE.MeshStandardMaterial({ color: '#1A3E70', roughness: 0.90 });
+  const boardMat = new THREE.MeshStandardMaterial({ color: '#080E18', roughness: 0.85 });
+
+  const box = (w: number, h: number, d: number, mat: THREE.MeshStandardMaterial, px = 0, py = 0, pz = 0, rx = 0, rz = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat.clone());
+    m.position.set(px, py, pz); m.rotation.x = rx; m.rotation.z = rz;
+    m.castShadow = m.receiveShadow = true; g.add(m); return m;
+  };
+
+  // Playing field
+  const field = new THREE.Mesh(new THREE.PlaneGeometry(28, 15), fieldMat);
+  field.rotation.x = -Math.PI / 2; field.position.y = 0.3;
+  field.receiveShadow = true; g.add(field);
+  // Yard lines
+  for (let i = -12; i <= 12; i += 2.33) {
+    const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 15),
+      new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.7 }));
+    ln.rotation.x = -Math.PI / 2; ln.position.set(i, 0.32, 0); g.add(ln);
+  }
+  // End zones
+  const ez1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 15), ezMat);
+  ez1.rotation.x = -Math.PI / 2; ez1.position.set(-14.5, 0.31, 0); g.add(ez1);
+  const ez2 = new THREE.Mesh(new THREE.PlaneGeometry(3, 15), ezMat.clone());
+  ez2.rotation.x = -Math.PI / 2; ez2.position.set(14.5, 0.31, 0); g.add(ez2);
+
+  // Lower seating tiers (4 sides, angled toward field)
+  box(36, 2.5, 4.5, byuBlue,   0,  1.2, -11.5, 0.30,  0);   // north
+  box(36, 2.5, 4.5, byuBlue,   0,  1.2,  11.5, -0.30, 0);   // south
+  box( 4.5, 2.5, 23, byuBlue,  17.5, 1.2, 0,   0,  0.30);  // east
+  box( 4.5, 2.5, 23, byuBlue, -17.5, 1.2, 0,   0, -0.30);  // west
+
+  // Upper seating tiers
+  box(38, 3, 5.5, byuBlue,   0, 4.0, -15.5, 0.35,  0);   // north
+  box(38, 3, 5.5, byuBlue,   0, 4.0,  15.5, -0.35, 0);   // south
+  box( 5.5, 3, 27, byuBlue,  21.5, 4.0, 0,  0,  0.35);  // east
+  box( 5.5, 3, 27, byuBlue, -21.5, 4.0, 0,  0, -0.35); // west
+
+  // White rim at top of upper tier
+  box(40, 0.35, 0.5, byuWhite,  0, 5.8, -18.5); // north rim
+  box(40, 0.35, 0.5, byuWhite,  0, 5.8,  18.5); // south rim
+  box( 0.5, 0.35, 30, byuWhite,  24, 5.8, 0);   // east rim
+  box( 0.5, 0.35, 30, byuWhite, -24, 5.8, 0);   // west rim
+
+  // Corner concourse fills (plug the gaps between stands)
+  for (const [cx2, cz2] of [[-20,-14],[20,-14],[-20,14],[20,14]] as [number,number][]) {
+    box(8, 5, 8, byuBlue, cx2, 2.5, cz2);
+  }
+
+  // Light towers (4 corners)
+  for (const [lx, lz] of [[-23,-17],[23,-17],[-23,17],[23,17]] as [number,number][]) {
+    box(0.5, 16, 0.5, byuWhite, lx, 8,  lz); // pole
+    box(3.0, 0.4, 0.4, byuWhite, lx, 15.5, lz); // arm
+  }
+
+  // Scoreboard (north end, behind end zone)
+  box(0.5, 10, 0.5, byuWhite, 0, 5, -20); // pole
+  box(9, 4.5, 0.6, boardMat,  0, 10, -20); // screen
+  box(9.6, 0.4, 0.8, byuWhite, 0, 12.5, -20); // top trim
+
+  // Goal posts (2 end zones)
+  for (const gpx of [-16, 16]) {
+    box(0.2, 4, 0.2, byuWhite, gpx, 4.5, 0);
+    box(5.5, 0.2, 0.2, byuWhite, gpx, 6.5, 0);
+    box(0.2, 1.8, 0.2, byuWhite, gpx - 2.5, 5.6, 0);
+    box(0.2, 1.8, 0.2, byuWhite, gpx + 2.5, 5.6, 0);
+  }
+
+  return g;
+}
+
 // ─── INTERIOR SCENE BUILDER ───────────────────────────────────────────────────
 
 interface BlockInfo {
@@ -761,7 +839,13 @@ function drawFloorPlan(ctx: CanvasRenderingContext2D, arch: string, zoneColor: s
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export function WorldView() {
+interface WorldViewProps {
+  contactTags?: Array<{ name: string; color: string }>;
+  districtTagMap?: Record<string, string>;
+  onDistrictTagMapChange?: (map: Record<string, string>) => void;
+}
+
+export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange }: WorldViewProps = {}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
@@ -1134,12 +1218,15 @@ export function WorldView() {
         const cx = col * STEP;
         const cz = row * STEP;
         const zone = getZone(col, row);
+        const isBYU = col === 2 && row === 2;
         const labelPool = ZONE_LABELS[zone];
         const labelIdx  = ((Math.abs(col) * 7 + Math.abs(row) * 13) ^ (col < 0 ? 3 : 5)) % labelPool.length;
-        const info: BlockInfo = { col, row, cx, cz, zone, label: labelPool[labelIdx] };
+        const label = isBYU ? 'BYU Campus' : labelPool[labelIdx];
+        const info: BlockInfo = { col, row, cx, cz, zone, label };
         blocks.push(info);
 
-        const patchMat = zone === 'park'  ? parkMat
+        const patchMat = isBYU        ? new THREE.MeshStandardMaterial({ color: '#2A5C30', roughness: 0.90 })
+                       : zone === 'park'  ? parkMat
                        : zone === 'water' ? waterMat
                        : new THREE.MeshStandardMaterial({ color: '#D8E4EE', roughness: 0.9 });
         const patch = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2), patchMat);
@@ -1158,6 +1245,20 @@ export function WorldView() {
           continue;
         }
         if (zone === 'water') continue;
+
+        // BYU Campus — spawn stadium instead of regular buildings
+        if (isBYU) {
+          const stadium = createStadium(cx, cz);
+          stadium.traverse(obj => {
+            if (obj instanceof THREE.Mesh) {
+              obj.userData.blockInfo = info;
+              allBuildingMeshes.push(obj);
+              blockMeshMap.set(obj, info);
+            }
+          });
+          cityGroup.add(stadium);
+          continue;
+        }
 
         const rng = seededRandom(`block-${col}-${row}`);
         const BUILD_AREA = BLOCK_SIZE - 8;
@@ -1828,6 +1929,27 @@ export function WorldView() {
                   </span>
                 </div>
                 <canvas ref={floorPlanRef} width={172} height={80} style={{ display: 'block', marginBottom: 10, borderRadius: 4, border: '1px solid rgba(255,255,255,0.07)', width: '100%' }} />
+                {/* Tag assignment */}
+                {contactTags && contactTags.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 5 }}>Linked Tag</div>
+                    <select
+                      value={districtTagMap?.[selectedBlock.label] ?? ''}
+                      onChange={e => onDistrictTagMapChange?.({ ...(districtTagMap ?? {}), [selectedBlock.label]: e.target.value })}
+                      style={{
+                        width: '100%', background: 'rgba(6,10,20,0.9)',
+                        border: `1px solid ${contactTags.find(t => t.name === (districtTagMap?.[selectedBlock.label] ?? ''))?.color ?? 'rgba(255,255,255,0.10)'}`,
+                        borderRadius: 6, padding: '5px 8px', color: '#cbd5e1', fontSize: 11,
+                        cursor: 'pointer', outline: 'none',
+                      }}
+                    >
+                      <option value="">— No Tag —</option>
+                      {contactTags.map(tag => (
+                        <option key={tag.name} value={tag.name}>{tag.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <button
                   className="wv-btn"
                   onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}

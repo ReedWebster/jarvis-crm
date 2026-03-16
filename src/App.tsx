@@ -207,6 +207,23 @@ function MainApp() {
   const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
   const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
   const [morningBriefing, setMorningBriefing] = useSupabaseStorage<import('./types').MorningBriefing | null>('jarvis:morning_briefing', null);
+  const [districtTagMap, setDistrictTagMap] = useSupabaseStorage<Record<string, string>>('jarvis:districtTagMap', {
+    'Financial Core': 'Investor',   'Central Tower': 'Investor',    'Capital Row': 'Investor',
+    'Exchange Sq': 'Client',        'Commerce Plaza': 'Partner',    'Metro Center': 'Colleague',
+    'Skyline Block': 'Investor',    'Civic Hub': 'Colleague',       'Crown Heights': 'Mentor',
+    'Midtown West': 'Client',       'Uptown East': 'Recruit',       'Gallery Row': 'Partner',
+    'The Arcade': 'Client',         'Merchant Row': 'Partner',      'Harbor Gate': 'Colleague',
+    'River Bend': 'Mentor',         'Lakeside': 'Friend',           'Park Ave': 'Mentor',
+    'BYU Campus': 'Professor',      'Arts Quarter': 'Friend',       'Market Street': 'Colleague',
+    'Innovation Mile': 'Recruit',   'Craft District': 'Friend',     'Bricktown': 'Colleague',
+    'The Yards': 'Recruit',         'Riverside': 'Other',           'Garden Block': 'Friend',
+    'Oak St': 'Family',             'Maple Ave': 'Family',          'Pine Court': 'Family',
+    'Birch Lane': 'Family',         'Cedar Row': 'Family',          'Elm Park': 'Family',
+    'Chestnut Way': 'Family',       'Aspen Hill': 'Family',         'Valley View': 'Family',
+    'City Park': 'Other',           'Memorial Green': 'Other',      'Botanical Garden': 'Other',
+    'Riverside Park': 'Other',      'Central Commons': 'Other',
+    'Harbor': 'Other',              'Bay Front': 'Other',           'Marina': 'Other',           'River District': 'Other',
+  });
 
   // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
   useEffect(() => {
@@ -370,7 +387,13 @@ function MainApp() {
           />
         );
       case 'world':
-        return <WorldView />;
+        return (
+          <WorldView
+            contactTags={contactTags}
+            districtTagMap={districtTagMap}
+            onDistrictTagMapChange={setDistrictTagMap}
+          />
+        );
       case 'social':
         return (
           <SocialHub
