@@ -766,27 +766,13 @@ interface SkyConfig {
   sunX: number; sunY: number; sunZ: number;
 }
 
-function getSkyConfig(hour: number): SkyConfig {
-  const isDay = hour >= 6 && hour < 18;
-  if (!isDay) {
-    return {
-      zenith: '#060A16', horizon: '#0C1020',
-      fogColor: 0x060A16, fogDensity: 0.003,
-      sunIntensity: 0, hemiIntensity: 0.06,
-      sunX: 0, sunY: -100, sunZ: 0,
-    };
-  }
-  const t = (hour - 6) / 12;                        // 0=6am, 0.5=noon, 1=6pm
-  const sunElev = Math.sin(t * Math.PI);             // 0 at horizon, 1 at noon
-  const sunAz   = (t - 0.5) * Math.PI;              // east → south → west
+function getSkyConfig(_hour: number): SkyConfig {
+  // Always bright midday
   return {
     zenith: '#7BB8D4', horizon: '#E8F0F8',
     fogColor: 0xE8F0F8, fogDensity: 0.0014,
-    sunIntensity: 1.4 + sunElev * 1.2,
-    hemiIntensity: 0.3 + sunElev * 0.35,
-    sunX:  Math.sin(sunAz) * 200,
-    sunY:  Math.max(8, sunElev * 200),
-    sunZ: -Math.cos(sunAz) * 120,
+    sunIntensity: 2.6, hemiIntensity: 0.65,
+    sunX: 0, sunY: 200, sunZ: -120,
   };
 }
 
@@ -993,11 +979,9 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       hemi.intensity = cfg.hemiIntensity;
       scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
-      // Night lights (come on at dusk 4:30pm, off after dawn 7:30am)
-      const hr = now.getHours() + now.getMinutes() / 60;
-      const showNight = hr < 6 || hr >= 18;
-      for (const m of nightLightMeshes) m.visible = showNight;
-      nightAmbient.intensity = showNight ? 0.55 : 0;
+      // Night lights always off (always daytime)
+      for (const m of nightLightMeshes) m.visible = false;
+      nightAmbient.intensity = 0;
     }
     applyTimeOfDay();
     const todInterval = setInterval(applyTimeOfDay, 60_000);
@@ -1387,11 +1371,9 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
     }
 
-    // Apply night lights for current real time (after loop populates array)
-    { const hn = new Date().getHours() + new Date().getMinutes()/60;
-      const sn = hn >= 16.5 || hn < 7.5;
-      for (const m of nightLightMeshes) m.visible = sn;
-      nightAmbient.intensity = sn ? 0.55 : 0; }
+    // Night lights always off (always daytime)
+    for (const m of nightLightMeshes) m.visible = false;
+    nightAmbient.intensity = 0;
 
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
     let isDragging = false, isPanning = false;

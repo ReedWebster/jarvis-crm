@@ -96,13 +96,42 @@ export function useSlack() {
     }
   }, []);
 
+  // ─── Bulk-fetch all workspace users via users.list ────────────────────────
+
+  const fetchAllUsers = useCallback(async () => {
+    if (usersCache.current.size > 0) return; // already populated
+    try {
+      let cursor: string | undefined;
+      do {
+        const params: any = { limit: 200 };
+        if (cursor) params.cursor = cursor;
+        const json = await slackApi('users.list', params);
+        const members: any[] = json.members ?? [];
+        for (const u of members) {
+          const su: SlackUser = {
+            id: u.id,
+            displayName: u.profile?.display_name || u.real_name || u.name || u.id,
+            realName: u.real_name || u.name || u.id,
+            avatar: u.profile?.image_72 || u.profile?.image_48 || '',
+            isBot: u.is_bot ?? false,
+          };
+          usersCache.current.set(u.id, su);
+        }
+        cursor = json.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+    } catch {
+      // Fall back to individual lookups if users.list fails
+    }
+  }, []);
+
   // ─── Batch resolve multiple users ─────────────────────────────────────────
 
   const resolveUsers = useCallback(async (userIds: string[]): Promise<Map<string, SlackUser>> => {
+    await fetchAllUsers();
     const missing = userIds.filter(id => !usersCache.current.has(id));
     await Promise.all(missing.map(id => resolveUser(id)));
     return usersCache.current;
-  }, [resolveUser]);
+  }, [fetchAllUsers, resolveUser]);
 
   // ─── Fetch channels ───────────────────────────────────────────────────────
 
