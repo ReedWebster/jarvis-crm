@@ -339,86 +339,225 @@ function createMoatShieldTower(cx: number, cz: number, logoTex: THREE.Texture): 
   const g = new THREE.Group();
   g.position.set(cx, 0, cz);
 
+  // ── Materials ──
   const glassMat = () => new THREE.MeshStandardMaterial({
-    color: '#0A2040', roughness: 0.04, metalness: 0.65, transparent: true, opacity: 0.82,
+    color: '#0C1E3A', roughness: 0.03, metalness: 0.70, transparent: true, opacity: 0.85,
   });
-  const trimMat = new THREE.MeshStandardMaterial({ color: '#D4E8FF', roughness: 0.15, metalness: 0.85 });
-  const antMat  = new THREE.MeshStandardMaterial({ color: '#C8D8F0', roughness: 0.20, metalness: 0.80 });
-  const glowMat = new THREE.MeshStandardMaterial({ color: '#60AAFF', emissive: '#60AAFF', emissiveIntensity: 1.2 });
+  const steelMat = () => new THREE.MeshStandardMaterial({ color: '#8A9BB0', roughness: 0.15, metalness: 0.90 });
+  const darkSteelMat = () => new THREE.MeshStandardMaterial({ color: '#3A4A5E', roughness: 0.12, metalness: 0.92 });
+  const accentMat = () => new THREE.MeshStandardMaterial({ color: '#40B0FF', emissive: '#40B0FF', emissiveIntensity: 0.6 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: '#60CCFF', emissive: '#60CCFF', emissiveIntensity: 1.5 });
+  const lineMat = () => new THREE.MeshStandardMaterial({ color: '#1A3050', roughness: 0.10, metalness: 0.50 });
+  const padMat = new THREE.MeshStandardMaterial({ color: '#2A3A4A', roughness: 0.6, metalness: 0.4 });
 
   // ── Helper: curtain-wall glass box with horizontal panel lines ──
-  const glassBox = (w: number, h: number, d: number, y: number) => {
+  const glassBox = (w: number, h: number, d: number, x: number, y: number, z: number) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glassMat());
     mesh.castShadow = true; mesh.receiveShadow = true;
-    mesh.position.set(0, y + h / 2, 0);
+    mesh.position.set(x, y + h / 2, z);
     g.add(mesh);
-    // Horizontal panel lines on all 4 faces
-    const lineCount = Math.floor(h / 2.2);
-    const lineMat = new THREE.MeshStandardMaterial({ color: '#1A4060', roughness: 0.10, metalness: 0.50 });
+    const lineCount = Math.floor(h / 2.0);
+    const lm = lineMat();
     for (let i = 1; i <= lineCount; i++) {
       const ly = y + i * (h / (lineCount + 1));
       // +Z face
-      const fz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.08), lineMat.clone());
-      fz.position.set(0, ly, d / 2 + 0.02); g.add(fz);
+      const fz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.06), lm.clone());
+      fz.position.set(x, ly, z + d / 2 + 0.02); g.add(fz);
       // -Z face
-      const bz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.08), lineMat.clone());
-      bz.position.set(0, ly, -d / 2 - 0.02); bz.rotation.y = Math.PI; g.add(bz);
+      const bz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.06), lm.clone());
+      bz.position.set(x, ly, z - d / 2 - 0.02); bz.rotation.y = Math.PI; g.add(bz);
       // +X face
-      const rx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.08), lineMat.clone());
-      rx.position.set(w / 2 + 0.02, ly, 0); rx.rotation.y = Math.PI / 2; g.add(rx);
+      const rx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.06), lm.clone());
+      rx.position.set(x + w / 2 + 0.02, ly, z); rx.rotation.y = Math.PI / 2; g.add(rx);
       // -X face
-      const lx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.08), lineMat.clone());
-      lx.position.set(-w / 2 - 0.02, ly, 0); lx.rotation.y = -Math.PI / 2; g.add(lx);
+      const lx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.06), lm.clone());
+      lx.position.set(x - w / 2 - 0.02, ly, z); lx.rotation.y = -Math.PI / 2; g.add(lx);
     }
     return mesh;
   };
 
-  // ── Trim ledge ring ──
-  const ledge = (w: number, d: number, y: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 0.5, d + 1.2), trimMat.clone());
-    mesh.castShadow = true; mesh.position.set(0, y, 0); g.add(mesh);
+  // ── Steel trim ledge ──
+  const ledge = (w: number, d: number, x: number, y: number, z: number) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.35, d + 0.8), steelMat());
+    mesh.castShadow = true; mesh.position.set(x, y, z); g.add(mesh);
   };
 
-  // BASE: 42×42, h 0→32
-  glassBox(42, 32, 42, 0);
-  ledge(42, 42, 32.25);
+  // ════════════════════════════════════════════════════════════════════════
+  // AVENGERS-TOWER SHAPE — wide base tapering to asymmetric cantilevered crown
+  // ════════════════════════════════════════════════════════════════════════
 
-  // MID SETBACK: 30×30, h 32→44
-  glassBox(30, 12, 30, 32.5);
-  ledge(30, 30, 44.75);
+  // ── 1. BASE SECTION: 0→22 — widest part, slightly rectangular ──
+  glassBox(38, 22, 34, 0, 0, 0);
+  ledge(38, 34, 0, 22.2, 0);
 
-  // CROWN: 20×20, h 45→54
-  glassBox(20, 9, 20, 45.25);
-  ledge(20, 20, 54.5);
+  // ── 2. LOWER-MID: 22→36 — first setback ──
+  glassBox(32, 14, 28, 0, 22.4, 0);
+  ledge(32, 28, 0, 36.6, 0);
 
-  // ANTENNA SPIRE: 1.2×1.2, h 55→68
-  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.0, 13, 8), antMat.clone());
-  spire.castShadow = true; spire.position.set(0, 55 + 6.5, 0); g.add(spire);
+  // ── 3. UPPER-MID: 36→48 — narrower ──
+  glassBox(24, 11.5, 22, 0, 36.8, 0);
+  ledge(24, 22, 0, 48.5, 0);
+
+  // ── 4. CROWN SECTION: 48→58 — the distinctive Avengers Tower angular top ──
+  // Main crown column — slightly offset forward (+Z) to create asymmetry
+  glassBox(16, 10, 16, 0, 48.7, 1.5);
+  ledge(16, 16, 0, 58.9, 1.5);
+
+  // ── 5. CANTILEVERED FORWARD SECTION — the signature Avengers Tower overhang ──
+  // This is the angled/jutting section that makes it look like the MCU tower
+  // Angled glass wedge extending forward from the crown
+  const cantileverGeo = new THREE.BufferGeometry();
+  const cv = new Float32Array([
+    // Bottom face (y=49)
+    -7, 49, 9,    7, 49, 9,    7, 49, 18,   -7, 49, 18,
+    // Top face — angled: back edge at y=58, front edge at y=52
+    -7, 58, 9,    7, 58, 9,    7, 52, 18,   -7, 52, 18,
+  ]);
+  const ci = new Uint16Array([
+    // bottom
+    0,2,1, 0,3,2,
+    // top
+    4,5,6, 4,6,7,
+    // front (the angled face)
+    3,2,6, 3,6,7,
+    // back
+    0,1,5, 0,5,4,
+    // left
+    0,4,7, 0,7,3,
+    // right
+    1,2,6, 1,6,5,
+  ]);
+  cantileverGeo.setAttribute('position', new THREE.BufferAttribute(cv, 3));
+  cantileverGeo.setIndex(new THREE.BufferAttribute(ci, 1));
+  cantileverGeo.computeVertexNormals();
+  const cantilever = new THREE.Mesh(cantileverGeo, glassMat());
+  cantilever.castShadow = true; cantilever.receiveShadow = true;
+  g.add(cantilever);
+
+  // Steel edge framing on the cantilever
+  const edgeMat = darkSteelMat();
+  // Bottom front edge
+  const bfe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
+  bfe.position.set(0, 49, 18); g.add(bfe);
+  // Top front edge (angled)
+  const tfe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
+  tfe.position.set(0, 52, 18); g.add(tfe);
+  // Top back edge
+  const tbe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
+  tbe.position.set(0, 58, 9); g.add(tbe);
+  // Side edges (left)
+  const calcLen = Math.sqrt(81 + 36); // ~10.8
+  const sle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, calcLen), edgeMat.clone());
+  sle.position.set(-7, 55, 13.5);
+  sle.rotation.x = Math.atan2(6, 9); g.add(sle);
+  // Side edges (right)
+  const sre = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, calcLen), edgeMat.clone());
+  sre.position.set(7, 55, 13.5);
+  sre.rotation.x = Math.atan2(6, 9); g.add(sre);
+
+  // ── 6. LANDING PAD / TERRACE — the iconic balcony at the cantilever base ──
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(20, 0.4, 12), padMat);
+  pad.position.set(0, 49, 15); pad.receiveShadow = true; g.add(pad);
+  // Pad accent ring (landing circle)
+  const padRing = new THREE.Mesh(
+    new THREE.RingGeometry(3.5, 4.2, 32),
+    accentMat()
+  );
+  padRing.rotation.x = -Math.PI / 2;
+  padRing.position.set(0, 49.25, 16); g.add(padRing);
+  // Inner circle on pad
+  const padInner = new THREE.Mesh(
+    new THREE.RingGeometry(1.0, 1.5, 32),
+    accentMat()
+  );
+  padInner.rotation.x = -Math.PI / 2;
+  padInner.position.set(0, 49.25, 16); g.add(padInner);
+
+  // Railing posts along pad edge
+  const railMat = steelMat();
+  for (let rx = -9; rx <= 9; rx += 3) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.2, 0.15), railMat.clone());
+    post.position.set(rx, 49.8, 21); g.add(post);
+  }
+  // Railing bar
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(18.5, 0.12, 0.12), railMat.clone());
+  rail.position.set(0, 50.3, 21); g.add(rail);
+
+  // ── 7. ANTENNA / SPIRE — tall and aggressive ──
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.8, 12, 8), darkSteelMat());
+  spire.castShadow = true; spire.position.set(0, 59 + 6, 1.5); g.add(spire);
+  // Cross-arms on spire
+  for (const sy of [62, 64.5]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), steelMat());
+    arm.position.set(0, sy, 1.5); g.add(arm);
+    const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 4), steelMat());
+    arm2.position.set(0, sy, 1.5); g.add(arm2);
+  }
   // Glowing tip
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 8), glowMat.clone());
-  tip.position.set(0, 68.5, 0); g.add(tip);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), glowMat.clone());
+  tip.position.set(0, 71.5, 1.5); g.add(tip);
+  // Secondary glow ring at spire base
+  const spireRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.9, 1.3, 16),
+    accentMat()
+  );
+  spireRing.rotation.x = -Math.PI / 2;
+  spireRing.position.set(0, 59.2, 1.5); g.add(spireRing);
 
-  // ── LOGO PANELS on all 4 faces of mid setback (at ~48 height) ──
-  // Logo is 14 wide × 8 tall, placed at the upper portion of the mid section
-  const logoH = 48; // center height of logo
+  // ── 8. VERTICAL ACCENT STRIPS — glowing blue lines running up the tower faces ──
+  const stripMat = accentMat();
+  for (const sx of [-6, 6]) {
+    // Front face strips (full height)
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.15, 48, 0.05), stripMat.clone());
+    strip.position.set(sx, 24, 17.02); g.add(strip);
+    // Back face strips
+    const stripB = new THREE.Mesh(new THREE.BoxGeometry(0.15, 48, 0.05), stripMat.clone());
+    stripB.position.set(sx, 24, -17.02); g.add(stripB);
+  }
+  // Side face vertical strips
+  for (const sz of [-6, 6]) {
+    const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 48, 0.15), stripMat.clone());
+    stripL.position.set(-19.02, 24, sz); g.add(stripL);
+    const stripR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 48, 0.15), stripMat.clone());
+    stripR.position.set(19.02, 24, sz); g.add(stripR);
+  }
+
+  // ── 9. LOGO — "MoatandshieldAI" on crown section + cantilever face ──
+  // Large logo on the front face of the crown (the main branding surface)
   const logoW = 14, logoPH = 8;
   const logoMat = new THREE.MeshStandardMaterial({
     map: logoTex, transparent: true, alphaTest: 0.05,
-    emissive: '#FFFFFF', emissiveIntensity: 0.25,
+    emissive: '#FFFFFF', emissiveIntensity: 0.35,
     roughness: 0.1, metalness: 0.1,
   });
-  // +Z face
+  // Front face of upper-mid section (most visible, like the "A" on Avengers Tower)
   const lp1 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp1.position.set(0, logoH, 15.02); g.add(lp1);
-  // -Z face
+  lp1.position.set(0, 43, 11.02); g.add(lp1);
+  // Back face
   const lp2 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp2.position.set(0, logoH, -15.02); lp2.rotation.y = Math.PI; g.add(lp2);
+  lp2.position.set(0, 43, -11.02); lp2.rotation.y = Math.PI; g.add(lp2);
   // +X face
-  const lp3 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp3.position.set(15.02, logoH, 0); lp3.rotation.y = Math.PI / 2; g.add(lp3);
+  const lp3 = new THREE.Mesh(new THREE.PlaneGeometry(logoPH, logoPH), logoMat.clone());
+  lp3.position.set(12.02, 43, 0); lp3.rotation.y = Math.PI / 2; g.add(lp3);
   // -X face
-  const lp4 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp4.position.set(-15.02, logoH, 0); lp4.rotation.y = -Math.PI / 2; g.add(lp4);
+  const lp4 = new THREE.Mesh(new THREE.PlaneGeometry(logoPH, logoPH), logoMat.clone());
+  lp4.position.set(-12.02, 43, 0); lp4.rotation.y = -Math.PI / 2; g.add(lp4);
+
+  // ── 10. ACCENT LIGHTING at setback ledges ──
+  for (const ly of [22.2, 36.6, 48.5]) {
+    const lw = ly < 30 ? 38 : ly < 40 ? 32 : 24;
+    const ld = ly < 30 ? 34 : ly < 40 ? 28 : 22;
+    // Front + Back glow strips
+    for (const zs of [1, -1]) {
+      const ls = new THREE.Mesh(new THREE.BoxGeometry(lw - 2, 0.15, 0.15), accentMat());
+      ls.position.set(0, ly + 0.3, zs * (ld / 2 + 0.2)); g.add(ls);
+    }
+    // Left + Right glow strips
+    for (const xs of [1, -1]) {
+      const ls = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, ld - 2), accentMat());
+      ls.position.set(xs * (lw / 2 + 0.2), ly + 0.3, 0); g.add(ls);
+    }
+  }
 
   return g;
 }
@@ -2118,7 +2257,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
             }
           });
           blockInfoToMeshes.set(info, mshmMeshes);
-          blockArchetypeMapRef.current.set(`${col},${row}`, { arch: 'podiumTower', height: 68 });
+          blockArchetypeMapRef.current.set(`${col},${row}`, { arch: 'podiumTower', height: 72 });
           cityGroup.add(tower);
           continue;
         }
