@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   optimizeDeps: {
-    include: ['three', 'three-spritetext', 'react-force-graph-3d'],
+    include: ['three', 'three-spritetext', 'react-force-graph-3d', 'postprocessing'],
   },
   plugins: [
     react(),

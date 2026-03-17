@@ -2087,9 +2087,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const bloom = new BloomEffect({ intensity: 0.20, luminanceThreshold: 0.88, luminanceSmoothing: 0.04, mipmapBlur: true });
     composer.addPass(new EffectPass(camera, bloom));
 
-    // SSAO removed — NormalPass has tree-shaking issues with Vite/postprocessing v6
-    // AO contact shadows at building bases provide a lighter alternative
-
     // ── Materials (shared, cloned per building) ───────────────────────────────
     // Generate PMREM env map from sky for glass reflections
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
