@@ -43,52 +43,177 @@ function makeArchMats(): ArchMats {
 }
 
 function makeBuildingTexture(type: 'curtain' | 'strip' | 'residential' | 'warehouse' | 'campus'): THREE.CanvasTexture {
-  const W = 128, H = 256;
+  const W = 512, H = 1024;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d')!;
+
   if (type === 'curtain') {
-    ctx.fillStyle = '#0E1820'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#28384E'; ctx.lineWidth = 1.5;
-    for (let x = 0; x <= W; x += 16) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    for (let y = 2; y < H; y += 20) for (let x = 2; x < W; x += 16) {
-      ctx.fillStyle = `rgba(80,140,210,${0.04 + Math.random() * 0.10})`; ctx.fillRect(x, y, 12, 16);
+    // Modern glass curtain wall — dark blue glass with steel mullions
+    ctx.fillStyle = '#0A1420'; ctx.fillRect(0, 0, W, H);
+    const panelW = 64, panelH = 80;
+    const cols = Math.floor(W / panelW), rows = Math.floor(H / panelH);
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const px = col * panelW, py = row * panelH;
+        // Steel mullion frame
+        ctx.fillStyle = '#1C2830'; ctx.fillRect(px, py, panelW, panelH);
+        // Glass pane (inset)
+        const lit = Math.random();
+        if (lit < 0.3) {
+          // Warm interior light visible
+          const warmth = Math.floor(180 + Math.random() * 60);
+          ctx.fillStyle = `rgba(${warmth},${warmth - 40},${warmth - 100},${0.08 + Math.random() * 0.15})`;
+        } else {
+          // Dark/reflective glass
+          const b = 12 + Math.floor(Math.random() * 25);
+          ctx.fillStyle = `rgb(${b},${b + 8},${b + 20})`;
+        }
+        ctx.fillRect(px + 3, py + 3, panelW - 6, panelH - 6);
+        // Subtle sky reflection gradient on some panels
+        if (Math.random() < 0.15) {
+          const grad = ctx.createLinearGradient(px, py, px, py + panelH);
+          grad.addColorStop(0, 'rgba(60,100,140,0.12)');
+          grad.addColorStop(1, 'rgba(30,50,70,0.04)');
+          ctx.fillStyle = grad; ctx.fillRect(px + 3, py + 3, panelW - 6, panelH - 6);
+        }
+      }
     }
+    // Horizontal mullion lines
+    ctx.fillStyle = '#2A3848';
+    for (let y = 0; y <= H; y += panelH) ctx.fillRect(0, y - 1, W, 3);
+    // Vertical mullion lines
+    for (let x = 0; x <= W; x += panelW) ctx.fillRect(x - 1, 0, 3, H);
+
   } else if (type === 'strip') {
-    ctx.fillStyle = '#C2B8A8'; ctx.fillRect(0, 0, W, H);
-    for (let i = 0; i < 300; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.04})`; ctx.fillRect(Math.random()*W, Math.random()*H, 2, 1); }
-    for (let y = 14; y < H; y += 22) {
-      ctx.fillStyle = '#18243A'; ctx.fillRect(8, y, W - 16, 12);
-      ctx.fillStyle = '#243448';
-      for (let x = 8; x < W - 16; x += 20) ctx.fillRect(x + 18, y, 2, 12);
+    // Concrete/stone facade with strip windows
+    ctx.fillStyle = '#BEB4A4'; ctx.fillRect(0, 0, W, H);
+    // Concrete texture noise
+    for (let i = 0; i < 3000; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.03})`;
+      ctx.fillRect(Math.random()*W, Math.random()*H, 2+Math.random()*3, 1+Math.random());
     }
+    // Weathering stains (vertical streaks from rain)
+    for (let i = 0; i < 15; i++) {
+      const sx = Math.random() * W;
+      ctx.fillStyle = `rgba(0,0,0,${0.02 + Math.random()*0.03})`;
+      ctx.fillRect(sx, 0, 1 + Math.random() * 2, H);
+    }
+    // Horizontal strip windows with individual panes
+    const floorH = 85;
+    for (let y = 28; y < H; y += floorH) {
+      // Window band
+      ctx.fillStyle = '#141E2C'; ctx.fillRect(16, y, W - 32, 44);
+      // Individual panes within the band
+      const paneW = 48;
+      for (let x = 16; x < W - 32; x += paneW) {
+        ctx.strokeStyle = '#2A3A4A'; ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, paneW, 44);
+        // Some panes lit
+        if (Math.random() < 0.25) {
+          ctx.fillStyle = `rgba(200,180,140,${0.06 + Math.random()*0.12})`;
+          ctx.fillRect(x + 2, y + 2, paneW - 4, 40);
+        }
+      }
+      // Spandrel panel below window
+      ctx.fillStyle = '#9A9080'; ctx.fillRect(16, y + 44, W - 32, 8);
+    }
+
   } else if (type === 'residential') {
-    ctx.fillStyle = '#D0C49C'; ctx.fillRect(0, 0, W, H);
-    for (let i = 0; i < 400; i++) { ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.03})`; ctx.fillRect(Math.random()*W, Math.random()*H, 3, 2); }
-    for (let row = 0; row < 7; row++) for (let col = 0; col < 3; col++) {
-      const wx = col * 40 + 12, wy = row * 34 + 12;
-      ctx.fillStyle = '#141C28'; ctx.fillRect(wx, wy, 18, 22);
-      ctx.strokeStyle = '#C0B088'; ctx.lineWidth = 1.5; ctx.strokeRect(wx - 2, wy - 2, 22, 26);
-      ctx.fillStyle = '#B09870'; ctx.fillRect(wx - 3, wy + 21, 24, 3);
+    // Brick/stucco residential with individual windows, sills, and shutters
+    ctx.fillStyle = '#C8B898'; ctx.fillRect(0, 0, W, H);
+    // Brick texture
+    const brickH = 8, brickW = 16;
+    for (let by = 0; by < H; by += brickH) {
+      const offset = (Math.floor(by / brickH) % 2) * (brickW / 2);
+      for (let bx = -brickW; bx < W + brickW; bx += brickW) {
+        const r = 180 + Math.floor(Math.random() * 25), g2 = 160 + Math.floor(Math.random() * 20), b = 120 + Math.floor(Math.random() * 15);
+        ctx.fillStyle = `rgb(${r},${g2},${b})`;
+        ctx.fillRect(bx + offset + 1, by + 1, brickW - 2, brickH - 2);
+      }
     }
+    // Mortar lines
+    ctx.fillStyle = '#B0A888';
+    for (let by = 0; by <= H; by += brickH) ctx.fillRect(0, by - 0.5, W, 1);
+    // Windows with sills, lintels, and varied interior
+    const winCols = 5, winRows = 10;
+    const winW = 36, winH = 52;
+    for (let wr = 0; wr < winRows; wr++) {
+      for (let wc = 0; wc < winCols; wc++) {
+        const wx = wc * (W / winCols) + (W / winCols - winW) / 2;
+        const wy = wr * (H / winRows) + 20;
+        // Lintel (header)
+        ctx.fillStyle = '#A09070'; ctx.fillRect(wx - 4, wy - 6, winW + 8, 6);
+        // Window opening
+        ctx.fillStyle = '#101820'; ctx.fillRect(wx, wy, winW, winH);
+        // Interior variation
+        const lit = Math.random();
+        if (lit < 0.2) {
+          ctx.fillStyle = `rgba(220,190,130,${0.1 + Math.random()*0.2})`;
+          ctx.fillRect(wx + 2, wy + 2, winW - 4, winH - 4);
+        } else if (lit < 0.4) {
+          // Curtain/blind (partial coverage)
+          ctx.fillStyle = '#D8D0C0'; ctx.fillRect(wx + 2, wy + 2, winW - 4, winH * 0.4);
+        }
+        // Cross-bar (muntin)
+        ctx.fillStyle = '#808070'; ctx.fillRect(wx + winW/2 - 1, wy, 2, winH);
+        ctx.fillRect(wx, wy + winH/2 - 1, winW, 2);
+        // Sill
+        ctx.fillStyle = '#B0A080'; ctx.fillRect(wx - 3, wy + winH, winW + 6, 5);
+      }
+    }
+
   } else if (type === 'warehouse') {
-    ctx.fillStyle = '#8C9298'; ctx.fillRect(0, 0, W, H);
-    for (let x = 0; x < W; x += 6) { ctx.fillStyle = x % 12 === 0 ? '#788088' : '#929A9E'; ctx.fillRect(x, 0, 3, H); }
-    for (let i = 0; i < 6; i++) { ctx.fillStyle = 'rgba(90,50,30,0.12)'; ctx.fillRect(Math.random()*W, 0, 2, H); }
-    ctx.fillStyle = '#606870'; ctx.fillRect(28, H - 68, 46, 66);
-    for (let y = H - 68; y < H; y += 10) { ctx.fillStyle = '#4A5058'; ctx.fillRect(28, y, 46, 2); }
+    // Corrugated metal siding with roll-up doors
+    ctx.fillStyle = '#7A8088'; ctx.fillRect(0, 0, W, H);
+    // Corrugation ridges
+    for (let x = 0; x < W; x += 12) {
+      ctx.fillStyle = x % 24 === 0 ? '#6A7078' : '#8A9098';
+      ctx.fillRect(x, 0, 6, H);
+    }
+    // Rust/weathering patches
+    for (let i = 0; i < 20; i++) {
+      ctx.fillStyle = `rgba(120,60,30,${0.04 + Math.random()*0.06})`;
+      const rx = Math.random() * W, ry = Math.random() * H;
+      ctx.beginPath(); ctx.ellipse(rx, ry, 8+Math.random()*20, 4+Math.random()*10, 0, 0, Math.PI*2); ctx.fill();
+    }
+    // Roll-up door
+    ctx.fillStyle = '#4A5258'; ctx.fillRect(W*0.15, H - 260, W*0.35, 250);
+    for (let y = H - 260; y < H - 10; y += 20) { ctx.fillStyle = '#3A4248'; ctx.fillRect(W*0.15, y, W*0.35, 3); }
+    // Personnel door
+    ctx.fillStyle = '#384048'; ctx.fillRect(W*0.65, H - 140, 50, 130);
+    ctx.fillStyle = '#505860'; ctx.fillRect(W*0.65 + 40, H - 80, 6, 6);
+    // High windows
+    for (let x = W*0.1; x < W*0.9; x += 80) {
+      ctx.fillStyle = '#B8C0C8'; ctx.globalAlpha = 0.4;
+      ctx.fillRect(x, H*0.15, 55, 30); ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = '#5A6268'; ctx.lineWidth = 2; ctx.strokeRect(x, H*0.15, 55, 30);
+    }
+
   } else {
-    ctx.fillStyle = '#141E2E'; ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#2A3C54'; ctx.lineWidth = 2;
-    for (let x = 0; x <= W; x += 22) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 16) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    for (let y = 2; y < H; y += 16) for (let x = 2; x < W; x += 22) {
-      ctx.fillStyle = `rgba(50,110,170,${0.06 + Math.random() * 0.12})`; ctx.fillRect(x, y, 18, 12);
+    // Modern campus/office — dark glass grid
+    ctx.fillStyle = '#101820'; ctx.fillRect(0, 0, W, H);
+    const panelW = 44, panelH = 64;
+    for (let y = 0; y < H; y += panelH) {
+      for (let x = 0; x < W; x += panelW) {
+        // Mullion grid
+        ctx.strokeStyle = '#2A3C4E'; ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, panelW, panelH);
+        // Glass variation
+        const b = 15 + Math.floor(Math.random() * 20);
+        ctx.fillStyle = `rgb(${b},${b + 10},${b + 25})`;
+        ctx.fillRect(x + 2, y + 2, panelW - 4, panelH - 4);
+        // Some lit offices
+        if (Math.random() < 0.2) {
+          ctx.fillStyle = `rgba(180,160,120,${0.05 + Math.random()*0.1})`;
+          ctx.fillRect(x + 2, y + 2, panelW - 4, panelH - 4);
+        }
+      }
     }
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
   return tex;
 }
 
@@ -215,7 +340,7 @@ function createTower(x: number, z: number, h: number, mats: ArchMats): THREE.Gro
 }
 
 function createMidrise(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(4, Math.min(h, 10));
+  h = Math.max(8, Math.min(h, 28));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const w = 10, d = 9;
@@ -231,7 +356,7 @@ function createMidrise(x: number, z: number, h: number, mats: ArchMats): THREE.G
 }
 
 function createSlab(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(3, Math.min(h, 6));
+  h = Math.max(6, Math.min(h, 18));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const w = 16, d = 7;
@@ -248,7 +373,7 @@ function createSlab(x: number, z: number, h: number, mats: ArchMats): THREE.Grou
 }
 
 function createResidential(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(3, Math.min(h, 6));
+  h = Math.max(5, Math.min(h, 14));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const w = 8, d = 8;
@@ -267,7 +392,7 @@ function createResidential(x: number, z: number, h: number, mats: ArchMats): THR
 }
 
 function createWarehouse(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(3, Math.min(h, 5));
+  h = Math.max(5, Math.min(h, 10));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const w = 18, d = 12;
@@ -281,7 +406,7 @@ function createWarehouse(x: number, z: number, h: number, mats: ArchMats): THREE
 }
 
 function createCampus(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(4, Math.min(h, 8));
+  h = Math.max(8, Math.min(h, 22));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const vols = [
@@ -301,7 +426,7 @@ function createCampus(x: number, z: number, h: number, mats: ArchMats): THREE.Gr
 }
 
 function createSpire(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(6, Math.min(h, 14));
+  h = Math.max(12, Math.min(h, 40));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const w = 7, d = 7;
@@ -320,7 +445,7 @@ function createSpire(x: number, z: number, h: number, mats: ArchMats): THREE.Gro
 }
 
 function createPodiumTower(x: number, z: number, h: number, mats: ArchMats): THREE.Group {
-  h = Math.max(8, Math.min(h, 40));
+  h = Math.max(16, Math.min(h, 80));
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   const podH = 3;
@@ -660,7 +785,7 @@ function createMoatShieldTower(cx: number, cz: number, logoTex: THREE.Texture): 
 function makeTree(x: number, z: number, rng: () => number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
-  const scale = 0.7 + rng() * 0.8; // 0.7× – 1.5× size variation
+  const scale = 1.8 + rng() * 1.8; // 1.8× – 3.6× for realistic 8–15m trees
   g.scale.setScalar(scale);
 
   const isConifer = rng() < 0.40; // 40% conifers, 60% deciduous
@@ -1763,11 +1888,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     // ── Renderer ──────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(W, H, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     renderer.toneMapping       = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace  = THREE.SRGBColorSpace;
 
     // ── Scene ─────────────────────────────────────────────────────────────────
@@ -1812,7 +1937,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         }
       `,
     });
-    const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16), skyMat);
+    const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 16), skyMat);
     scene.add(skyMesh);
 
     // ── Lighting ──────────────────────────────────────────────────────────────
@@ -1820,7 +1945,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.near   = 1;
-    sun.shadow.camera.far    = 800;
+    sun.shadow.camera.far    = 1200;
     sun.shadow.camera.left   = -320;
     sun.shadow.camera.right  = 320;
     sun.shadow.camera.top    = 320;
@@ -1850,14 +1975,14 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       sun.position.set(cfg.sunX, cfg.sunY, cfg.sunZ);
       sun.intensity  = cfg.sunIntensity;
       hemi.intensity = cfg.hemiIntensity;
-      scene.fog      = new THREE.Fog(cfg.fogColor, 180, 700);
+      scene.fog      = new THREE.Fog(cfg.fogColor, 250, 900);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: 0 };
     }
     applyTimeOfDay();
     const todInterval = setInterval(applyTimeOfDay, 60_000);
 
     // ── Camera ────────────────────────────────────────────────────────────────
-    const camera = new THREE.PerspectiveCamera(45, W / H, 0.5, 1200);
+    const camera = new THREE.PerspectiveCamera(45, W / H, 0.5, 2000);
 
     let orbitTarget = new THREE.Vector3(0, 0, 0);
     let orbitRadius = 280;
@@ -1887,8 +2012,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileCubemapShader();
     const envScene = new THREE.Scene();
-    envScene.add(new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat.clone()));
-    const envRT = pmremGenerator.fromScene(envScene, 0, 0.1, 1000);
+    envScene.add(new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16), skyMat.clone()));
+    const envRT = pmremGenerator.fromScene(envScene, 0, 0.1, 1600);
     const envMap = envRT.texture;
     pmremGenerator.dispose();
 
@@ -2926,7 +3051,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         }
 
         const H_RANGES: Record<ZoneType, [number, number]> = {
-          downtown: [30, 72], midrise: [14, 35], mixed: [8, 20], low: [5, 12], park: [0, 0], water: [0, 0],
+          downtown: [50, 120], midrise: [20, 50], mixed: [10, 28], low: [6, 15], park: [0, 0], water: [0, 0],
         };
         const [hMin, hMax] = H_RANGES[zone];
 
@@ -3164,7 +3289,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         if (viewModeRef.current === 'interior') {
           orbitRadius = Math.max(4, Math.min(28, orbitRadius - (dist - lastTouchDist) * 0.3));
         } else {
-          orbitRadius = Math.max(60, Math.min(500, orbitRadius - (dist - lastTouchDist) * 0.5));
+          orbitRadius = Math.max(60, Math.min(800, orbitRadius - (dist - lastTouchDist) * 0.5));
         }
         lastTouchDist = dist;
       } else {
@@ -3333,7 +3458,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           orbitRadius = 60;
           orbitPhi    = 1.05;
           orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
-          scene.fog = new THREE.Fog(0xe8f0f8, 180, 700);
+          scene.fog = new THREE.Fog(0xe8f0f8, 250, 900);
         } else {
           cityGroup.visible = false;
           interiorGroupRef.current.position.set(0, 0, 0);
@@ -3393,7 +3518,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
               orbitRadius = 60;
               orbitPhi    = 1.05;
               orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
-              scene.fog = new THREE.Fog(0xe8f0f8, 180, 700);
+              scene.fog = new THREE.Fog(0xe8f0f8, 250, 900);
             } else {
               cityGroup.visible = false;
               interiorGroup.visible = true;
@@ -3440,7 +3565,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       // Smooth zoom easing (city only)
       if (viewModeRef.current === 'city' && Math.abs(zoomVelocity) > 0.05) {
         const prev = orbitRadius;
-        orbitRadius = Math.max(60, Math.min(500, orbitRadius + zoomVelocity));
+        orbitRadius = Math.max(60, Math.min(800, orbitRadius + zoomVelocity));
         if (orbitRadius === prev) zoomVelocity = 0;
         zoomVelocity *= 0.82;
         minimapDirty = true;
