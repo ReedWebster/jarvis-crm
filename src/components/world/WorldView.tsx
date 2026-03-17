@@ -1963,7 +1963,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const H = canvas.clientHeight || 700;
 
     // ── Renderer ──────────────────────────────────────────────────────────────
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     renderer.setSize(W, H, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = false;
@@ -3308,7 +3308,9 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const clickPt   = new THREE.Vector2();
     const hoverPt   = new THREE.Vector2();
     const raycaster     = new THREE.Raycaster();
+    raycaster.far = 1200;
     const hoverRaycaster = new THREE.Raycaster();
+    hoverRaycaster.far = 800;
     const zoomRaycaster  = new THREE.Raycaster();
     const zoomPlane      = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     let selectedBlockState: BlockInfo | null = null;
@@ -3339,7 +3341,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         const dy = e.clientY - lastY;
         lastX = e.clientX; lastY = e.clientY;
         if (isPanning && viewModeRef.current === 'city') {
-          const panSpeed = orbitRadius * 0.0012;
+          const panSpeed = orbitRadius * 0.002;
           _tmpDir.set(0, 0, 0);
           _tmpRight.crossVectors(camera.getWorldDirection(_tmpDir), _up).normalize();
           _tmpFwd.set(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
@@ -3348,13 +3350,14 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           orbitTarget.y = 0;
         } else {
           orbitTheta += dx * 0.005;
+          orbitPhi = Math.max(0.05, Math.min(1.5, orbitPhi - dy * 0.003));
         }
         minimapDirty = true;
         updateCameraOrbit();
       } else if (viewModeRef.current === 'city') {
         // Hover highlight — throttled to avoid raycasting every mousemove
         const now = performance.now();
-        if (now - lastHoverRaycast < 50) {
+        if (now - lastHoverRaycast < 80) {
           // Still update tooltip position even when skipping raycast
           if (tooltipRef.current && hoveredBlock) {
             tooltipRef.current.style.left = `${e.clientX + 14}px`;
@@ -3809,7 +3812,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         const prev = orbitRadius;
         orbitRadius = Math.max(60, Math.min(800, orbitRadius + zoomVelocity));
         if (orbitRadius === prev) zoomVelocity = 0;
-        zoomVelocity *= 0.82;
+        zoomVelocity *= 0.7;
         minimapDirty = true;
         updateCameraOrbit();
       }
