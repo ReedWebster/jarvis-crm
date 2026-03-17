@@ -11,7 +11,7 @@ interface BlockInfo {
 
 const HEALTH_COLORS: Record<string, string> = { green: '#4ade80', yellow: '#fbbf24', red: '#ef4444' };
 
-function findLinkedProject(label: string, projects: Project[]): Project | null {
+export function findLinkedProject(label: string, projects: Project[]): Project | null {
   const lower = label.toLowerCase();
   const direct = projects.find(p => p.name.toLowerCase() === lower);
   if (direct) return direct;

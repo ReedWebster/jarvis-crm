@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
 import { WorldDataPanel } from './WorldDataPanel';
 import type { WorldViewAppData } from './WorldDataPanel';
-import { WorldBlockDataCard } from './WorldBlockDataCard';
+import { WorldBlockDataCard, findLinkedProject } from './WorldBlockDataCard';
 
 // ─── SEEDED RANDOM ────────────────────────────────────────────────────────────
 function seededRandom(seed: string): () => number {
@@ -1825,9 +1825,10 @@ interface WorldViewProps {
   districtTagMap?: Record<string, string>;
   onDistrictTagMapChange?: (map: Record<string, string>) => void;
   appData?: WorldViewAppData;
+  onNavigateToSection?: (section: string) => void;
 }
 
-export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange, appData }: WorldViewProps = {}) {
+export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange, appData, onNavigateToSection }: WorldViewProps = {}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
@@ -1855,6 +1856,12 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
   const interiorGroupRef     = useRef<THREE.Group | null>(null);
   const allInteriorMeshesRef = useRef<THREE.Mesh[]>([]);
   const blockArchetypeMapRef = useRef<Map<string, { arch: string; height: number }>>(new Map());
+
+  // Data-driven city refs
+  const districtBuildingMeshesRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+  const districtIndicatorsRef = useRef<Map<string, THREE.Group>>(new Map());
+  const originalMaterialsRef = useRef<Map<THREE.Mesh, { color: THREE.Color; emissive: THREE.Color; emissiveIntensity: number }>>(new Map());
+  const healthEmissiveRef = useRef<Map<string, { color: number; intensity: number }>>(new Map());
 
   // Time-of-day baseline (so exiting interior restores correct values)
   const cityLightRef   = useRef({ sunI: 2.5, hemiI: 0.5, fogColor: 0xe8f0f8, fogDensity: 0.0014 });
@@ -2967,6 +2974,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
             }
           });
           blockInfoToMeshes.set(info, byuMeshes);
+          districtBuildingMeshesRef.current.set(info.label, byuMeshes);
           cityGroup.add(stadium);
           continue;
         }
@@ -2980,9 +2988,18 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
               allBuildingMeshes.push(obj);
               blockMeshMap.set(obj, info);
               mshmMeshes.push(obj);
+              const mat = obj.material as THREE.MeshStandardMaterial;
+              if (mat.color) {
+                originalMaterialsRef.current.set(obj, {
+                  color: mat.color.clone(),
+                  emissive: mat.emissive?.clone() ?? new THREE.Color(0),
+                  emissiveIntensity: mat.emissiveIntensity ?? 0,
+                });
+              }
             }
           });
           blockInfoToMeshes.set(info, mshmMeshes);
+          districtBuildingMeshesRef.current.set(info.label, mshmMeshes);
           blockArchetypeMapRef.current.set(`${col},${row}`, { arch: 'podiumTower', height: 72 });
           cityGroup.add(tower);
           continue;
@@ -3113,8 +3130,21 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
               const arr = blockInfoToMeshes.get(info);
               if (arr) arr.push(obj);
               else blockInfoToMeshes.set(info, [obj]);
+              // Snapshot original material for health-reactive reset
+              const mat = obj.material as THREE.MeshStandardMaterial;
+              if (mat.color) {
+                originalMaterialsRef.current.set(obj, {
+                  color: mat.color.clone(),
+                  emissive: mat.emissive?.clone() ?? new THREE.Color(0),
+                  emissiveIntensity: mat.emissiveIntensity ?? 0,
+                });
+              }
             }
           });
+          // Register meshes by district label for data-driven visuals
+          const distMeshes = districtBuildingMeshesRef.current.get(info.label) ?? [];
+          const newMeshes = blockInfoToMeshes.get(info) ?? [];
+          districtBuildingMeshesRef.current.set(info.label, [...distMeshes, ...newMeshes]);
           cityGroup.add(group);
 
         }
@@ -3192,7 +3222,20 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         const hits = hoverRaycaster.intersectObjects(allBuildingMeshes, false);
         const newBlock = hits.length > 0 ? (blockMeshMap.get(hits[0].object as THREE.Mesh) ?? null) : null;
         if (newBlock !== hoveredBlock) {
-          for (const m of hoveredMeshes) (m.material as THREE.MeshStandardMaterial).emissive?.setHex(0x000000);
+          // Restore previous hover meshes — use health emissive if set, else original
+          for (const m of hoveredMeshes) {
+            const bi = m.userData.blockInfo as BlockInfo | undefined;
+            const healthState = bi ? healthEmissiveRef.current.get(bi.label) : undefined;
+            const mat = m.material as THREE.MeshStandardMaterial;
+            if (healthState) {
+              mat.emissive?.setHex(healthState.color);
+              mat.emissiveIntensity = healthState.intensity;
+            } else {
+              const orig = originalMaterialsRef.current.get(m);
+              if (orig) { mat.emissive?.copy(orig.emissive); mat.emissiveIntensity = orig.emissiveIntensity; }
+              else mat.emissive?.setHex(0x000000);
+            }
+          }
           hoveredMeshes.length = 0;
           hoveredBlock = newBlock;
           if (newBlock) {
@@ -3591,6 +3634,19 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       // Update water sun direction from light position
       waterShaderMat.uniforms.uSunDir.value.copy(sun.position).normalize();
 
+      // Animate construction indicators (beacons rotate, scaffolding pulses)
+      for (const [, indGroup] of districtIndicatorsRef.current) {
+        if (!indGroup.visible) continue;
+        for (const child of indGroup.children) {
+          if (child.userData.type === 'beacon') {
+            child.rotation.y += 0.04;
+          } else if (child.userData.type === 'scaffolding') {
+            child.scale.x = 1 + Math.sin(frameCount * 0.04) * 0.015;
+            child.scale.z = 1 + Math.sin(frameCount * 0.04) * 0.015;
+          }
+        }
+      }
+
       // Tree sway (subtle wind)
       if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
         const windTime = performance.now() * 0.001;
@@ -3637,6 +3693,143 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── DATA-DRIVEN CITY VISUALS ─────────────────────────────────────────────────
+  // React to appData changes: update building materials based on project health,
+  // add/remove construction indicators based on todos
+  useEffect(() => {
+    if (!appData || districtBuildingMeshesRef.current.size === 0 || !cityGroupRef.current) return;
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const HEALTH_CONFIG: Record<string, { emissiveColor: number; emissiveIntensity: number; accentColor: number }> = {
+      green:  { emissiveColor: 0xFFE8C0, emissiveIntensity: 0.08, accentColor: 0x4ade80 },
+      yellow: { emissiveColor: 0xFFD080, emissiveIntensity: 0.04, accentColor: 0xfbbf24 },
+      red:    { emissiveColor: 0x303848, emissiveIntensity: 0.02, accentColor: 0xef4444 },
+    };
+
+    for (const [label, meshes] of districtBuildingMeshesRef.current) {
+      const project = findLinkedProject(label, appData.projects);
+
+      // ── Reset or remove indicators if no active project ──
+      if (!project || project.status !== 'active') {
+        // Reset materials to original
+        for (const mesh of meshes) {
+          const orig = originalMaterialsRef.current.get(mesh);
+          if (orig) {
+            const mat = mesh.material as THREE.MeshStandardMaterial;
+            mat.emissive.copy(orig.emissive);
+            mat.emissiveIntensity = orig.emissiveIntensity;
+          }
+        }
+        healthEmissiveRef.current.delete(label);
+        // Hide indicators
+        const ind = districtIndicatorsRef.current.get(label);
+        if (ind) { ind.visible = false; }
+        continue;
+      }
+
+      // ── Apply health-based emissive to all building meshes ──
+      const cfg = HEALTH_CONFIG[project.health];
+      if (cfg) {
+        for (const mesh of meshes) {
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          if (!mat.emissive) continue;
+          mat.emissive.setHex(cfg.emissiveColor);
+          mat.emissiveIntensity = cfg.emissiveIntensity;
+        }
+        healthEmissiveRef.current.set(label, { color: cfg.emissiveColor, intensity: cfg.emissiveIntensity });
+      }
+
+      // ── Construction indicators based on todos ──
+      const linkedTodos = appData.todos.filter(
+        t => t.linkedType === 'project' && t.linkedId === project.id && t.status !== 'done'
+      );
+      const overdueTodos = linkedTodos.filter(t => t.dueDate && t.dueDate < todayStr);
+      const inProgressTodos = linkedTodos.filter(t => t.status === 'in-progress');
+
+      // Get or create indicator group
+      let indGroup = districtIndicatorsRef.current.get(label);
+      if (!indGroup) {
+        indGroup = new THREE.Group();
+        indGroup.userData.districtLabel = label;
+        cityGroupRef.current.add(indGroup);
+        districtIndicatorsRef.current.set(label, indGroup);
+      }
+      // Clear old indicators
+      while (indGroup.children.length > 0) {
+        const child = indGroup.children[0];
+        indGroup.remove(child);
+        if (child instanceof THREE.Mesh) { child.geometry.dispose(); (child.material as THREE.Material).dispose(); }
+      }
+      indGroup.visible = true;
+
+      // Find block center from first mesh
+      let blockCx = 0, blockCz = 0;
+      if (meshes.length > 0) {
+        const bi = meshes[0].userData.blockInfo;
+        if (bi) { blockCx = bi.cx; blockCz = bi.cz; }
+      }
+
+      // ── Health accent ring at base ──
+      if (cfg) {
+        const ringMat = new THREE.MeshStandardMaterial({
+          color: cfg.accentColor, emissive: cfg.accentColor, emissiveIntensity: 0.4,
+          transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(new THREE.RingGeometry(18, 22, 32), ringMat);
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(blockCx, 0.08, blockCz);
+        ring.userData.type = 'accent';
+        indGroup.add(ring);
+      }
+
+      // ── Overdue: red rotating beacon ──
+      if (overdueTodos.length > 0) {
+        const beaconMat = new THREE.MeshStandardMaterial({
+          color: '#ef4444', emissive: '#ef4444', emissiveIntensity: 0.8,
+        });
+        const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.0, 8), beaconMat);
+        beacon.position.set(blockCx, 1.5, blockCz + 22);
+        beacon.userData.type = 'beacon';
+        indGroup.add(beacon);
+        // Warning barrier
+        const barrierMat = new THREE.MeshStandardMaterial({ color: '#ef4444', emissive: '#ef4444', emissiveIntensity: 0.3 });
+        for (let bi = 0; bi < Math.min(overdueTodos.length, 4); bi++) {
+          const barrier = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 0.2), barrierMat.clone());
+          barrier.position.set(blockCx - 8 + bi * 5, 0.6, blockCz + 24);
+          barrier.userData.type = 'barrier';
+          indGroup.add(barrier);
+        }
+      }
+
+      // ── In-progress: yellow scaffolding ──
+      if (inProgressTodos.length > 0) {
+        const scaffMat = new THREE.MeshBasicMaterial({ color: '#fbbf24', wireframe: true, transparent: true, opacity: 0.5 });
+        // Find tallest building mesh for scaffolding height
+        let maxH = 10;
+        for (const m of meshes) {
+          const bbox = new THREE.Box3().setFromObject(m);
+          if (bbox.max.y > maxH) maxH = bbox.max.y;
+        }
+        const scaffH = Math.min(maxH * 0.6, 40);
+        const scaffolding = new THREE.Mesh(
+          new THREE.BoxGeometry(8, scaffH, 2), scaffMat
+        );
+        scaffolding.position.set(blockCx + 12, scaffH / 2, blockCz);
+        scaffolding.userData.type = 'scaffolding';
+        indGroup.add(scaffolding);
+        // Cross braces
+        const braceMat = new THREE.MeshBasicMaterial({ color: '#fbbf24', transparent: true, opacity: 0.4 });
+        for (let by = 3; by < scaffH; by += 6) {
+          const brace = new THREE.Mesh(new THREE.BoxGeometry(8, 0.15, 0.15), braceMat.clone());
+          brace.position.set(blockCx + 12, by, blockCz);
+          indGroup.add(brace);
+        }
+      }
+    }
+  }, [appData]);
 
   // Draw floor plan when selected building changes
   useEffect(() => {
@@ -3771,6 +3964,46 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
                 >
                   Enter Building →
                 </button>
+
+                {/* Navigation buttons — only show when linked project exists */}
+                {appData && onNavigateToSection && (() => {
+                  const proj = findLinkedProject(selectedBlock.label, appData.projects);
+                  if (!proj) return null;
+                  return (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                      <button
+                        className="wv-btn"
+                        onClick={() => onNavigateToSection('projects')}
+                        style={{
+                          flex: 1, padding: '6px 0',
+                          background: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.22)',
+                          borderRadius: 6, color: '#4ade80', cursor: 'pointer', fontSize: 10,
+                          fontWeight: 600, transition: 'background 0.15s',
+                        }}
+                      >Project</button>
+                      <button
+                        className="wv-btn"
+                        onClick={() => onNavigateToSection('todos')}
+                        style={{
+                          flex: 1, padding: '6px 0',
+                          background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.22)',
+                          borderRadius: 6, color: '#fbbf24', cursor: 'pointer', fontSize: 10,
+                          fontWeight: 600, transition: 'background 0.15s',
+                        }}
+                      >Todos</button>
+                      <button
+                        className="wv-btn"
+                        onClick={() => onNavigateToSection('contacts')}
+                        style={{
+                          flex: 1, padding: '6px 0',
+                          background: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.22)',
+                          borderRadius: 6, color: '#60a5fa', cursor: 'pointer', fontSize: 10,
+                          fontWeight: 600, transition: 'background 0.15s',
+                        }}
+                      >Contacts</button>
+                    </div>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setSelectedBlock(null)}

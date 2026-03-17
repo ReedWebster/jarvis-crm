@@ -435,6 +435,7 @@ function MainApp() {
             districtTagMap={districtTagMap}
             onDistrictTagMapChange={setDistrictTagMap}
             appData={worldAppData}
+            onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
           />
         );
       case 'social':
