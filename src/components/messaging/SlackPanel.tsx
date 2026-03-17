@@ -26,7 +26,7 @@ interface SlackPanelProps {
   onFetchMessages: (channelId: string) => Promise<SlackMessage[]>;
   onSendMessage: (channelId: string, text: string) => Promise<void>;
   onMarkRead: (channelId: string, ts: string) => Promise<void>;
-  usersCache: Map<string, { displayName: string }>;
+  usersCache: Map<string, { id: string; displayName: string; realName: string; avatar: string; isBot: boolean }>;
 }
 
 export function SlackPanel({
@@ -287,6 +287,7 @@ export function SlackPanel({
               channelName={selectedChannel.name}
               onSend={handleSend}
               disabled={isLoading}
+              usersCache={usersCache as Map<string, import('../../types/slack').SlackUser>}
             />
           </>
         ) : (
