@@ -1786,7 +1786,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── City grid parameters ───────────────────────────────────────────────────
     const GRID_N    = 13;
     const BLOCK_SIZE = 50;
-    const STEP       = 58;
+    const STEP       = 54;
     const HALF       = Math.floor(GRID_N / 2);
 
     // Road: asphalt grain canvas texture
@@ -1800,7 +1800,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90 });
     const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
 
-    const ROAD_W = 6;
+    const ROAD_W = 4;
     const GRID_EXTENT = HALF * STEP + STEP / 2;
 
     // ── Island terrain (ocean → beach → foam → city ground) ──────────────────
@@ -2087,12 +2087,12 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       if (
         (col === 2 && row === -2) || (col === 3 && row === -2) ||
         (col === 2 && row === -3) || (col === 3 && row === -3) ||
-        (col === -3 && row === 1) || (col === 1 && row === 3)
+        (col === -3 && row === 1)
       ) return 'park';
       if (row === -HALF || (row === -HALF + 1 && Math.abs(col) >= 3)) return 'water';
-      if (dist <= 1.0) return 'downtown';
-      if (dist <= 2.2) return 'midrise';
-      if (dist <= 3.2) return 'mixed';
+      if (dist <= 2.0) return 'downtown';
+      if (dist <= 3.5) return 'midrise';
+      if (dist <= 4.8) return 'mixed';
       return 'low';
     }
 
@@ -2180,8 +2180,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         if (zone === 'water') continue;
 
         // ── Plaza blocks (open public squares, no buildings) ──────────────────
-        const isPlaza = (col === -1 && row === 2) || (col === 2 && row === -1) ||
-                        (col === -2 && row === 0) || (col === 1 && row === -2);
+        const isPlaza = (col === -1 && row === 2);
         if (isPlaza) {
           const plazaRng  = seededRandom(`plaza-${col}-${row}`);
           const stoneMat  = new THREE.MeshStandardMaterial({ color: '#BBAA98', roughness: 0.88 });
@@ -2263,7 +2262,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         }
 
         const rng = seededRandom(`block-${col}-${row}`);
-        const BUILD_AREA = BLOCK_SIZE - 8;
+        const BUILD_AREA = BLOCK_SIZE - 4;
 
         type Arch = 'tower' | 'podiumTower' | 'midrise' | 'slab' | 'campus' | 'spire' | 'residential' | 'warehouse';
         type PlacementDef = { ox: number; oz: number; arch: Arch; hMult: number };
@@ -2272,56 +2271,70 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         if (zone === 'downtown') {
           placements = [
             { ox: 0,   oz: 0,   arch: rng() > 0.5 ? 'podiumTower' : 'spire', hMult: 1.0 },
-            { ox: -16, oz: -12, arch: 'tower',   hMult: 0.75 },
-            { ox:  16, oz: -12, arch: 'tower',   hMult: 0.80 },
-            { ox: -16, oz:  12, arch: 'tower',   hMult: 0.70 },
-            { ox:  16, oz:  12, arch: 'midrise',  hMult: 0.65 },
-            { ox:  0,  oz: -22, arch: 'midrise',  hMult: 0.60 },
-            { ox:  0,  oz:  22, arch: 'midrise',  hMult: 0.55 },
-            { ox: -22, oz:   0, arch: 'slab',     hMult: 0.50 },
-            { ox:  22, oz:   0, arch: 'midrise',  hMult: 0.55 },
+            { ox: -16, oz: -14, arch: 'tower',       hMult: 0.85 },
+            { ox:  16, oz: -14, arch: 'tower',       hMult: 0.90 },
+            { ox: -16, oz:  14, arch: 'tower',       hMult: 0.80 },
+            { ox:  16, oz:  14, arch: 'podiumTower', hMult: 0.75 },
+            { ox:  0,  oz: -20, arch: 'midrise',     hMult: 0.70 },
+            { ox:  0,  oz:  20, arch: 'midrise',     hMult: 0.65 },
+            { ox: -20, oz:   0, arch: 'slab',        hMult: 0.60 },
+            { ox:  20, oz:   0, arch: 'midrise',     hMult: 0.65 },
+            { ox: -10, oz: -20, arch: 'tower',       hMult: 0.55 },
+            { ox:  10, oz:  20, arch: 'tower',       hMult: 0.55 },
+            { ox: -20, oz: -14, arch: 'midrise',     hMult: 0.50 },
+            { ox:  20, oz:  14, arch: 'midrise',     hMult: 0.50 },
           ];
         } else if (zone === 'midrise') {
           placements = [
-            { ox:   0, oz:   0, arch: 'midrise',  hMult: 0.85 },
-            { ox: -14, oz: -10, arch: 'slab',     hMult: 0.70 },
-            { ox:  14, oz: -10, arch: 'midrise',  hMult: 0.75 },
-            { ox: -14, oz:  12, arch: 'midrise',  hMult: 0.65 },
-            { ox:  14, oz:  12, arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.60 },
-            { ox:   0, oz: -20, arch: 'slab',     hMult: 0.55 },
-            { ox:   0, oz:  20, arch: 'midrise',  hMult: 0.50 },
+            { ox:   0, oz:   0, arch: 'midrise',  hMult: 0.90 },
+            { ox: -14, oz: -12, arch: 'slab',     hMult: 0.80 },
+            { ox:  14, oz: -12, arch: 'midrise',  hMult: 0.85 },
+            { ox: -14, oz:  12, arch: 'midrise',  hMult: 0.75 },
+            { ox:  14, oz:  12, arch: rng() > 0.5 ? 'tower' : 'midrise', hMult: 0.70 },
+            { ox:   0, oz: -20, arch: 'slab',     hMult: 0.65 },
+            { ox:   0, oz:  20, arch: 'midrise',  hMult: 0.60 },
+            { ox: -20, oz:   0, arch: 'slab',     hMult: 0.55 },
+            { ox:  20, oz:   0, arch: 'midrise',  hMult: 0.55 },
+            { ox: -10, oz: -20, arch: 'residential', hMult: 0.50 },
+            { ox:  10, oz:  20, arch: 'residential', hMult: 0.50 },
           ];
         } else if (zone === 'mixed') {
           placements = [
-            { ox:   0, oz:   0, arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.60 },
-            { ox: -14, oz: -10, arch: 'residential', hMult: 0.55 },
-            { ox:  14, oz: -10, arch: 'midrise',     hMult: 0.50 },
-            { ox: -14, oz:  10, arch: 'residential', hMult: 0.45 },
-            { ox:  14, oz:  10, arch: 'residential', hMult: 0.45 },
-            { ox:   0, oz: -20, arch: 'slab',        hMult: 0.40 },
+            { ox:   0, oz:   0, arch: rng() > 0.5 ? 'campus' : 'midrise', hMult: 0.75 },
+            { ox: -14, oz: -12, arch: 'residential', hMult: 0.65 },
+            { ox:  14, oz: -12, arch: 'midrise',     hMult: 0.60 },
+            { ox: -14, oz:  12, arch: 'residential', hMult: 0.55 },
+            { ox:  14, oz:  12, arch: 'residential', hMult: 0.55 },
+            { ox:   0, oz: -20, arch: 'slab',        hMult: 0.50 },
+            { ox:   0, oz:  20, arch: 'slab',        hMult: 0.45 },
+            { ox: -20, oz:   0, arch: 'residential', hMult: 0.45 },
+            { ox:  20, oz:   0, arch: 'residential', hMult: 0.45 },
           ];
         } else {
           placements = [
-            { ox:   0, oz:   0, arch: 'residential', hMult: 0.40 },
-            { ox: -14, oz: -10, arch: 'residential', hMult: 0.35 },
-            { ox:  14, oz: -10, arch: 'residential', hMult: 0.35 },
-            { ox:  -6, oz:  14, arch: rng() > 0.6 ? 'warehouse' : 'residential', hMult: 0.30 },
-            { ox:  12, oz:  14, arch: 'residential', hMult: 0.30 },
+            { ox:   0, oz:   0, arch: 'residential', hMult: 0.55 },
+            { ox: -14, oz: -12, arch: 'residential', hMult: 0.50 },
+            { ox:  14, oz: -12, arch: 'residential', hMult: 0.45 },
+            { ox: -14, oz:  12, arch: rng() > 0.6 ? 'warehouse' : 'residential', hMult: 0.40 },
+            { ox:  14, oz:  12, arch: 'residential', hMult: 0.40 },
+            { ox:   0, oz: -20, arch: 'residential', hMult: 0.35 },
+            { ox:   0, oz:  20, arch: 'residential', hMult: 0.35 },
+            { ox: -20, oz:   0, arch: rng() > 0.5 ? 'warehouse' : 'residential', hMult: 0.30 },
           ];
         }
 
         const H_RANGES: Record<ZoneType, [number, number]> = {
-          downtown: [20, 48], midrise: [8, 18], mixed: [4, 11], low: [3, 7], park: [0, 0], water: [0, 0],
+          downtown: [30, 72], midrise: [14, 35], mixed: [8, 20], low: [5, 12], park: [0, 0], water: [0, 0],
         };
         const [hMin, hMax] = H_RANGES[zone];
 
         for (const p of placements) {
-          const jx = (rng() - 0.5) * 4;
-          const jz = (rng() - 0.5) * 4;
+          const jx = (rng() - 0.5) * 2;
+          const jz = (rng() - 0.5) * 2;
           const wx = cx + p.ox + jx;
           const wz = cz + p.oz + jz;
           const halfBA = BUILD_AREA / 2;
-          if (Math.abs(wx - cx) > halfBA - 6 || Math.abs(wz - cz) > halfBA - 6) continue;
+          if (Math.abs(wx - cx) > halfBA - 3 || Math.abs(wz - cz) > halfBA - 3) continue;
 
           const h = hMin + (hMax - hMin) * rng() * p.hMult;
 
@@ -2364,7 +2377,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
         }
 
         const treeRng = seededRandom(`trees-${col}-${row}`);
-        for (let t = 0; t < 3; t++) {
+        for (let t = 0; t < 1; t++) {
           const edge = BUILD_AREA / 2 + 2;
           const side = treeRng() > 0.5 ? 1 : -1;
           const tx = cx + (treeRng() - 0.5) * BLOCK_SIZE * 0.7;
