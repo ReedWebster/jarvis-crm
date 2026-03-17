@@ -1786,8 +1786,13 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── City grid parameters ───────────────────────────────────────────────────
     const GRID_N    = 13;
     const BLOCK_SIZE = 50;
-    const STEP       = 54;
     const HALF       = Math.floor(GRID_N / 2);
+    const STEP       = 54; // average spacing reference
+
+    // Non-uniform block center positions — varying gaps create avenues vs side streets
+    //            col: -6    -5    -4    -3    -2    -1     0     1     2     3     4     5     6
+    const COL_CENTERS = [-350, -292, -232, -174, -118, -58,   0,   60, 122, 180, 242, 298, 356];
+    const ROW_CENTERS = [-350, -290, -230, -172, -116, -58,   0,   58, 118, 176, 236, 294, 354];
 
     // Road: asphalt grain canvas texture
     const roadCanvas = document.createElement('canvas'); roadCanvas.width = roadCanvas.height = 128;
@@ -1801,7 +1806,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
 
     const ROAD_W = 4;
-    const GRID_EXTENT = HALF * STEP + STEP / 2;
+    const GRID_EXTENT = Math.max(Math.abs(COL_CENTERS[0]), COL_CENTERS[GRID_N - 1]) + BLOCK_SIZE / 2 + 4;
 
     // ── Island terrain (ocean → beach → foam → city ground) ──────────────────
     // Water shader (declared early so ocean can reuse it; same ref used for city water blocks below)
@@ -1856,13 +1861,27 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     ground.receiveShadow = true;
     cityGroup.add(ground);
 
-    // ── Roads (connected: segmented sidewalks, clean intersections) ───────────
-    const roadXs: number[] = [];
-    const roadZs: number[] = [];
-    for (let i = 0; i <= GRID_N; i++) {
-      roadXs.push((-HALF - 0.5 + i) * STEP);
-      roadZs.push((-HALF - 0.5 + i) * STEP);
+    // ── Roads (non-uniform spacing, segmented sidewalks, clean intersections) ──
+    // Compute road positions from midpoints between adjacent block centers
+    const roadXs: { pos: number; w: number }[] = [];
+    for (let i = 0; i < GRID_N - 1; i++) {
+      const gap = COL_CENTERS[i + 1] - COL_CENTERS[i];
+      roadXs.push({ pos: (COL_CENTERS[i] + COL_CENTERS[i + 1]) / 2, w: gap > 60 ? 6 : 4 });
     }
+    roadXs.unshift({ pos: COL_CENTERS[0] - 27, w: 4 });
+    roadXs.push({ pos: COL_CENTERS[GRID_N - 1] + 27, w: 4 });
+
+    const roadZs: { pos: number; w: number }[] = [];
+    for (let i = 0; i < GRID_N - 1; i++) {
+      const gap = ROW_CENTERS[i + 1] - ROW_CENTERS[i];
+      roadZs.push({ pos: (ROW_CENTERS[i] + ROW_CENTERS[i + 1]) / 2, w: gap > 60 ? 6 : 4 });
+    }
+    roadZs.unshift({ pos: ROW_CENTERS[0] - 27, w: 4 });
+    roadZs.push({ pos: ROW_CENTERS[GRID_N - 1] + 27, w: 4 });
+
+    // Flat arrays for intersection / dash checks
+    const roadXposArr = roadXs.map(r => r.pos);
+    const roadZposArr = roadZs.map(r => r.pos);
 
     // Lamp post materials (shared across all posts)
     const lampPoleMat = new THREE.MeshStandardMaterial({ color: '#505860', roughness: 0.8 });
@@ -1871,48 +1890,44 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const lampHeadGeo = new THREE.BoxGeometry(0.6, 0.25, 0.25);
 
     // Vertical roads
-    for (const xPos of roadXs) {
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, GRID_EXTENT * 2), roadMat);
+    for (const { pos: xPos, w: rw } of roadXs) {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(rw, GRID_EXTENT * 2), roadMat);
       road.rotation.x = -Math.PI / 2;
       road.position.set(xPos, 0.01, 0);
       road.receiveShadow = true;
       cityGroup.add(road);
-      // Segmented sidewalks between intersections
       const curbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadZs.length - 1; s++) {
-        const zStart = roadZs[s]   + ROAD_W / 2 + 0.15;
-        const zEnd   = roadZs[s+1] - ROAD_W / 2 - 0.15;
+        const zStart = roadZs[s].pos   + roadZs[s].w / 2 + 0.15;
+        const zEnd   = roadZs[s+1].pos - roadZs[s+1].w / 2 - 0.15;
         const segLen = zEnd - zStart;
         if (segLen <= 0) continue;
         const zMid = (zStart + zEnd) / 2;
         for (const side of [-1, 1]) {
           const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.6, segLen), swalkMat);
           sw.rotation.x = -Math.PI / 2;
-          sw.position.set(xPos + side * (ROAD_W / 2 + 0.8), 0.012, zMid);
+          sw.position.set(xPos + side * (rw / 2 + 0.8), 0.012, zMid);
           sw.receiveShadow = true;
           cityGroup.add(sw);
-          // Curb strip between road and sidewalk
           const curb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, segLen), curbMat.clone());
-          curb.position.set(xPos + side * (ROAD_W / 2 + 0.11), 0.06, zMid);
+          curb.position.set(xPos + side * (rw / 2 + 0.11), 0.06, zMid);
           curb.receiveShadow = true; curb.castShadow = true;
           cityGroup.add(curb);
-          // Lamp posts every 12 units along segment (downtown + midrise zones only)
-          if (Math.abs(xPos) <= 2.5 * STEP) {
+          if (Math.abs(xPos) <= 200) {
             for (let lz = zStart + 4; lz <= zEnd - 4; lz += 12) {
               const pole = new THREE.Mesh(lampPoleGeo, lampPoleMat);
-              pole.position.set(xPos + side * (ROAD_W / 2 + 1.5), 1.75, lz);
+              pole.position.set(xPos + side * (rw / 2 + 1.5), 1.75, lz);
               pole.castShadow = true;
               cityGroup.add(pole);
               const head = new THREE.Mesh(lampHeadGeo, lampHeadMat);
-              head.position.set(xPos + side * (ROAD_W / 2 + 1.5), 3.625, lz);
+              head.position.set(xPos + side * (rw / 2 + 1.5), 3.625, lz);
               cityGroup.add(head);
             }
           }
         }
       }
-      // Dashes — skip near intersections
       for (let dz = -GRID_EXTENT + 3; dz < GRID_EXTENT; dz += 6) {
-        if (roadZs.some(rz => Math.abs(dz - rz) < ROAD_W)) continue;
+        if (roadZposArr.some(rz => Math.abs(dz - rz) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
         d.rotation.x = -Math.PI / 2;
         d.position.set(xPos, 0.016, dz);
@@ -1921,48 +1936,44 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     }
 
     // Horizontal roads
-    for (const zPos of roadZs) {
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, ROAD_W), roadMat);
+    for (const { pos: zPos, w: rw } of roadZs) {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, rw), roadMat);
       road.rotation.x = -Math.PI / 2;
       road.position.set(0, 0.01, zPos);
       road.receiveShadow = true;
       cityGroup.add(road);
-      // Segmented sidewalks between intersections
       const hCurbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadXs.length - 1; s++) {
-        const xStart = roadXs[s]   + ROAD_W / 2 + 0.15;
-        const xEnd   = roadXs[s+1] - ROAD_W / 2 - 0.15;
+        const xStart = roadXs[s].pos   + roadXs[s].w / 2 + 0.15;
+        const xEnd   = roadXs[s+1].pos - roadXs[s+1].w / 2 - 0.15;
         const segLen = xEnd - xStart;
         if (segLen <= 0) continue;
         const xMid = (xStart + xEnd) / 2;
         for (const side of [-1, 1]) {
           const sw = new THREE.Mesh(new THREE.PlaneGeometry(segLen, 1.6), swalkMat);
           sw.rotation.x = -Math.PI / 2;
-          sw.position.set(xMid, 0.012, zPos + side * (ROAD_W / 2 + 0.8));
+          sw.position.set(xMid, 0.012, zPos + side * (rw / 2 + 0.8));
           sw.receiveShadow = true;
           cityGroup.add(sw);
-          // Curb strip
           const curb = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.12, 0.22), hCurbMat.clone());
-          curb.position.set(xMid, 0.06, zPos + side * (ROAD_W / 2 + 0.11));
+          curb.position.set(xMid, 0.06, zPos + side * (rw / 2 + 0.11));
           curb.receiveShadow = true; curb.castShadow = true;
           cityGroup.add(curb);
-          // Lamp posts every 12 units along segment (downtown + midrise zones only)
-          if (Math.abs(zPos) <= 2.5 * STEP) {
+          if (Math.abs(zPos) <= 200) {
             for (let lx = xStart + 4; lx <= xEnd - 4; lx += 12) {
               const pole = new THREE.Mesh(lampPoleGeo, lampPoleMat);
-              pole.position.set(lx, 1.75, zPos + side * (ROAD_W / 2 + 1.5));
+              pole.position.set(lx, 1.75, zPos + side * (rw / 2 + 1.5));
               pole.castShadow = true;
               cityGroup.add(pole);
               const head = new THREE.Mesh(lampHeadGeo, lampHeadMat);
-              head.position.set(lx, 3.625, zPos + side * (ROAD_W / 2 + 1.5));
+              head.position.set(lx, 3.625, zPos + side * (rw / 2 + 1.5));
               cityGroup.add(head);
             }
           }
         }
       }
-      // Dashes — skip near intersections
       for (let dx = -GRID_EXTENT + 3; dx < GRID_EXTENT; dx += 6) {
-        if (roadXs.some(rx => Math.abs(dx - rx) < ROAD_W)) continue;
+        if (roadXposArr.some(rx => Math.abs(dx - rx) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.18), dashMat);
         d.rotation.x = -Math.PI / 2;
         d.position.set(dx, 0.016, zPos);
@@ -1971,9 +1982,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     }
 
     // Intersection fill squares (clean asphalt at every crossing)
-    for (const xPos of roadXs) {
-      for (const zPos of roadZs) {
-        const fill = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), roadMat);
+    for (const { pos: xPos, w: xw } of roadXs) {
+      for (const { pos: zPos, w: zw } of roadZs) {
+        const iw = Math.max(xw, zw);
+        const fill = new THREE.Mesh(new THREE.PlaneGeometry(iw, iw), roadMat);
         fill.rotation.x = -Math.PI / 2;
         fill.position.set(xPos, 0.013, zPos);
         cityGroup.add(fill);
@@ -1992,34 +2004,103 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
       const cwTex = new THREE.CanvasTexture(cwCanvas);
       const cwMat = new THREE.MeshStandardMaterial({ map: cwTex, roughness: 0.95, transparent: true, opacity: 0.85 });
-      for (const xPos of roadXs) {
-        for (const zPos of roadZs) {
+      for (const { pos: xPos, w: xw } of roadXs) {
+        for (const { pos: zPos, w: zw } of roadZs) {
           // Only at downtown + midrise intersections
-          if (Math.abs(xPos) > 2.5 * STEP || Math.abs(zPos) > 2.5 * STEP) continue;
-          const halfR = ROAD_W / 2;
+          if (Math.abs(xPos) > 200 || Math.abs(zPos) > 200) continue;
+          const halfRx = xw / 2;
+          const halfRz = zw / 2;
           // 4 approaches: N, S, E, W
-          const cwW = ROAD_W - 1.5;
+          const cwW = Math.min(xw, zw) - 1.5;
           const cwLen = 3.5;
           // North approach
           const cwN = new THREE.Mesh(new THREE.PlaneGeometry(cwW, cwLen), cwMat);
           cwN.rotation.x = -Math.PI / 2;
-          cwN.position.set(xPos, 0.019, zPos - halfR - cwLen / 2 - 0.1);
+          cwN.position.set(xPos, 0.019, zPos - halfRz - cwLen / 2 - 0.1);
           cityGroup.add(cwN);
           // South approach
           const cwS = new THREE.Mesh(new THREE.PlaneGeometry(cwW, cwLen), cwMat);
           cwS.rotation.x = -Math.PI / 2;
-          cwS.position.set(xPos, 0.019, zPos + halfR + cwLen / 2 + 0.1);
+          cwS.position.set(xPos, 0.019, zPos + halfRz + cwLen / 2 + 0.1);
           cityGroup.add(cwS);
           // West approach (rotated 90°)
           const cwW2 = new THREE.Mesh(new THREE.PlaneGeometry(cwLen, cwW), cwMat);
           cwW2.rotation.x = -Math.PI / 2;
-          cwW2.position.set(xPos - halfR - cwLen / 2 - 0.1, 0.019, zPos);
+          cwW2.position.set(xPos - halfRx - cwLen / 2 - 0.1, 0.019, zPos);
           cityGroup.add(cwW2);
           // East approach
           const cwE = new THREE.Mesh(new THREE.PlaneGeometry(cwLen, cwW), cwMat);
           cwE.rotation.x = -Math.PI / 2;
-          cwE.position.set(xPos + halfR + cwLen / 2 + 0.1, 0.019, zPos);
+          cwE.position.set(xPos + halfRx + cwLen / 2 + 0.1, 0.019, zPos);
           cityGroup.add(cwE);
+        }
+      }
+    }
+
+    // ── Diagonal "Broadway" avenue ──────────────────────────────────────────────
+    interface DiagAvenue { points: [number, number][]; width: number; name: string; }
+    const DIAGONALS: DiagAvenue[] = [{
+      points: [
+        [COL_CENTERS[1],  ROW_CENTERS[0]],
+        [COL_CENTERS[4],  ROW_CENTERS[3]],
+        [COL_CENTERS[7],  ROW_CENTERS[6]],
+        [COL_CENTERS[10], ROW_CENTERS[10]],
+        [COL_CENTERS[12], ROW_CENTERS[12]],
+      ],
+      width: 7,
+      name: 'Broadway',
+    }];
+
+    // Helper: perpendicular distance from point (px,pz) to line segment (a→b)
+    function ptSegDist(px: number, pz: number, a: [number, number], b: [number, number]): number {
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const lenSq = dx * dx + dz * dz;
+      if (lenSq === 0) return Math.hypot(px - a[0], pz - a[1]);
+      let t = ((px - a[0]) * dx + (pz - a[1]) * dz) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (a[0] + t * dx), pz - (a[1] + t * dz));
+    }
+
+    // Render diagonal road segments
+    for (const diag of DIAGONALS) {
+      for (let i = 0; i < diag.points.length - 1; i++) {
+        const [ax, az] = diag.points[i];
+        const [bx, bz] = diag.points[i + 1];
+        const dx = bx - ax, dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        const angle = Math.atan2(dx, dz);
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+
+        // Road surface (above grid roads)
+        const seg = new THREE.Mesh(new THREE.PlaneGeometry(diag.width, len + 2), roadMat);
+        seg.rotation.x = -Math.PI / 2;
+        seg.rotation.z = angle;
+        seg.position.set(mx, 0.022, mz);
+        seg.receiveShadow = true;
+        cityGroup.add(seg);
+
+        // Sidewalks on each side
+        for (const side of [-1, 1]) {
+          const offX = Math.cos(angle) * side * (diag.width / 2 + 0.8);
+          const offZ = -Math.sin(angle) * side * (diag.width / 2 + 0.8);
+          const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.6, len + 2), swalkMat);
+          sw.rotation.x = -Math.PI / 2;
+          sw.rotation.z = angle;
+          sw.position.set(mx + offX, 0.024, mz + offZ);
+          sw.receiveShadow = true;
+          cityGroup.add(sw);
+        }
+
+        // Center dashes along diagonal
+        const dashStep = 6;
+        for (let d = dashStep; d < len - dashStep; d += dashStep) {
+          const t = d / len;
+          const dpx = ax + t * dx, dpz = az + t * dz;
+          const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
+          dash.rotation.x = -Math.PI / 2;
+          dash.rotation.z = angle;
+          dash.position.set(dpx, 0.028, dpz);
+          cityGroup.add(dash);
         }
       }
     }
@@ -2064,9 +2145,134 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       }
     }
 
-    // ── Zone assignment ────────────────────────────────────────────────────────
+    // ── District & Zone system ─────────────────────────────────────────────────
+    interface DistrictDef {
+      name: string;
+      zone: ZoneType;
+      color: string;
+      palette?: { main: string; alt: string; trim: string }[];
+    }
+    const DISTRICTS: Record<string, DistrictDef> = {
+      'financial-core':    { name: 'Financial Core',    zone: 'downtown', color: '#C8C4BC' },
+      'central-tower':     { name: 'Central Tower',     zone: 'downtown', color: '#C4C0B8' },
+      'capital-row':       { name: 'Capital Row',       zone: 'downtown', color: '#C6C2BA' },
+      'commerce-plaza':    { name: 'Commerce Plaza',    zone: 'downtown', color: '#CAC6BE' },
+      'exchange-sq':       { name: 'Exchange Square',   zone: 'downtown', color: '#C8C4BC' },
+      'skyline-block':     { name: 'Skyline Block',     zone: 'downtown', color: '#C2BEB6' },
+      'civic-hub':         { name: 'Civic Hub',         zone: 'downtown', color: '#C8C4BC' },
+      'crown-heights':     { name: 'Crown Heights',     zone: 'downtown', color: '#C4C0B8' },
+      'moat-shield':       { name: 'Moat & Shield AI',  zone: 'downtown', color: '#BCC4CC',
+                             palette: [{ main: '#0C1E3A', alt: '#1A3050', trim: '#40B0FF' }] },
+      'midtown-west':      { name: 'Midtown West',      zone: 'midrise',  color: '#CCCCBC' },
+      'uptown-east':       { name: 'Uptown East',       zone: 'midrise',  color: '#CCC8BC' },
+      'park-ave':          { name: 'Park Avenue',       zone: 'midrise',  color: '#C8CCBC' },
+      'gallery-row':       { name: 'Gallery Row',       zone: 'midrise',  color: '#D0CCB8',
+                             palette: [{ main: '#E8DCC8', alt: '#D8CCB0', trim: '#B8A888' }] },
+      'the-arcade':        { name: 'The Arcade',        zone: 'midrise',  color: '#CCCCBC' },
+      'merchant-row':      { name: 'Merchant Row',      zone: 'midrise',  color: '#CCC8B8' },
+      'harbor-gate':       { name: 'Harbor Gate',       zone: 'midrise',  color: '#C0C8D0' },
+      'river-bend':        { name: 'River Bend',        zone: 'midrise',  color: '#C4CCC8' },
+      'lakeside':          { name: 'Lakeside',          zone: 'midrise',  color: '#C8D0CC' },
+      'arts-quarter':      { name: 'Arts Quarter',      zone: 'mixed',    color: '#D0C8B4',
+                             palette: [{ main: '#D8C4A8', alt: '#C8B898', trim: '#E0D4BC' }] },
+      'innovation-mile':   { name: 'Innovation Mile',   zone: 'mixed',    color: '#C8C0A8',
+                             palette: [{ main: '#E0E8EC', alt: '#C8D8E0', trim: '#A8C0D0' }] },
+      'market-street':     { name: 'Market Street',     zone: 'mixed',    color: '#CCC4AC' },
+      'craft-district':    { name: 'Craft District',    zone: 'mixed',    color: '#D0C8B0' },
+      'bricktown':         { name: 'Bricktown',         zone: 'mixed',    color: '#D4C0A8',
+                             palette: [{ main: '#B87850', alt: '#A06840', trim: '#C8A080' }] },
+      'the-yards':         { name: 'The Yards',         zone: 'mixed',    color: '#C8C0A8' },
+      'riverside':         { name: 'Riverside',         zone: 'mixed',    color: '#C8CCC0' },
+      'garden-block':      { name: 'Garden Block',      zone: 'mixed',    color: '#C8D0BC' },
+      'university-row':    { name: 'University Row',    zone: 'mixed',    color: '#C8C4B0' },
+      'oak-st':            { name: 'Oak Street',        zone: 'low',      color: '#D0C8B4' },
+      'maple-ave':         { name: 'Maple Avenue',      zone: 'low',      color: '#D4CCB8' },
+      'pine-court':        { name: 'Pine Court',        zone: 'low',      color: '#CCC8B4' },
+      'birch-lane':        { name: 'Birch Lane',        zone: 'low',      color: '#D0CCB8' },
+      'cedar-row':         { name: 'Cedar Row',         zone: 'low',      color: '#D4D0BC' },
+      'elm-park':          { name: 'Elm Park',          zone: 'low',      color: '#CCC8B0' },
+      'chestnut-way':      { name: 'Chestnut Way',      zone: 'low',      color: '#D0C8B4' },
+      'aspen-hill':        { name: 'Aspen Hill',        zone: 'low',      color: '#D4D0BC' },
+      'valley-view':       { name: 'Valley View',       zone: 'low',      color: '#D0CCB8' },
+      'byu-campus':        { name: 'BYU Campus',        zone: 'midrise',  color: '#2A5C30' },
+      'city-park':         { name: 'City Park',         zone: 'park',     color: '#C8D8C0' },
+      'memorial-green':    { name: 'Memorial Green',    zone: 'park',     color: '#C8D8C0' },
+      'botanical-garden':  { name: 'Botanical Garden',  zone: 'park',     color: '#C8D8C0' },
+      'riverside-park':    { name: 'Riverside Park',    zone: 'park',     color: '#C8D8C0' },
+      'central-commons':   { name: 'Central Commons',   zone: 'park',     color: '#C8D8C0' },
+      'harbor':            { name: 'Harbor',            zone: 'water',    color: '#406080' },
+      'bay-front':         { name: 'Bay Front',         zone: 'water',    color: '#406080' },
+      'marina':            { name: 'Marina',            zone: 'water',    color: '#406080' },
+    };
+    const DEFAULT_DISTRICT: DistrictDef = { name: 'Suburbs', zone: 'low', color: '#D0C8B4' };
+
+    // Map every (col,row) → district id. Unmapped blocks fall back to distance-based.
+    const BLOCK_DISTRICT: Record<string, string> = {
+      // ── Downtown core ──
+      '0,0':   'financial-core',   '1,0':   'central-tower',    '0,1':  'commerce-plaza',
+      '0,-1':  'exchange-sq',      '-1,0':  'moat-shield',      '1,1':  'byu-campus',
+      '-1,1':  'capital-row',      '1,-1':  'skyline-block',    '-1,-1':'civic-hub',
+      '2,0':   'crown-heights',    '0,2':   'capital-row',      '-2,0': 'commerce-plaza',
+      '0,-2':  'exchange-sq',      '2,1':   'skyline-block',    '-2,1': 'civic-hub',
+      '2,-1':  'central-tower',    '-2,-1': 'financial-core',
+      // ── Midrise ring ──
+      '2,2':   'midtown-west',     '-2,2':  'uptown-east',      '3,0':  'park-ave',
+      '-3,0':  'gallery-row',      '3,1':   'the-arcade',       '-3,-1':'merchant-row',
+      '3,-1':  'harbor-gate',      '-3,1':  'central-commons',  '3,-2': 'river-bend',
+      '-3,-2': 'lakeside',         '2,-2':  'city-park',        '3,-3': 'memorial-green',
+      '-2,-2': 'midtown-west',     '1,2':   'uptown-east',      '-1,2': 'park-ave',
+      '1,-2':  'the-arcade',       '2,-3':  'botanical-garden', '3,-4': 'riverside-park',
+      '2,3':   'harbor-gate',      '-2,3':  'river-bend',
+      '3,2':   'lakeside',         '-3,2':  'merchant-row',     '3,3':  'the-arcade',
+      '-3,3':  'park-ave',
+      // ── Mixed ring ──
+      '4,0':   'arts-quarter',     '-4,0':  'innovation-mile',  '4,1':  'market-street',
+      '-4,1':  'craft-district',   '4,-1':  'bricktown',        '-4,-1':'the-yards',
+      '4,2':   'riverside',        '-4,2':  'garden-block',     '4,-2': 'university-row',
+      '-4,-2': 'arts-quarter',     '0,4':   'innovation-mile',  '0,-4': 'market-street',
+      '1,4':   'craft-district',   '-1,4':  'bricktown',        '1,-4': 'the-yards',
+      '-1,-4': 'riverside',        '2,4':   'garden-block',     '-2,4': 'university-row',
+      '1,3':   'arts-quarter',     '-1,3':  'market-street',    '3,4':  'craft-district',
+      '-3,4':  'riverside',        '4,3':   'bricktown',        '-4,3': 'garden-block',
+      '4,-3':  'the-yards',        '-4,-3': 'university-row',   '-1,-3':'innovation-mile',
+      '1,-3':  'arts-quarter',     '-2,-3': 'market-street',    '2,-4': 'craft-district',
+      '-2,-4': 'the-yards',
+      // ── Water row ──
+      '-3,-6': 'harbor',    '-4,-6': 'harbor',    '-5,-6': 'harbor',    '-6,-6': 'harbor',
+      '3,-6':  'bay-front', '4,-6':  'bay-front', '5,-6':  'bay-front', '6,-6':  'bay-front',
+      '-2,-6': 'marina',    '-1,-6': 'marina',    '0,-6':  'marina',    '1,-6':  'marina',    '2,-6': 'marina',
+      '-3,-5': 'harbor',    '3,-5':  'bay-front', '4,-5':  'bay-front', '5,-5':  'bay-front', '6,-5': 'bay-front',
+      '-4,-5': 'harbor',    '-5,-5': 'harbor',    '-6,-5': 'harbor',
+    };
+
+    function getDistrict(col: number, row: number): DistrictDef {
+      const key = `${col},${row}`;
+      const id = BLOCK_DISTRICT[key];
+      if (id && DISTRICTS[id]) return DISTRICTS[id];
+      return DEFAULT_DISTRICT;
+    }
+
+    function getZone(col: number, row: number): ZoneType {
+      const key = `${col},${row}`;
+      const id = BLOCK_DISTRICT[key];
+      if (id && DISTRICTS[id]) return DISTRICTS[id].zone;
+      // Fallback: distance-based for unmapped blocks
+      const dist = Math.sqrt(col * col + row * row);
+      if (
+        (col === 2 && row === -2) || (col === 3 && row === -2) ||
+        (col === 2 && row === -3) || (col === 3 && row === -3) ||
+        (col === -3 && row === 1)
+      ) return 'park';
+      if (row === -HALF || (row === -HALF + 1 && Math.abs(col) >= 3)) return 'water';
+      if (dist <= 2.0) return 'downtown';
+      if (dist <= 3.5) return 'midrise';
+      if (dist <= 4.8) return 'mixed';
+      return 'low';
+    }
+
+    // Keep label pools for fallback on unmapped blocks
     const ZONE_LABELS: Record<ZoneType, string[]> = {
-      downtown: ['Financial Core','Central Tower','Commerce Plaza','Exchange Sq','Moat & Shield AI','Skyline Block','Capital Row','Civic Hub','Crown Heights'],
+      downtown: ['Financial Core','Central Tower','Commerce Plaza','Exchange Sq','Skyline Block','Capital Row','Civic Hub','Crown Heights'],
       midrise:  ['Midtown West','Uptown East','Park Ave','Gallery Row','The Arcade','Merchant Row','Harbor Gate','River Bend','Lakeside'],
       mixed:    ['Arts Quarter','University Row','Market Street','Innovation Mile','Craft District','Bricktown','The Yards','Riverside','Garden Block'],
       low:      ['Oak St','Maple Ave','Pine Court','Birch Lane','Cedar Row','Elm Park','Chestnut Way','Aspen Hill','Valley View'],
@@ -2081,45 +2287,37 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
 
     const moatShieldLogoTex = new THREE.TextureLoader().load('/moat-and-shield-ai.png');
 
-    function getZone(col: number, row: number): ZoneType {
-      const dist = Math.sqrt(col * col + row * row);
-      // Central Park cluster (2×2) + two scattered parks
-      if (
-        (col === 2 && row === -2) || (col === 3 && row === -2) ||
-        (col === 2 && row === -3) || (col === 3 && row === -3) ||
-        (col === -3 && row === 1)
-      ) return 'park';
-      if (row === -HALF || (row === -HALF + 1 && Math.abs(col) >= 3)) return 'water';
-      if (dist <= 2.0) return 'downtown';
-      if (dist <= 3.5) return 'midrise';
-      if (dist <= 4.8) return 'mixed';
-      return 'low';
-    }
-
     const parkMat  = new THREE.MeshStandardMaterial({ color: '#C8D8C0', roughness: 0.95 });
     const waterMat = waterShaderMat;  // reuse the shared animated shader
 
     for (let row = -HALF; row <= HALF; row++) {
       for (let col = -HALF; col <= HALF; col++) {
-        const cx = col * STEP;
-        const cz = row * STEP;
+        const cx = COL_CENTERS[col + HALF];
+        const cz = ROW_CENTERS[row + HALF];
         const zone = getZone(col, row);
+        const district = getDistrict(col, row);
         const isBYU = col === 1 && row === 1;
         const isMoatShield = col === -1 && row === 0;
-        const labelPool = ZONE_LABELS[zone];
-        const labelIdx  = ((Math.abs(col) * 7 + Math.abs(row) * 13) ^ (col < 0 ? 3 : 5)) % labelPool.length;
-        const label = isBYU ? 'BYU Campus' : isMoatShield ? 'Moat & Shield AI' : labelPool[labelIdx];
+
+        // District-driven label (fallback to hash-based pool for unmapped blocks)
+        let label: string;
+        if (isBYU) label = 'BYU Campus';
+        else if (isMoatShield) label = 'Moat & Shield AI';
+        else if (BLOCK_DISTRICT[`${col},${row}`]) label = district.name;
+        else {
+          const labelPool = ZONE_LABELS[zone];
+          const labelIdx = ((Math.abs(col) * 7 + Math.abs(row) * 13) ^ (col < 0 ? 3 : 5)) % labelPool.length;
+          label = labelPool[labelIdx];
+        }
+
         const info: BlockInfo = { col, row, cx, cz, zone, label };
         blocks.push(info);
 
-        const groundColor = zone === 'downtown' ? '#C8C4BC'
-                          : zone === 'midrise'  ? '#CCCCBC'
-                          : zone === 'mixed'    ? '#C8C0A8'
-                          : '#D0C8B4'; // low — warmer residential
+        // District-driven ground color
         const patchMat = isBYU        ? new THREE.MeshStandardMaterial({ color: '#2A5C30', roughness: 0.90 })
                        : zone === 'park'  ? parkMat
                        : zone === 'water' ? waterMat
-                       : new THREE.MeshStandardMaterial({ color: groundColor, roughness: 0.9 });
+                       : new THREE.MeshStandardMaterial({ color: district.color, roughness: 0.9 });
         const patch = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2), patchMat);
         patch.rotation.x = -Math.PI / 2;
         patch.position.set(cx, zone === 'water' ? -0.2 : 0.015, cz);
@@ -2336,6 +2534,18 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           const halfBA = BUILD_AREA / 2;
           if (Math.abs(wx - cx) > halfBA - 3 || Math.abs(wz - cz) > halfBA - 3) continue;
 
+          // Cull buildings that fall within the diagonal avenue corridor
+          let nearDiag = false;
+          for (const diag of DIAGONALS) {
+            for (let di = 0; di < diag.points.length - 1; di++) {
+              if (ptSegDist(wx, wz, diag.points[di], diag.points[di + 1]) < diag.width / 2 + 8) {
+                nearDiag = true; break;
+              }
+            }
+            if (nearDiag) break;
+          }
+          if (nearDiag) continue;
+
           const h = hMin + (hMax - hMin) * rng() * p.hMult;
 
           // Store first placement's archetype for interior generation
@@ -2346,7 +2556,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           let group: THREE.Group;
           const am = makeArchSpecificMats(p.arch);
           // Apply per-block color palette tint to non-glass buildings
-          const pal = buildingColorPalette(col, row, zone, p.arch);
+          // District palette takes priority over procedural palette
+          const distPal = district.palette;
+          const pal = distPal
+            ? distPal[Math.floor(rng() * distPal.length)]
+            : buildingColorPalette(col, row, zone, p.arch);
           if (pal) {
             am.main  = new THREE.MeshStandardMaterial({ color: pal.main, roughness: am.main.roughness, metalness: am.main.metalness, map: am.main.map ?? undefined });
             am.alt   = new THREE.MeshStandardMaterial({ color: pal.alt,  roughness: am.alt.roughness,  metalness: am.alt.metalness  });
@@ -2564,7 +2778,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     if (mmCanvas) { mmCanvas.width = 160; mmCanvas.height = 160; }
     const mmCtx = mmCanvas?.getContext('2d') ?? null;
     let minimapDirty = true;
-    const MM_SCALE = 72 / (HALF * STEP + STEP / 2);
+    const MM_SCALE = 72 / GRID_EXTENT;
 
     function drawMinimap() {
       if (!mmCtx) return;
@@ -2592,6 +2806,18 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       mmCtx.fillStyle = 'rgba(255,255,255,0.65)';
       mmCtx.font = 'bold 9px system-ui'; mmCtx.textAlign = 'center';
       mmCtx.fillText('N', 80, 12);
+      // Diagonal avenue lines on minimap
+      for (const diag of DIAGONALS) {
+        mmCtx.strokeStyle = 'rgba(180,160,100,0.5)'; mmCtx.lineWidth = 1.2;
+        mmCtx.beginPath();
+        for (let di = 0; di < diag.points.length; di++) {
+          const dpx = 80 + diag.points[di][0] * MM_SCALE;
+          const dpz = 80 + diag.points[di][1] * MM_SCALE;
+          if (di === 0) mmCtx.moveTo(dpx, dpz);
+          else mmCtx.lineTo(dpx, dpz);
+        }
+        mmCtx.stroke();
+      }
       // Pulse ring on teleport
       const pulse = mmPulseRef.current;
       if (pulse) {
@@ -2612,7 +2838,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
       const wx = (e.clientX - rect.left - 80) / MM_SCALE;
       const wz = (e.clientY - rect.top  - 80) / MM_SCALE;
-      const bound = HALF * STEP + 10;
+      const bound = GRID_EXTENT;
       minimapPanRef.current = new THREE.Vector3(
         Math.max(-bound, Math.min(bound, wx)),
         0,

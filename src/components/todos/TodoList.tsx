@@ -2,11 +2,11 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useCountUp } from '../../hooks/useCountUp';
 import {
   CheckSquare, Square, Plus, Edit3, Trash2, Link2,
-  Calendar, ChevronDown, Circle, X,
+  Calendar, ChevronDown, Circle, X, Repeat,
 } from 'lucide-react';
-import { isToday, isTomorrow, parseISO, isPast } from 'date-fns';
+import { isToday, isTomorrow, parseISO, isPast, addDays, addWeeks, addMonths, addYears, format } from 'date-fns';
 import type {
-  TodoItem, TodoChecklistItem, TodoStatus, TodoPriority, TodoLinkType,
+  TodoItem, TodoChecklistItem, TodoStatus, TodoPriority, TodoLinkType, TodoRepeat,
   Contact, Project, Goal, Course, Note, ReadingItem, Candidate,
 } from '../../types';
 import { generateId, todayStr } from '../../utils';
@@ -44,11 +44,10 @@ const PRIORITY_CONFIG: Record<TodoPriority, { label: string; color: string }> = 
   low:    { label: 'Low',    color: 'var(--priority-low)' },
 };
 
-const STATUS_CONFIG: Record<TodoStatus, { label: string }> = {
-  'todo':        { label: 'To Do' },
-  'in-progress': { label: 'In Progress' },
-  'done':        { label: 'Done' },
-};
+const STATUS_OPTIONS: { value: TodoStatus; label: string }[] = [
+  { value: 'todo',        label: 'To Do' },
+  { value: 'in-progress', label: 'In Progress' },
+];
 
 const LINK_TYPE_LABELS: Record<TodoLinkType, string> = {
   contact:   'Contact',
@@ -60,7 +59,28 @@ const LINK_TYPE_LABELS: Record<TodoLinkType, string> = {
   candidate: 'Candidate',
 };
 
-type FilterTab = 'all' | 'today' | 'upcoming' | 'done';
+const REPEAT_CONFIG: Record<TodoRepeat, string> = {
+  daily:    'Daily',
+  weekly:   'Weekly',
+  biweekly: 'Biweekly',
+  monthly:  'Monthly',
+  yearly:   'Yearly',
+};
+
+function nextDueDate(current: string | undefined, repeat: TodoRepeat): string {
+  const base = current ? parseISO(current) : new Date();
+  let next: Date;
+  switch (repeat) {
+    case 'daily':    next = addDays(base, 1);   break;
+    case 'weekly':   next = addWeeks(base, 1);  break;
+    case 'biweekly': next = addWeeks(base, 2);  break;
+    case 'monthly':  next = addMonths(base, 1); break;
+    case 'yearly':   next = addYears(base, 1);  break;
+  }
+  return format(next, 'yyyy-MM-dd');
+}
+
+type FilterTab = 'all' | 'today' | 'upcoming';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -100,10 +120,11 @@ interface FormData {
   dueDate: string;
   linkedType: TodoLinkType | '';
   linkedId: string;
+  repeat: TodoRepeat | '';
 }
 
 function emptyForm(): FormData {
-  return { title: '', notes: '', status: 'todo', priority: 'medium', dueDate: '', linkedType: '', linkedId: '' };
+  return { title: '', notes: '', status: 'todo', priority: 'medium', dueDate: '', linkedType: '', linkedId: '', repeat: '' };
 }
 
 // ─── FORM MODAL ───────────────────────────────────────────────────────────────
@@ -139,6 +160,7 @@ function TodoFormModal({
         dueDate: initial?.dueDate ?? '',
         linkedType: initial?.linkedType ?? '',
         linkedId: initial?.linkedId ?? '',
+        repeat: initial?.repeat ?? '',
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,16 +207,28 @@ function TodoFormModal({
             <label className="caesar-label">Status</label>
             <select className="caesar-input w-full" value={form.status}
               onChange={e => setForm(f => ({ ...f, status: e.target.value as TodoStatus }))}>
-              {(Object.keys(STATUS_CONFIG) as TodoStatus[]).map(s => (
-                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+              {STATUS_OPTIONS.map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
           </div>
         </div>
-        <div>
-          <label className="caesar-label">Due Date</label>
-          <input className="caesar-input w-full" type="date" value={form.dueDate}
-            onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="caesar-label">Due Date</label>
+            <input className="caesar-input w-full" type="date" value={form.dueDate}
+              onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+          </div>
+          <div>
+            <label className="caesar-label">Repeat</label>
+            <select className="caesar-input w-full" value={form.repeat}
+              onChange={e => setForm(f => ({ ...f, repeat: e.target.value as TodoRepeat | '' }))}>
+              <option value="">No repeat</option>
+              {(Object.keys(REPEAT_CONFIG) as TodoRepeat[]).map(r => (
+                <option key={r} value={r}>{REPEAT_CONFIG[r]}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div>
           <label className="caesar-label">Link to CRM Item</label>
@@ -342,38 +376,28 @@ interface TodoCardProps {
 }
 
 function TodoCard({ todo, onToggle, onEdit, onDelete, onChecklistUpdate }: TodoCardProps) {
-  const isDone = todo.status === 'done';
   const pCfg = PRIORITY_CONFIG[todo.priority];
   const dateLabel = dueDateLabel(todo.dueDate);
   const dateColor = dueDateColor(todo.dueDate);
   const checklist = safeChecklist(todo);
 
   return (
-    <div
-      className="caesar-card flex flex-col gap-2 transition-all duration-200"
-      style={{ opacity: isDone ? 0.5 : 1 }}
-    >
+    <div className="caesar-card flex flex-col gap-2 transition-all duration-200">
       <div className="flex items-start gap-3">
         {/* Checkbox */}
         <button
           onClick={onToggle}
           className="mt-0.5 flex-shrink-0 transition-colors duration-150"
-          style={{ color: isDone ? pCfg.color : 'var(--text-muted)' }}
+          style={{ color: 'var(--text-muted)' }}
         >
-          {isDone
-            ? <CheckSquare size={17} style={{ color: pCfg.color }} />
-            : <Square size={17} />
-          }
+          <Square size={17} />
         </button>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p
             className="text-sm font-medium leading-snug"
-            style={{
-              color: isDone ? 'var(--text-muted)' : 'var(--text-primary)',
-              textDecoration: isDone ? 'line-through' : 'none',
-            }}
+            style={{ color: 'var(--text-primary)' }}
           >
             {todo.title}
           </p>
@@ -396,6 +420,12 @@ function TodoCard({ todo, onToggle, onEdit, onDelete, onChecklistUpdate }: TodoC
                 {dateLabel}
               </span>
             )}
+            {todo.repeat && (
+              <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                <Repeat size={10} />
+                {REPEAT_CONFIG[todo.repeat]}
+              </span>
+            )}
             {todo.linkedType && todo.linkedLabel && (
               <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full"
                 style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
@@ -410,9 +440,7 @@ function TodoCard({ todo, onToggle, onEdit, onDelete, onChecklistUpdate }: TodoC
           )}
 
           {/* Checklist */}
-          {!isDone && (
-            <Checklist todoId={todo.id} checklist={checklist} onUpdate={onChecklistUpdate} />
-          )}
+          <Checklist todoId={todo.id} checklist={checklist} onUpdate={onChecklistUpdate} />
         </div>
 
         {/* Actions */}
@@ -457,10 +485,9 @@ export function TodoList({
     const today = todayStr();
     let list = todos;
     switch (filter) {
-      case 'today':    list = todos.filter(t => t.dueDate === today && t.status !== 'done'); break;
-      case 'upcoming': list = todos.filter(t => t.dueDate && t.dueDate > today && t.status !== 'done'); break;
-      case 'done':     list = todos.filter(t => t.status === 'done'); break;
-      default:         list = todos.filter(t => t.status !== 'done');
+      case 'today':    list = todos.filter(t => t.dueDate === today); break;
+      case 'upcoming': list = todos.filter(t => t.dueDate && t.dueDate > today); break;
+      default:         list = todos;
     }
     const priorityOrder: Record<TodoPriority, number> = { high: 0, medium: 1, low: 2 };
     return [...list].sort((a, b) => {
@@ -477,10 +504,9 @@ export function TodoList({
 
   const stats = useMemo(() => ({
     total: todos.length,
-    done: todos.filter(t => t.status === 'done').length,
-    today: todos.filter(t => t.dueDate === todayStr() && t.status !== 'done').length,
+    today: todos.filter(t => t.dueDate === todayStr()).length,
     overdue: todos.filter(t => {
-      if (!t.dueDate || t.status === 'done') return false;
+      if (!t.dueDate) return false;
       try { return isPast(parseISO(t.dueDate)) && !isToday(parseISO(t.dueDate)); } catch { return false; }
     }).length,
   }), [todos]);
@@ -499,6 +525,7 @@ export function TodoList({
       linkedId: data.linkedId || undefined,
       linkedLabel,
       checklist: [],
+      repeat: data.repeat || undefined,
     };
     setTodos(prev => [newTodo, ...(Array.isArray(prev) ? prev : [])]);
     setAddOpen(false);
@@ -513,7 +540,7 @@ export function TodoList({
         t.id === editItem.id
           ? { ...t, title: data.title, notes: data.notes, status: data.status, priority: data.priority,
               dueDate: data.dueDate || undefined, linkedType: data.linkedType || undefined,
-              linkedId: data.linkedId || undefined, linkedLabel }
+              linkedId: data.linkedId || undefined, linkedLabel, repeat: data.repeat || undefined }
           : t
       )
     );
@@ -522,10 +549,31 @@ export function TodoList({
   };
 
   const handleToggle = (todo: TodoItem) => {
-    const nextStatus: TodoStatus = todo.status === 'done' ? 'todo' : 'done';
-    setTodos(prev =>
-      (Array.isArray(prev) ? prev : []).map(t => t.id === todo.id ? { ...t, status: nextStatus } : t)
-    );
+    setTodos(prev => {
+      const list = Array.isArray(prev) ? prev : [];
+      const without = list.filter(t => t.id !== todo.id);
+      // If completing a repeating todo, spawn the next occurrence
+      if (todo.repeat) {
+        const next: TodoItem = {
+          id: generateId(),
+          title: todo.title,
+          notes: todo.notes,
+          status: 'todo',
+          priority: todo.priority,
+          dueDate: nextDueDate(todo.dueDate, todo.repeat),
+          createdAt: new Date().toISOString(),
+          linkedType: todo.linkedType,
+          linkedId: todo.linkedId,
+          linkedLabel: todo.linkedLabel,
+          checklist: safeChecklist(todo).map(c => ({ ...c, id: generateId(), checked: false })),
+          repeat: todo.repeat,
+        };
+        toast.success('Next occurrence created');
+        return [next, ...without];
+      }
+      return without;
+    });
+    toast.success('Task completed');
   };
 
   const handleDelete = (id: string) => {
@@ -540,10 +588,9 @@ export function TodoList({
   };
 
   const FILTER_TABS: { id: FilterTab; label: string; count?: number }[] = [
-    { id: 'all',      label: 'Active',   count: todos.filter(t => t.status !== 'done').length },
+    { id: 'all',      label: 'All',      count: todos.length },
     { id: 'today',    label: 'Today',    count: stats.today },
     { id: 'upcoming', label: 'Upcoming' },
-    { id: 'done',     label: 'Done',     count: stats.done },
   ];
 
   return (
@@ -563,10 +610,9 @@ export function TodoList({
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total',     value: stats.total },
-          { label: 'Done',      value: stats.done },
           { label: 'Due Today', value: stats.today },
           { label: 'Overdue',   value: stats.overdue, warn: stats.overdue > 0 },
         ].map(s => (
@@ -620,13 +666,11 @@ export function TodoList({
         <div className="caesar-card flex flex-col items-center justify-center py-16 text-center transition-colors duration-300">
           <CheckSquare size={38} className="mb-3" style={{ color: 'var(--text-muted)' }} />
           <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
-            {filter === 'done' ? 'No completed tasks yet' : 'All clear — no tasks here'}
+            All clear — no tasks here
           </p>
-          {filter !== 'done' && (
-            <button onClick={() => setAddOpen(true)} className="mt-4 caesar-btn-ghost flex items-center gap-2 text-sm">
-              <Plus size={14} /> Add your first task
-            </button>
-          )}
+          <button onClick={() => setAddOpen(true)} className="mt-4 caesar-btn-ghost flex items-center gap-2 text-sm">
+            <Plus size={14} /> Add your first task
+          </button>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -667,6 +711,7 @@ export function TodoList({
             dueDate: editItem.dueDate ?? '',
             linkedType: editItem.linkedType ?? '',
             linkedId: editItem.linkedId ?? '',
+            repeat: editItem.repeat ?? '',
           }}
           title={`Edit — ${editItem.title}`}
           contacts={contacts} projects={projects} goals={goals}

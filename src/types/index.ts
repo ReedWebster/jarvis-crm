@@ -346,6 +346,7 @@ export interface VoiceCommandEntry {
 export type TodoStatus = 'todo' | 'in-progress' | 'done';
 export type TodoPriority = 'low' | 'medium' | 'high';
 export type TodoLinkType = 'contact' | 'project' | 'goal' | 'course' | 'note' | 'reading' | 'candidate';
+export type TodoRepeat = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
 
 export interface TodoChecklistItem {
   id: string;
@@ -365,6 +366,7 @@ export interface TodoItem {
   linkedId?: string;
   linkedLabel?: string;
   checklist: TodoChecklistItem[];
+  repeat?: TodoRepeat;
 }
 
 // ─── SOCIAL / BRAND OPERATIONS ───────────────────────────────────────────────
@@ -528,8 +530,16 @@ export interface MorningBriefing {
     executiveSummary: string;
     priorityTasks: Array<{ title: string; reasoning: string; priority: string }>;
     goalsCheckIn: Array<{ title: string; progress: number; note: string }>;
+    suggestedGoals?: Array<{ title: string; area: string; reasoning: string }>;
+    scheduleRecommendations?: Array<{ suggestion: string; reasoning: string }>;
     contactFollowUps: Array<{ name: string; reason: string }>;
-    habits: { yesterdayRate: number; focus: string[] };
+    habits: { yesterdayRate: number; focus: string[]; streakNote?: string };
+    financialSnapshot?: { recentSpending: string; savingsProgress: string; actionItems: string[] };
+    academicAlerts?: Array<{ course: string; alert: string }>;
+    recruitmentPipeline?: Array<{ item: string; action: string }>;
+    readingProgress?: { currentlyReading: string[]; suggestion: string };
+    socialMedia?: Array<{ item: string; action: string }>;
+    wellnessCheck?: { energyTrend: string; moodTrend: string; recommendation: string };
     strategicNotes: string[];
     calendar: Array<{ time: string; title: string; prepNotes?: string }>;
     emailDigest: Array<{ from: string; subject: string; summary: string; urgent: boolean }>;
