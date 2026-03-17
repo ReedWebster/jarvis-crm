@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 import { buildBriefingPrompt } from '../lib/_briefingHelpers.js';
 import type { BriefingData } from '../lib/_briefingHelpers.js';
 import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from '../lib/_googleAuth.js';
-import { generateText, Output } from 'ai';
+import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
@@ -224,19 +224,27 @@ export default async function handler(req: any, res: any) {
     // Build the prompt (improvement #3: pre-filtered data inside buildBriefingPrompt)
     const userPrompt = buildBriefingPrompt(briefingData, googleData.gmail, googleData.calendar);
 
-    // ── Improvement #1 & #6: AI SDK with structured output + Haiku for speed ──
-    const { output: sections } = await generateText({
+    // Ask Claude for JSON directly and parse with Zod (avoids grammar size limits)
+    const { text: rawJson } = await generateText({
       model: anthropic('claude-haiku-4-5-20251001'),
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + '\n\nIMPORTANT: Respond with ONLY valid JSON matching the required schema. No markdown, no code fences, no explanation — just the JSON object.',
       prompt: userPrompt,
-      output: Output.object({ schema: briefingSchema }),
       maxTokens: 4000,
     });
 
-    if (!sections) {
-      res.status(502).json({ error: 'Claude returned empty structured output' });
+    if (!rawJson) {
+      res.status(502).json({ error: 'Claude returned empty response' });
       return;
     }
+
+    // Strip any markdown fences Claude might add
+    const cleaned = rawJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+    const parsed = briefingSchema.safeParse(JSON.parse(cleaned));
+    if (!parsed.success) {
+      res.status(502).json({ error: 'Invalid briefing structure', detail: parsed.error.message });
+      return;
+    }
+    const sections = parsed.data;
 
     // Build the briefing object
     const today = new Date().toISOString().split('T')[0];
