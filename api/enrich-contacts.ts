@@ -1,8 +1,7 @@
-import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
+import { generateText, Output } from 'ai';
 import { z } from 'zod';
 
-const enrichmentSchema = z.array(z.object({
+const enrichmentItemSchema = z.object({
   contactId: z.string(),
   summary: z.string().describe('2-3 sentence profile summary — who they are, what they do, how they connect to Reed'),
   suggestedTags: z.array(z.string()).describe('3-5 relevant tags — pick from existing list when possible, suggest new ones if nothing fits'),
@@ -10,7 +9,11 @@ const enrichmentSchema = z.array(z.object({
   relationshipTier: z.enum(['Inner Circle', 'Key Ally', 'Active Network', 'Acquaintance', 'Dormant']),
   followUpTiming: z.string().describe('Recommended follow-up cadence, e.g. "Every 2 weeks", "Monthly"'),
   talkingPoints: z.array(z.string()).describe('2-4 specific topics to bring up next time'),
-}));
+});
+
+const enrichmentSchema = z.object({
+  enrichments: z.array(enrichmentItemSchema),
+});
 
 const SYSTEM_PROMPT = `You are analyzing contacts for Reed Webster's personal CRM to generate enriched profiles.
 
@@ -30,18 +33,11 @@ For each contact, produce:
 Rules:
 - Be concise and specific — no filler or generic advice
 - Reference actual data from the contact (company, notes, interactions, tags)
-- If data is sparse, say so in the summary and suggest lower-effort follow-up
-- Respond with ONLY a JSON array (no markdown fences, no explanation)`;
+- If data is sparse, say so in the summary and suggest lower-effort follow-up`;
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured.' });
     return;
   }
 
@@ -91,29 +87,20 @@ export default async function handler(req: any, res: any) {
   const userPrompt = `${tagList}\nEnrich these ${batch.length} contacts:\n\n${contactSummaries}`;
 
   try {
-    const { text: rawJson } = await generateText({
-      model: anthropic('claude-haiku-4-5-20251001'),
+    const result = await generateText({
+      model: 'anthropic/claude-haiku-4.5',
       system: SYSTEM_PROMPT,
       prompt: userPrompt,
       maxOutputTokens: 4000,
+      output: Output.object({ schema: enrichmentSchema }),
     });
 
-    if (!rawJson) {
-      res.status(502).json({ error: 'Claude returned empty response' });
+    if (!result.object) {
+      res.status(502).json({ error: 'Model returned empty response' });
       return;
     }
 
-    const cleaned = rawJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-    let enrichments: z.infer<typeof enrichmentSchema>;
-    try {
-      enrichments = enrichmentSchema.parse(JSON.parse(cleaned));
-    } catch (parseErr: any) {
-      console.error('[EnrichContacts] Parse failed. Raw:', rawJson.slice(0, 500));
-      res.status(502).json({ error: 'Enrichment format error — try again.' });
-      return;
-    }
-
-    res.status(200).json({ enrichments });
+    res.status(200).json({ enrichments: result.object.enrichments });
   } catch (err: any) {
     console.error('[EnrichContacts] Error:', err?.message ?? String(err));
     res.status(500).json({ error: 'Failed to enrich contacts', detail: err?.message ?? String(err) });
