@@ -229,6 +229,13 @@ function MainApp() {
     'Harbor': 'Other',              'Bay Front': 'Other',           'Marina': 'Other',           'River District': 'Other',
   });
 
+  // Bundled read-only data for WorldView data panel
+  const worldAppData = useMemo(() => ({
+    projects, todos, goals, contacts, financialEntries,
+    courses, habits, habitTracker, timeBlocks, timeCategories, notes,
+  }), [projects, todos, goals, contacts, financialEntries,
+       courses, habits, habitTracker, timeBlocks, timeCategories, notes]);
+
   // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
   useEffect(() => {
     if (!session?.user.id || clients.length > 0) return;
@@ -427,6 +434,7 @@ function MainApp() {
             contactTags={contactTags}
             districtTagMap={districtTagMap}
             onDistrictTagMapChange={setDistrictTagMap}
+            appData={worldAppData}
           />
         );
       case 'social':

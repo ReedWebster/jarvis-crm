@@ -11,6 +11,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
+import { WorldDataPanel } from './WorldDataPanel';
+import type { WorldViewAppData } from './WorldDataPanel';
+import { WorldBlockDataCard } from './WorldBlockDataCard';
 
 // ─── SEEDED RANDOM ────────────────────────────────────────────────────────────
 function seededRandom(seed: string): () => number {
@@ -35,7 +38,7 @@ function makeArchMats(): ArchMats {
     main:  new THREE.MeshStandardMaterial({ color: '#F2F6FF', roughness: 0.85, metalness: 0 }),
     alt:   new THREE.MeshStandardMaterial({ color: '#D8E8F8', roughness: 0.80, metalness: 0 }),
     trim:  new THREE.MeshStandardMaterial({ color: '#C8DCEF', roughness: 0.75, metalness: 0.05 }),
-    glass: new THREE.MeshStandardMaterial({ color: '#B8D4EC', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.72 }),
+    glass: new THREE.MeshStandardMaterial({ color: '#B8D4EC', roughness: 0.03, metalness: 0.35, transparent: true, opacity: 0.58 }),
   };
 }
 
@@ -171,7 +174,13 @@ function addWindowRow(
 ) {
   const step = facadeW / (n + 1);
   for (let i = 1; i <= n; i++) {
-    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.8), winMat.clone());
+    const winClone = winMat.clone();
+    // ~25% of windows get a subtle warm "lights on" glow
+    if (Math.random() < 0.25) {
+      winClone.emissive = new THREE.Color('#FFE8B0');
+      winClone.emissiveIntensity = 0.15 + Math.random() * 0.20;
+    }
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.8), winClone);
     win.position.set(cx + (i - (n + 1) / 2) * step, y, faceZ + 0.02);
     g.add(win);
   }
@@ -597,7 +606,7 @@ function makeTree(x: number, z: number, rng: () => number): THREE.Group {
       new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.95 })
     );
     trunk.position.y = trunkH / 2; trunk.castShadow = true; g.add(trunk);
-    const leafColors = ['#4A8040', '#5A9448', '#3E7038', '#62A050', '#528840', '#3A6830'];
+    const leafColors = ['#4A8040', '#5A9448', '#3E7038', '#62A050', '#528840', '#3A6830', '#8AB050', '#A8C040', '#7A9838'];
     const nSpheres = 5 + Math.floor(rng() * 3); // 5–7 spheres
     for (let i = 0; i < nSpheres; i++) {
       const r = 0.75 + rng() * 0.55;
@@ -1514,10 +1523,10 @@ interface SkyConfig {
 }
 
 function getSkyConfig(_hour: number): SkyConfig {
-  // Warm midday haze — slightly more depth via fog, warmer horizon
+  // Warm midday haze — linear fog for cleaner depth falloff
   return {
     zenith: '#6AA8CC', horizon: '#EEE8DC',
-    fogColor: 0xEEE8DC, fogDensity: 0.0020,
+    fogColor: 0xEEE8DC, fogDensity: 0,
     sunIntensity: 2.6, hemiIntensity: 0.65,
     sunX: 80, sunY: 200, sunZ: -120,
   };
@@ -1604,9 +1613,10 @@ interface WorldViewProps {
   contactTags?: Array<{ name: string; color: string }>;
   districtTagMap?: Record<string, string>;
   onDistrictTagMapChange?: (map: Record<string, string>) => void;
+  appData?: WorldViewAppData;
 }
 
-export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange }: WorldViewProps = {}) {
+export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange, appData }: WorldViewProps = {}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
@@ -1722,19 +1732,25 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight('#ffffff', 2.5);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(4096, 4096);
     sun.shadow.camera.near   = 1;
     sun.shadow.camera.far    = 800;
     sun.shadow.camera.left   = -320;
     sun.shadow.camera.right  = 320;
     sun.shadow.camera.top    = 320;
     sun.shadow.camera.bottom = -320;
-    sun.shadow.bias = -0.0003;
-    (sun.shadow as THREE.DirectionalLightShadow & { radius?: number }).radius = 2;
+    sun.shadow.bias = -0.00015;
+    sun.shadow.normalBias = 0.02;
+    (sun.shadow as THREE.DirectionalLightShadow & { radius?: number }).radius = 3;
     scene.add(sun);
 
-    const hemi = new THREE.HemisphereLight('#C8D8F0', '#E8EEE4', 0.5);
+    const hemi = new THREE.HemisphereLight('#C8D8F0', '#D8D0C0', 0.65);
     scene.add(hemi);
+
+    // Warm fill light from opposite direction for warm/cool contrast
+    const fillLight = new THREE.DirectionalLight('#FFE8D0', 0.35);
+    fillLight.position.set(-80, 100, 120);
+    scene.add(fillLight);
 
     // Night lights removed — always daytime, no night light meshes needed
 
@@ -1748,8 +1764,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
       sun.position.set(cfg.sunX, cfg.sunY, cfg.sunZ);
       sun.intensity  = cfg.sunIntensity;
       hemi.intensity = cfg.hemiIntensity;
-      scene.fog      = new THREE.FogExp2(cfg.fogColor, cfg.fogDensity);
-      cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: cfg.fogDensity };
+      scene.fog      = new THREE.Fog(cfg.fogColor, 180, 700);
+      cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: 0 };
     }
     applyTimeOfDay();
     const todInterval = setInterval(applyTimeOfDay, 60_000);
@@ -1777,11 +1793,22 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // ── Post-processing ───────────────────────────────────────────────────────
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new BloomEffect({ intensity: 0.15, luminanceThreshold: 0.92, luminanceSmoothing: 0.02, mipmapBlur: true });
+    const bloom = new BloomEffect({ intensity: 0.20, luminanceThreshold: 0.88, luminanceSmoothing: 0.04, mipmapBlur: true });
     composer.addPass(new EffectPass(camera, bloom));
 
     // ── Materials (shared, cloned per building) ───────────────────────────────
+    // Generate PMREM env map from sky for glass reflections
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileCubemapShader();
+    const envScene = new THREE.Scene();
+    envScene.add(new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat.clone()));
+    const envRT = pmremGenerator.fromScene(envScene, 0, 0.1, 1000);
+    const envMap = envRT.texture;
+    pmremGenerator.dispose();
+
     const mats = makeArchMats();
+    mats.glass.envMap = envMap;
+    mats.glass.envMapIntensity = 0.8;
 
     // ── City grid parameters ───────────────────────────────────────────────────
     const GRID_N    = 13;
@@ -1812,13 +1839,32 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     // Water shader (declared early so ocean can reuse it; same ref used for city water blocks below)
     const waterShaderMat = new THREE.ShaderMaterial({
       transparent: true,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform float uTime; varying vec2 vUv;
+      uniforms: { uTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(0.45, 0.65, -0.62).normalize() } },
+      vertexShader: `varying vec2 vUv; varying vec3 vWorldPos;
+        void main() { vUv = uv; vWorldPos = (modelMatrix * vec4(position,1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform float uTime; uniform vec3 uSunDir;
+        varying vec2 vUv; varying vec3 vWorldPos;
+        float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p) { vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
         void main() {
-          float w = sin(vUv.x*8.0 + uTime*0.9) * sin(vUv.y*6.0 + uTime*0.7) * 0.5 + 0.5;
-          vec3 c = mix(vec3(0.22,0.44,0.62), vec3(0.35,0.62,0.80), w);
-          gl_FragColor = vec4(c, 0.82 + w*0.06);
+          vec2 uv = vUv * 12.0;
+          float w1 = noise(uv + uTime * 0.15);
+          float w2 = noise(uv * 2.3 - uTime * 0.22) * 0.5;
+          float w3 = noise(uv * 5.0 + uTime * 0.08) * 0.25;
+          float waves = w1 + w2 + w3;
+          vec3 deepCol = vec3(0.12, 0.30, 0.50);
+          vec3 shallowCol = vec3(0.28, 0.55, 0.72);
+          vec3 col = mix(deepCol, shallowCol, waves);
+          // Fresnel approximation
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = pow(1.0 - max(dot(viewDir, vec3(0,1,0)), 0.0), 3.0);
+          col = mix(col, vec3(0.7, 0.85, 0.95), fresnel * 0.4);
+          // Sun specular
+          float spec = pow(max(dot(reflect(-uSunDir, vec3(0,1,0)), viewDir), 0.0), 64.0);
+          col += vec3(1.0, 0.95, 0.85) * spec * 0.3;
+          gl_FragColor = vec4(col, 0.78 + fresnel * 0.15);
         }`,
     });
 
@@ -1852,9 +1898,24 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     foam.position.y = -0.04;
     cityGroup.add(foam);
 
+    const groundShaderMat = new THREE.ShaderMaterial({
+      uniforms: { uBaseColor: { value: new THREE.Color('#D0C8B8') } },
+      vertexShader: `varying vec2 vUv; varying vec3 vWorldPos;
+        void main() { vUv = uv; vWorldPos = (modelMatrix * vec4(position,1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform vec3 uBaseColor; varying vec3 vWorldPos;
+        float hash(vec2 p) { return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p) { vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
+        void main() {
+          float n = noise(vWorldPos.xz * 0.08) * 0.06;
+          vec3 col = uBaseColor + vec3(n, n*0.8, n*0.5);
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    });
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(GRID_EXTENT + 12, 80),
-      new THREE.MeshStandardMaterial({ color: '#D0C8B8', roughness: 0.95 })
+      groundShaderMat
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
@@ -2284,6 +2345,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
     const allBuildingMeshes: THREE.Mesh[] = [];
     const blockMeshMap = new Map<THREE.Mesh, BlockInfo>();
     const blockInfoToMeshes = new Map<BlockInfo, THREE.Mesh[]>();
+    const treeGroups: THREE.Group[] = [];
 
     const moatShieldLogoTex = new THREE.TextureLoader().load('/moat-and-shield-ai.png');
 
@@ -2371,7 +2433,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           for (let t = 0; t < 22; t++) {
             const tx = cx + (rng() - 0.5) * (BLOCK_SIZE - 10);
             const tz = cz + (rng() - 0.5) * (BLOCK_SIZE - 10);
-            cityGroup.add(makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`)));
+            const tree = makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`));
+            treeGroups.push(tree); cityGroup.add(tree);
           }
           continue;
         }
@@ -2419,8 +2482,9 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           // Perimeter trees
           const pts: [number, number][] = [[-18,-18],[-18,0],[-18,18],[0,-18],[0,18],[18,-18],[18,0],[18,18]];
           pts.forEach(([tx2,tz2], ti) => {
-            cityGroup.add(makeTree(cx + tx2 + (plazaRng()-0.5)*3, cz + tz2 + (plazaRng()-0.5)*3,
-              seededRandom(`plz-${ti}-${col}-${row}`)));
+            const tree = makeTree(cx + tx2 + (plazaRng()-0.5)*3, cz + tz2 + (plazaRng()-0.5)*3,
+              seededRandom(`plz-${ti}-${col}-${row}`));
+            treeGroups.push(tree); cityGroup.add(tree);
           });
           continue;
         }
@@ -2596,9 +2660,20 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           const side = treeRng() > 0.5 ? 1 : -1;
           const tx = cx + (treeRng() - 0.5) * BLOCK_SIZE * 0.7;
           const tz = cz + side * edge * 0.8;
-          cityGroup.add(makeTree(tx, tz, seededRandom(`st-${t}-${col}-${row}`)));
+          const tree = makeTree(tx, tz, seededRandom(`st-${t}-${col}-${row}`));
+          treeGroups.push(tree); cityGroup.add(tree);
         }
       }
+    }
+
+    // ── AO contact shadows at building bases ──
+    const aoMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.12, depthWrite: false });
+    for (const b of blocks) {
+      if (b.zone === 'park' || b.zone === 'water') continue;
+      const aoPlane = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_SIZE * 0.55, BLOCK_SIZE * 0.55), aoMat);
+      aoPlane.rotation.x = -Math.PI / 2;
+      aoPlane.position.set(b.cx, 0.02, b.cz);
+      cityGroup.add(aoPlane);
     }
 
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
@@ -2918,7 +2993,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
           orbitRadius = 60;
           orbitPhi    = 1.05;
           orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
-          scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+          scene.fog = new THREE.Fog(0xe8f0f8, 180, 700);
         } else {
           cityGroup.visible = false;
           interiorGroupRef.current.position.set(0, 0, 0);
@@ -2978,7 +3053,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
               orbitRadius = 60;
               orbitPhi    = 1.05;
               orbitTarget.set(block.cx, bHeight + 1.5, block.cz);
-              scene.fog = new THREE.FogExp2(0xe8f0f8, 0.0014);
+              scene.fog = new THREE.Fog(0xe8f0f8, 180, 700);
             } else {
               cityGroup.visible = false;
               interiorGroup.visible = true;
@@ -3000,7 +3075,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
             orbitTarget.copy(saved.target);
             sun.intensity  = cityLightRef.current.sunI;
             hemi.intensity = cityLightRef.current.hemiI;
-            scene.fog      = new THREE.FogExp2(cityLightRef.current.fogColor, cityLightRef.current.fogDensity);
+            scene.fog      = new THREE.Fog(cityLightRef.current.fogColor, 180, 700);
           }
           updateCameraOrbit();
           tr.direction = -1;
@@ -3047,6 +3122,18 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
 
       // Water animation
       waterShaderMat.uniforms.uTime.value += 0.012;
+      // Update water sun direction from light position
+      waterShaderMat.uniforms.uSunDir.value.copy(sun.position).normalize();
+
+      // Tree sway (subtle wind)
+      if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
+        const windTime = performance.now() * 0.001;
+        for (let ti = 0; ti < treeGroups.length; ti++) {
+          const tg = treeGroups[ti];
+          tg.rotation.z = Math.sin(windTime * 0.8 + ti * 0.3) * 0.015;
+          tg.rotation.x = Math.cos(windTime * 0.6 + ti * 0.7) * 0.010;
+        }
+      }
 
       // District name HUD (every 45 frames)
       if (frameCount % 45 === 0 && viewModeRef.current === 'city') {
@@ -3115,6 +3202,9 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
             .wv-btn:hover { background: rgba(80,140,220,0.32) !important; border-color: rgba(120,180,255,0.6) !important; }
             .wv-top-btn:hover { background: rgba(30,40,60,0.95) !important; color: #cbd5e1 !important; }
           `}</style>
+
+          {/* Data command panel overlay */}
+          {appData && <WorldDataPanel appData={appData} />}
 
           {/* District name HUD — pill */}
           {districtLabel && (
@@ -3199,11 +3289,14 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange 
                     </select>
                   </div>
                 )}
+                {/* Contextual data for linked project */}
+                {appData && <WorldBlockDataCard block={selectedBlock} appData={appData} />}
+
                 <button
                   className="wv-btn"
                   onClick={() => enterBuildingCallbackRef.current?.(selectedBlock)}
                   style={{
-                    width: '100%', padding: '8px 0',
+                    width: '100%', padding: '8px 0', marginTop: 8,
                     background: 'rgba(60,120,220,0.16)', border: '1px solid rgba(80,140,240,0.30)',
                     borderRadius: 7, color: '#7EB8F8', cursor: 'pointer', fontSize: 11,
                     fontWeight: 600, letterSpacing: '0.04em',
