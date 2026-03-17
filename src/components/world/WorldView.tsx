@@ -1966,8 +1966,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(W, H, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false;
     renderer.toneMapping       = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace  = THREE.SRGBColorSpace;
@@ -3251,7 +3250,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const vehicleColors = [0x2A3848, 0x404858, 0x505868, 0x3A4858, 0x283040, 0xC8C0B0, 0x8A2020];
     const vehicleMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.3 });
     const vehicleInstances = new THREE.InstancedMesh(vehicleGeo, vehicleMat, VEHICLE_COUNT);
-    vehicleInstances.castShadow = true;
+    vehicleInstances.castShadow = false;
     vehicleInstances.receiveShadow = false;
 
     // Build route paths along roads
@@ -3841,26 +3840,28 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       // Update water sun direction from light position
       waterShaderMat.uniforms.uSunDir.value.copy(sun.position).normalize();
 
-      // Animate construction indicators (beacons rotate, scaffolding pulses)
-      for (const [, indGroup] of districtIndicatorsRef.current) {
-        if (!indGroup.visible) continue;
-        for (const child of indGroup.children) {
-          if (child.userData.type === 'beacon') {
-            child.rotation.y += 0.04;
-          } else if (child.userData.type === 'scaffolding') {
-            child.scale.x = 1 + Math.sin(frameCount * 0.04) * 0.015;
-            child.scale.z = 1 + Math.sin(frameCount * 0.04) * 0.015;
+      // Animate construction indicators (every 3rd frame)
+      if (frameCount % 3 === 0) {
+        for (const [, indGroup] of districtIndicatorsRef.current) {
+          if (!indGroup.visible) continue;
+          for (const child of indGroup.children) {
+            if (child.userData.type === 'beacon') {
+              child.rotation.y += 0.12;
+            } else if (child.userData.type === 'scaffolding') {
+              child.scale.x = 1 + Math.sin(frameCount * 0.04) * 0.015;
+              child.scale.z = 1 + Math.sin(frameCount * 0.04) * 0.015;
+            }
           }
         }
       }
 
-      // Animated traffic (every other frame for performance)
-      if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
+      // Animated traffic (every 3rd frame for performance)
+      if (viewModeRef.current === 'city' && frameCount % 3 === 0) {
         updateTraffic();
       }
 
-      // Tree sway (subtle wind)
-      if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
+      // Tree sway (subtle wind, every 4th frame)
+      if (viewModeRef.current === 'city' && frameCount % 4 === 0) {
         const windTime = performance.now() * 0.001;
         for (let ti = 0; ti < treeGroups.length; ti++) {
           const tg = treeGroups[ti];
