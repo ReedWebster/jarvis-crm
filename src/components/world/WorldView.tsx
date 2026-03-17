@@ -1821,16 +1821,49 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const COL_CENTERS = [-350, -292, -232, -174, -118, -58,   0,   60, 122, 180, 242, 298, 356];
     const ROW_CENTERS = [-350, -290, -230, -172, -116, -58,   0,   58, 118, 176, 236, 294, 354];
 
-    // Road: asphalt grain canvas texture
-    const roadCanvas = document.createElement('canvas'); roadCanvas.width = roadCanvas.height = 128;
+    // Road: asphalt grain canvas texture with aggregate and wear
+    const roadCanvas = document.createElement('canvas'); roadCanvas.width = roadCanvas.height = 256;
     const rCtx = roadCanvas.getContext('2d')!;
-    rCtx.fillStyle = '#1A1A1C'; rCtx.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 1200; i++) { rCtx.fillStyle = `rgba(255,255,255,${Math.random()*0.04})`; rCtx.fillRect(Math.random()*128, Math.random()*128, 1+Math.random(), 1); }
-    for (let i = 0; i < 200; i++)  { rCtx.fillStyle = `rgba(0,0,0,${Math.random()*0.08})`; rCtx.fillRect(Math.random()*128, Math.random()*128, 3, 2); }
+    // Base asphalt
+    rCtx.fillStyle = '#1E1E20'; rCtx.fillRect(0, 0, 256, 256);
+    // Aggregate particles (fine gravel texture)
+    for (let i = 0; i < 4000; i++) {
+      const brightness = 20 + Math.floor(Math.random() * 30);
+      rCtx.fillStyle = `rgb(${brightness},${brightness},${brightness + Math.floor(Math.random()*5)})`;
+      rCtx.fillRect(Math.random()*256, Math.random()*256, 1+Math.random()*1.5, 1+Math.random());
+    }
+    // Lighter aggregate flecks
+    for (let i = 0; i < 800; i++) {
+      rCtx.fillStyle = `rgba(255,255,255,${0.02 + Math.random()*0.04})`;
+      rCtx.fillRect(Math.random()*256, Math.random()*256, 1+Math.random()*2, 1);
+    }
+    // Dark patches (oil stains, wear)
+    for (let i = 0; i < 30; i++) {
+      rCtx.fillStyle = `rgba(0,0,0,${0.04 + Math.random()*0.06})`;
+      const px = Math.random()*256, py = Math.random()*256;
+      rCtx.beginPath(); rCtx.ellipse(px, py, 3+Math.random()*8, 2+Math.random()*5, Math.random()*Math.PI, 0, Math.PI*2);
+      rCtx.fill();
+    }
+    // Subtle crack lines
+    for (let i = 0; i < 6; i++) {
+      rCtx.strokeStyle = `rgba(0,0,0,${0.1 + Math.random()*0.1})`;
+      rCtx.lineWidth = 0.5 + Math.random();
+      rCtx.beginPath();
+      let cx = Math.random()*256, cy = Math.random()*256;
+      rCtx.moveTo(cx, cy);
+      for (let s = 0; s < 4; s++) {
+        cx += (Math.random()-0.5)*40; cy += (Math.random()-0.5)*40;
+        rCtx.lineTo(cx, cy);
+      }
+      rCtx.stroke();
+    }
     const roadTex = new THREE.CanvasTexture(roadCanvas); roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping; roadTex.repeat.set(4, 4);
-    const roadMat  = new THREE.MeshStandardMaterial({ map: roadTex, color: '#1C1C1E', roughness: 0.97 });
-    const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90 });
-    const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60 });
+    const roadMat  = new THREE.MeshStandardMaterial({ map: roadTex, color: '#1C1C1E', roughness: 0.97, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const swalkMat = new THREE.MeshStandardMaterial({ color: '#D8DDE3', roughness: 0.90, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const dashMat  = new THREE.MeshStandardMaterial({ color: '#F5E642', roughness: 0.60, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+
+    // White edge line material for road shoulders
+    const edgeLineMat = new THREE.MeshStandardMaterial({ color: '#E8E8E4', roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
 
     const ROAD_W = 4;
     const GRID_EXTENT = Math.max(Math.abs(COL_CENTERS[0]), COL_CENTERS[GRID_N - 1]) + BLOCK_SIZE / 2 + 4;
@@ -1873,30 +1906,134 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     ocean.position.y = -1.2;
     cityGroup.add(ocean);
 
+    // ── Beach: wet/dry sand gradient with noise detail ──
     const beachMat = new THREE.ShaderMaterial({
-      uniforms: {},
-      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader: `varying vec2 vUv;
+      uniforms: { uInnerR: { value: GRID_EXTENT - 24 }, uOuterR: { value: GRID_EXTENT + 130 } },
+      vertexShader: `varying vec2 vUv; varying vec3 vWorldPos;
+        void main(){ vUv=uv; vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `uniform float uInnerR; uniform float uOuterR;
+        varying vec2 vUv; varying vec3 vWorldPos;
         float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
         float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
           return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
         void main(){
-          float n = noise(vUv*18.0)*0.5 + noise(vUv*42.0)*0.25 + noise(vUv*90.0)*0.15;
-          vec3 sand = mix(vec3(0.72,0.58,0.34), vec3(0.84,0.72,0.48), n);
+          float dist = length(vWorldPos.xz);
+          float t = clamp((dist - uInnerR) / (uOuterR - uInnerR), 0.0, 1.0);
+          // Multi-octave sand noise
+          float n = noise(vWorldPos.xz*0.12)*0.5 + noise(vWorldPos.xz*0.35)*0.25 + noise(vWorldPos.xz*0.8)*0.15 + noise(vWorldPos.xz*2.0)*0.06;
+          // Dry sand (warm beige) → wet sand (dark tan near water)
+          vec3 drySand = vec3(0.88,0.78,0.55) + vec3(n*0.08, n*0.06, n*0.02);
+          vec3 wetSand = vec3(0.52,0.44,0.30) + vec3(n*0.04, n*0.03, n*0.01);
+          vec3 sand = mix(drySand, wetSand, smoothstep(0.5, 0.95, t));
+          // Dark debris streaks
+          float streak = noise(vWorldPos.xz * vec2(0.03, 0.15)) * noise(vWorldPos.xz * vec2(0.15, 0.04));
+          sand -= vec3(streak * 0.08);
+          // Subtle wet sheen near water
+          float wetSheen = smoothstep(0.75, 0.95, t) * 0.15;
+          sand += vec3(wetSheen * 0.5, wetSheen * 0.6, wetSheen * 0.8);
           gl_FragColor = vec4(sand, 1.0);
         }`,
     });
-    const beach = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT - 24, GRID_EXTENT + 130, 80), beachMat);
+    const beach = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT - 24, GRID_EXTENT + 130, 96), beachMat);
     beach.rotation.x = -Math.PI / 2;
     beach.position.y = -0.05;
     beach.receiveShadow = true;
     cityGroup.add(beach);
 
-    const foamMat = new THREE.MeshStandardMaterial({ color: '#F0EEE8', roughness: 0.9, transparent: true, opacity: 0.65 });
-    const foam = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT + 118, GRID_EXTENT + 132, 80), foamMat);
+    // ── Animated foam lines (3 concentric, animated opacity) ──
+    const foamShaderMat = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: { uTime: { value: 0 }, uInnerR: { value: GRID_EXTENT + 105 } },
+      vertexShader: `varying vec3 vWorldPos;
+        void main(){ vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `uniform float uTime; uniform float uInnerR;
+        varying vec3 vWorldPos;
+        float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+        float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }
+        void main(){
+          float dist = length(vWorldPos.xz);
+          float angle = atan(vWorldPos.z, vWorldPos.x);
+          // 3 foam lines at different distances, animated
+          float wave1 = sin(dist*0.12 + uTime*0.8 + angle*2.0)*0.5+0.5;
+          float wave2 = sin(dist*0.15 + uTime*0.6 - angle*1.5)*0.5+0.5;
+          float n = noise(vWorldPos.xz*0.3 + uTime*0.1);
+          float foam = wave1 * 0.6 + wave2 * 0.4;
+          foam *= smoothstep(uInnerR - 5.0, uInnerR + 8.0, dist) * smoothstep(uInnerR + 35.0, uInnerR + 15.0, dist);
+          foam += n * 0.2 * smoothstep(uInnerR, uInnerR + 20.0, dist);
+          vec3 col = vec3(0.95, 0.96, 0.94);
+          gl_FragColor = vec4(col, foam * 0.7);
+        }`,
+    });
+    const foam = new THREE.Mesh(new THREE.RingGeometry(GRID_EXTENT + 90, GRID_EXTENT + 140, 96), foamShaderMat);
     foam.rotation.x = -Math.PI / 2;
-    foam.position.y = -0.04;
+    foam.position.y = -0.03;
     cityGroup.add(foam);
+
+    // ── Beach rocks ──
+    const rockMat = new THREE.MeshStandardMaterial({ color: '#6E6860', roughness: 0.92, metalness: 0.02 });
+    const darkRockMat = new THREE.MeshStandardMaterial({ color: '#4A4640', roughness: 0.95, metalness: 0.02 });
+    const beachRng = seededRandom('beach-rocks');
+    for (let i = 0; i < 120; i++) {
+      const angle = beachRng() * Math.PI * 2;
+      const dist = GRID_EXTENT + 20 + beachRng() * 95;
+      const rx = Math.cos(angle) * dist;
+      const rz = Math.sin(angle) * dist;
+      const scale = 0.3 + beachRng() * 1.8;
+      const mat = beachRng() > 0.5 ? rockMat : darkRockMat;
+      const geo = beachRng() > 0.4
+        ? new THREE.DodecahedronGeometry(scale, 0)
+        : new THREE.SphereGeometry(scale, 5, 4);
+      const rock = new THREE.Mesh(geo, mat.clone());
+      rock.position.set(rx, -0.05 + scale * 0.25, rz);
+      rock.rotation.set(beachRng() * Math.PI, beachRng() * Math.PI, 0);
+      rock.scale.set(1, 0.4 + beachRng() * 0.4, 1 + beachRng() * 0.5);
+      rock.castShadow = true; rock.receiveShadow = true;
+      cityGroup.add(rock);
+    }
+
+    // ── Driftwood ──
+    const driftMat = new THREE.MeshStandardMaterial({ color: '#9E8E70', roughness: 0.95 });
+    for (let i = 0; i < 30; i++) {
+      const angle = beachRng() * Math.PI * 2;
+      const dist = GRID_EXTENT + 60 + beachRng() * 55;
+      const dx = Math.cos(angle) * dist;
+      const dz = Math.sin(angle) * dist;
+      const len = 1.5 + beachRng() * 4;
+      const drift = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08 + beachRng() * 0.12, 0.04, len, 5),
+        driftMat.clone()
+      );
+      drift.position.set(dx, -0.02, dz);
+      drift.rotation.set(0, beachRng() * Math.PI, Math.PI / 2 + (beachRng() - 0.5) * 0.3);
+      drift.castShadow = true;
+      cityGroup.add(drift);
+    }
+
+    // ── Beach grass tufts near city edge ──
+    const grassBladeMat = new THREE.MeshStandardMaterial({ color: '#7A9848', roughness: 0.85, side: THREE.DoubleSide });
+    const darkGrassMat = new THREE.MeshStandardMaterial({ color: '#5A7830', roughness: 0.88, side: THREE.DoubleSide });
+    for (let i = 0; i < 80; i++) {
+      const angle = beachRng() * Math.PI * 2;
+      const dist = GRID_EXTENT - 10 + beachRng() * 40;
+      const gx = Math.cos(angle) * dist;
+      const gz = Math.sin(angle) * dist;
+      const clump = new THREE.Group();
+      clump.position.set(gx, 0, gz);
+      const nBlades = 4 + Math.floor(beachRng() * 6);
+      for (let b = 0; b < nBlades; b++) {
+        const blade = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.12, 0.8 + beachRng() * 0.6),
+          beachRng() > 0.4 ? grassBladeMat : darkGrassMat
+        );
+        blade.position.set((beachRng() - 0.5) * 0.5, 0.35, (beachRng() - 0.5) * 0.5);
+        blade.rotation.set(-0.2 + beachRng() * 0.15, beachRng() * Math.PI, 0);
+        clump.add(blade);
+      }
+      cityGroup.add(clump);
+    }
 
     const groundShaderMat = new THREE.ShaderMaterial({
       uniforms: { uBaseColor: { value: new THREE.Color('#D0C8B8') } },
@@ -1918,7 +2055,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       groundShaderMat
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
+    ground.position.y = -0.02;
     ground.receiveShadow = true;
     cityGroup.add(ground);
 
@@ -1954,9 +2091,16 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     for (const { pos: xPos, w: rw } of roadXs) {
       const road = new THREE.Mesh(new THREE.PlaneGeometry(rw, GRID_EXTENT * 2), roadMat);
       road.rotation.x = -Math.PI / 2;
-      road.position.set(xPos, 0.01, 0);
+      road.position.set(xPos, 0.04, 0);
       road.receiveShadow = true;
       cityGroup.add(road);
+      // White edge lines on both sides
+      for (const side of [-1, 1]) {
+        const edgeLine = new THREE.Mesh(new THREE.PlaneGeometry(0.12, GRID_EXTENT * 2), edgeLineMat);
+        edgeLine.rotation.x = -Math.PI / 2;
+        edgeLine.position.set(xPos + side * (rw / 2 - 0.15), 0.06, 0);
+        cityGroup.add(edgeLine);
+      }
       const curbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadZs.length - 1; s++) {
         const zStart = roadZs[s].pos   + roadZs[s].w / 2 + 0.15;
@@ -1967,11 +2111,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         for (const side of [-1, 1]) {
           const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.6, segLen), swalkMat);
           sw.rotation.x = -Math.PI / 2;
-          sw.position.set(xPos + side * (rw / 2 + 0.8), 0.012, zMid);
+          sw.position.set(xPos + side * (rw / 2 + 0.8), 0.05, zMid);
           sw.receiveShadow = true;
           cityGroup.add(sw);
-          const curb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, segLen), curbMat.clone());
-          curb.position.set(xPos + side * (rw / 2 + 0.11), 0.06, zMid);
+          const curb = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, segLen), curbMat.clone());
+          curb.position.set(xPos + side * (rw / 2 + 0.11), 0.08, zMid);
           curb.receiveShadow = true; curb.castShadow = true;
           cityGroup.add(curb);
           if (Math.abs(xPos) <= 200) {
@@ -1991,7 +2135,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         if (roadZposArr.some(rz => Math.abs(dz - rz) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
         d.rotation.x = -Math.PI / 2;
-        d.position.set(xPos, 0.016, dz);
+        d.position.set(xPos, 0.07, dz);
         cityGroup.add(d);
       }
     }
@@ -2000,9 +2144,16 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     for (const { pos: zPos, w: rw } of roadZs) {
       const road = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, rw), roadMat);
       road.rotation.x = -Math.PI / 2;
-      road.position.set(0, 0.01, zPos);
+      road.position.set(0, 0.04, zPos);
       road.receiveShadow = true;
       cityGroup.add(road);
+      // White edge lines on both sides
+      for (const side of [-1, 1]) {
+        const edgeLine = new THREE.Mesh(new THREE.PlaneGeometry(GRID_EXTENT * 2, 0.12), edgeLineMat);
+        edgeLine.rotation.x = -Math.PI / 2;
+        edgeLine.position.set(0, 0.06, zPos + side * (rw / 2 - 0.15));
+        cityGroup.add(edgeLine);
+      }
       const hCurbMat = new THREE.MeshStandardMaterial({ color: '#C8D0D4', roughness: 0.92 });
       for (let s = 0; s < roadXs.length - 1; s++) {
         const xStart = roadXs[s].pos   + roadXs[s].w / 2 + 0.15;
@@ -2013,11 +2164,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         for (const side of [-1, 1]) {
           const sw = new THREE.Mesh(new THREE.PlaneGeometry(segLen, 1.6), swalkMat);
           sw.rotation.x = -Math.PI / 2;
-          sw.position.set(xMid, 0.012, zPos + side * (rw / 2 + 0.8));
+          sw.position.set(xMid, 0.05, zPos + side * (rw / 2 + 0.8));
           sw.receiveShadow = true;
           cityGroup.add(sw);
-          const curb = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.12, 0.22), hCurbMat.clone());
-          curb.position.set(xMid, 0.06, zPos + side * (rw / 2 + 0.11));
+          const curb = new THREE.Mesh(new THREE.BoxGeometry(segLen, 0.14, 0.22), hCurbMat.clone());
+          curb.position.set(xMid, 0.08, zPos + side * (rw / 2 + 0.11));
           curb.receiveShadow = true; curb.castShadow = true;
           cityGroup.add(curb);
           if (Math.abs(zPos) <= 200) {
@@ -2037,7 +2188,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         if (roadXposArr.some(rx => Math.abs(dx - rx) < ROAD_W)) continue;
         const d = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.18), dashMat);
         d.rotation.x = -Math.PI / 2;
-        d.position.set(dx, 0.016, zPos);
+        d.position.set(dx, 0.07, zPos);
         cityGroup.add(d);
       }
     }
@@ -2045,10 +2196,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     // Intersection fill squares (clean asphalt at every crossing)
     for (const { pos: xPos, w: xw } of roadXs) {
       for (const { pos: zPos, w: zw } of roadZs) {
-        const iw = Math.max(xw, zw);
+        const iw = Math.max(xw, zw) + 0.5;
         const fill = new THREE.Mesh(new THREE.PlaneGeometry(iw, iw), roadMat);
         fill.rotation.x = -Math.PI / 2;
-        fill.position.set(xPos, 0.013, zPos);
+        fill.position.set(xPos, 0.045, zPos);
         cityGroup.add(fill);
       }
     }
@@ -2064,7 +2215,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         cwCtx.fillRect(4, 8 + s * 23, 56, 13);
       }
       const cwTex = new THREE.CanvasTexture(cwCanvas);
-      const cwMat = new THREE.MeshStandardMaterial({ map: cwTex, roughness: 0.95, transparent: true, opacity: 0.85 });
+      const cwMat = new THREE.MeshStandardMaterial({ map: cwTex, roughness: 0.95, transparent: true, opacity: 0.85, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
       for (const { pos: xPos, w: xw } of roadXs) {
         for (const { pos: zPos, w: zw } of roadZs) {
           // Only at downtown + midrise intersections
@@ -2077,22 +2228,22 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           // North approach
           const cwN = new THREE.Mesh(new THREE.PlaneGeometry(cwW, cwLen), cwMat);
           cwN.rotation.x = -Math.PI / 2;
-          cwN.position.set(xPos, 0.019, zPos - halfRz - cwLen / 2 - 0.1);
+          cwN.position.set(xPos, 0.08,zPos - halfRz - cwLen / 2 - 0.1);
           cityGroup.add(cwN);
           // South approach
           const cwS = new THREE.Mesh(new THREE.PlaneGeometry(cwW, cwLen), cwMat);
           cwS.rotation.x = -Math.PI / 2;
-          cwS.position.set(xPos, 0.019, zPos + halfRz + cwLen / 2 + 0.1);
+          cwS.position.set(xPos, 0.08,zPos + halfRz + cwLen / 2 + 0.1);
           cityGroup.add(cwS);
           // West approach (rotated 90°)
           const cwW2 = new THREE.Mesh(new THREE.PlaneGeometry(cwLen, cwW), cwMat);
           cwW2.rotation.x = -Math.PI / 2;
-          cwW2.position.set(xPos - halfRx - cwLen / 2 - 0.1, 0.019, zPos);
+          cwW2.position.set(xPos - halfRx - cwLen / 2 - 0.1, 0.08,zPos);
           cityGroup.add(cwW2);
           // East approach
           const cwE = new THREE.Mesh(new THREE.PlaneGeometry(cwLen, cwW), cwMat);
           cwE.rotation.x = -Math.PI / 2;
-          cwE.position.set(xPos + halfRx + cwLen / 2 + 0.1, 0.019, zPos);
+          cwE.position.set(xPos + halfRx + cwLen / 2 + 0.1, 0.08,zPos);
           cityGroup.add(cwE);
         }
       }
@@ -2136,7 +2287,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         const seg = new THREE.Mesh(new THREE.PlaneGeometry(diag.width, len + 2), roadMat);
         seg.rotation.x = -Math.PI / 2;
         seg.rotation.z = angle;
-        seg.position.set(mx, 0.022, mz);
+        seg.position.set(mx, 0.06, mz);
         seg.receiveShadow = true;
         cityGroup.add(seg);
 
@@ -2147,7 +2298,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.6, len + 2), swalkMat);
           sw.rotation.x = -Math.PI / 2;
           sw.rotation.z = angle;
-          sw.position.set(mx + offX, 0.024, mz + offZ);
+          sw.position.set(mx + offX, 0.065, mz + offZ);
           sw.receiveShadow = true;
           cityGroup.add(sw);
         }
@@ -2160,7 +2311,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), dashMat);
           dash.rotation.x = -Math.PI / 2;
           dash.rotation.z = angle;
-          dash.position.set(dpx, 0.028, dpz);
+          dash.position.set(dpx, 0.08, dpz);
           cityGroup.add(dash);
         }
       }
@@ -2382,7 +2533,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
                        : new THREE.MeshStandardMaterial({ color: district.color, roughness: 0.9 });
         const patch = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2), patchMat);
         patch.rotation.x = -Math.PI / 2;
-        patch.position.set(cx, zone === 'water' ? -0.2 : 0.015, cz);
+        patch.position.set(cx, zone === 'water' ? -0.2 : 0.01, cz);
         patch.receiveShadow = true;
         cityGroup.add(patch);
 
@@ -3122,6 +3273,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
 
       // Water animation
       waterShaderMat.uniforms.uTime.value += 0.012;
+      foamShaderMat.uniforms.uTime.value += 0.012;
       // Update water sun direction from light position
       waterShaderMat.uniforms.uSunDir.value.copy(sun.position).normalize();
 
