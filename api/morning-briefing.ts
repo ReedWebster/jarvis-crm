@@ -2,32 +2,98 @@ import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 import { buildBriefingPrompt } from '../lib/_briefingHelpers.js';
 import type { BriefingData } from '../lib/_briefingHelpers.js';
 import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from '../lib/_googleAuth.js';
+import { generateText, Output } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { z } from 'zod';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const briefingSchema = z.object({
+  executiveSummary: z.string().describe('2-3 sentence overview of the day ahead — what matters most and why'),
+  priorityTasks: z.array(z.object({
+    title: z.string(),
+    reasoning: z.string().describe('why this matters today'),
+    priority: z.enum(['high', 'medium', 'low']),
+  })).describe('3-5 most impactful tasks, cross-referencing todos, project next actions, academic deadlines, client deliverables'),
+  goalsCheckIn: z.array(z.object({
+    title: z.string(),
+    progress: z.number().min(0).max(100),
+    note: z.string().describe('status or suggestion'),
+  })).describe('Only goals that need attention — behind schedule, near deadline, or blocked'),
+  suggestedGoals: z.array(z.object({
+    title: z.string(),
+    area: z.enum(['ventures', 'academic', 'health', 'spiritual', 'financial', 'relationships', 'personal']),
+    reasoning: z.string().describe('why set this goal now based on current data'),
+  })).describe('1-3 new goals based on gaps in current data. Empty array if nothing useful to suggest.'),
+  scheduleRecommendations: z.array(z.object({
+    suggestion: z.string(),
+    reasoning: z.string().describe('why this schedule change would help'),
+  })).describe('1-3 specific schedule changes based on energy patterns, deadline proximity, workload'),
+  contactFollowUps: z.array(z.object({
+    name: z.string(),
+    reason: z.string().describe('why to reach out'),
+  })),
+  habits: z.object({
+    yesterdayRate: z.number().min(0).max(100),
+    focus: z.array(z.string()).describe('habit names to focus on today'),
+    streakNote: z.string().describe('observation about habit trends'),
+  }),
+  financialSnapshot: z.object({
+    recentSpending: z.string().describe('brief summary of recent spending patterns'),
+    savingsProgress: z.string().describe('status of savings goals'),
+    actionItems: z.array(z.string()).describe('financial actions to take, empty if nothing to flag'),
+  }),
+  academicAlerts: z.array(z.object({
+    course: z.string(),
+    alert: z.string().describe('upcoming exam, assignment due, or grade concern'),
+  })).describe('Assignments due within 7 days, upcoming exams, below-target grades. Empty if no alerts.'),
+  recruitmentPipeline: z.array(z.object({
+    item: z.string(),
+    action: z.string().describe('what needs to happen next'),
+  })).describe('Active candidates and clients needing attention. Empty if nothing active.'),
+  readingProgress: z.object({
+    currentlyReading: z.array(z.string()).describe('titles in progress'),
+    suggestion: z.string().describe('what to read next and why'),
+  }),
+  socialMedia: z.array(z.object({
+    item: z.string(),
+    action: z.string().describe('posts to approve, schedule, or create'),
+  })).describe('Pending posts/approvals. Empty if nothing pending.'),
+  wellnessCheck: z.object({
+    energyTrend: z.enum(['up', 'down', 'stable']),
+    moodTrend: z.enum(['up', 'down', 'stable']),
+    recommendation: z.string().describe('wellness suggestion based on recent logs'),
+  }),
+  strategicNotes: z.array(z.string()).describe('Non-obvious patterns across ALL data — energy trends, scheduling conflicts, financial patterns, relationship maintenance gaps'),
+  calendar: z.array(z.object({
+    time: z.string(),
+    title: z.string(),
+    prepNotes: z.string().describe('what to prepare'),
+  })).describe('Calendar events with prep notes for meetings. Use Google Calendar events if provided.'),
+  emailDigest: z.array(z.object({
+    from: z.string(),
+    subject: z.string(),
+    summary: z.string().describe('1-sentence summary'),
+    urgent: z.boolean(),
+  })).describe('Summarized overnight emails. Empty if no emails provided.'),
+});
 
 const SYSTEM_PROMPT = `You are Reed Webster's personal chief of staff and life management AI.
-Generate a comprehensive, actionable morning briefing for today.
-
-Structure your response as JSON with this exact shape:
-{
-  "executiveSummary": "2-3 sentence overview of the day ahead — what matters most and why",
-  "priorityTasks": [{ "title": "...", "reasoning": "why this matters today", "priority": "high|medium|low" }],
-  "goalsCheckIn": [{ "title": "...", "progress": 0-100, "note": "status or suggestion" }],
-  "contactFollowUps": [{ "name": "...", "reason": "why to reach out" }],
-  "habits": { "yesterdayRate": 0-100, "focus": ["habit names to focus on today"] },
-  "strategicNotes": ["pattern-based suggestions, prep reminders, or strategic observations"],
-  "calendar": [{ "time": "HH:MM", "title": "...", "prepNotes": "what to prepare" }],
-  "emailDigest": [{ "from": "...", "subject": "...", "summary": "1-sentence summary", "urgent": true/false }]
-}
+Generate a comprehensive, actionable morning briefing synthesizing ALL data from his CRM/life system.
 
 Rules:
-- priorityTasks: Pick the 3-5 most impactful tasks. Consider deadlines, priorities, and project context.
+- priorityTasks: Pick the 3-5 most impactful tasks. Cross-reference todos, project next actions, academic deadlines, client deliverables, and recruitment needs.
 - goalsCheckIn: Only include goals that need attention (behind schedule, near deadline, or blocked).
-- strategicNotes: Surface non-obvious patterns — energy trends, scheduling conflicts, things to prepare for upcoming deadlines.
-- calendar: If Google Calendar events are provided, use those. Include prep notes for meetings that need preparation.
-- emailDigest: Summarize overnight emails. Flag urgent ones. If no emails provided, return an empty array.
-- Be direct, practical, no fluff. Like a smart executive assistant who knows everything about Reed's life.
-- Return ONLY valid JSON, no markdown fences or extra text.`;
+- suggestedGoals: Propose 1-3 new goals based on gaps you see in current data — areas without goals, patterns in time/energy data, upcoming deadlines, etc. Only suggest if genuinely useful.
+- scheduleRecommendations: Suggest 1-3 specific schedule changes based on energy patterns, time block analysis, deadline proximity, and workload distribution. Be concrete (e.g., "Block 2 hours for X at Y time when your energy is typically highest").
+- financialSnapshot: Summarize recent financial activity, savings goal progress, and flag anything concerning. Return empty actionItems array if nothing to flag.
+- academicAlerts: Flag assignments due within 7 days, upcoming exams, and courses where grades are below target. Return empty array if no alerts.
+- recruitmentPipeline: Summarize active candidates and clients needing attention. Return empty array if nothing active.
+- readingProgress: Note what's currently being read and suggest next reads from the want-to-read list.
+- socialMedia: Flag posts needing approval, content that should be created, or scheduling gaps. Return empty array if nothing pending.
+- wellnessCheck: Analyze recent mood/energy logs to surface trends and give one actionable recommendation.
+- strategicNotes: Surface non-obvious patterns across ALL data — energy trends, scheduling conflicts, financial patterns, relationship maintenance gaps, goal alignment issues.
+- calendar: If Google Calendar events are provided, use those. Include prep notes for meetings.
+- emailDigest: Summarize overnight emails. Flag urgent ones. Return empty array if no emails provided.
+- Be direct, practical, no fluff. Like a smart executive assistant who knows EVERYTHING about Reed's life.`;
 
 export default async function handler(req: any, res: any) {
   // Accept GET (Vercel Cron) or POST (manual trigger)
@@ -62,12 +128,6 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured.' });
-    return;
-  }
-
   if (!supabaseAdmin) {
     res.status(500).json({ error: 'Supabase is not configured.' });
     return;
@@ -80,29 +140,60 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // Pull all data in a single query
+    // Pull ALL CRM data in a single query
     const keys = [
       'jarvis:todos', 'jarvis:goals', 'jarvis:projects',
       'jarvis:habits', 'jarvis:habitTracker',
       'jarvis:timeBlocks', 'jarvis:timeCategories',
       'jarvis:contacts', 'jarvis:identity',
+      'jarvis:courses', 'jarvis:financialEntries',
+      'jarvis:savingsGoals', 'jarvis:ventureFinancials',
+      'jarvis:weeklyReviews', 'jarvis:decisionLogs',
+      'jarvis:readingItems', 'jarvis:candidates',
+      'jarvis:notes', 'jarvis:dailyEvents',
+      'jarvis:dailyMoodLogs', 'jarvis:socialPosts',
+      'jarvis:socialApprovals',
     ];
 
-    const { data: rows, error: dbError } = await supabaseAdmin
-      .from('user_data')
-      .select('key, value')
-      .eq('user_id', userId)
-      .in('key', keys);
+    // ── Improvement #2: Parallelize ALL data fetching ──
+    // DB queries + Google API run concurrently instead of sequentially
+    const googleDataPromise = (async () => {
+      try {
+        const googleToken = await getGoogleAccessToken(userId);
+        const [gmail, calendar] = await Promise.all([
+          fetchRecentEmails(googleToken, 12),
+          fetchTodayCalendarEvents(googleToken),
+        ]);
+        return { gmail, calendar, status: `gmail:${gmail.length},calendar:${calendar.length}` };
+      } catch (e: any) {
+        return { gmail: [] as any[], calendar: [] as any[], status: `error: ${e?.message ?? 'unknown'}` };
+      }
+    })();
 
-    if (dbError) {
-      res.status(500).json({ error: 'Failed to fetch data', detail: dbError.message });
+    const [userResult, workspaceResult, googleData] = await Promise.all([
+      supabaseAdmin
+        .from('user_data')
+        .select('key, value')
+        .eq('user_id', userId)
+        .in('key', keys),
+      supabaseAdmin
+        .from('workspace_data')
+        .select('key, value')
+        .eq('key', 'clients'),
+      googleDataPromise,
+    ]);
+
+    if (userResult.error) {
+      res.status(500).json({ error: 'Failed to fetch data', detail: userResult.error.message });
       return;
     }
 
     const dataMap: Record<string, any> = {};
-    for (const row of rows ?? []) {
+    for (const row of userResult.data ?? []) {
       dataMap[row.key] = row.value;
     }
+
+    const clients = workspaceResult.data?.[0]?.value ?? [];
 
     const briefingData: BriefingData = {
       identity: dataMap['jarvis:identity'] ?? { name: 'Reed', priorities: [] },
@@ -114,62 +205,36 @@ export default async function handler(req: any, res: any) {
       timeBlocks: dataMap['jarvis:timeBlocks'] ?? [],
       timeCategories: dataMap['jarvis:timeCategories'] ?? [],
       contacts: dataMap['jarvis:contacts'] ?? [],
+      courses: dataMap['jarvis:courses'] ?? [],
+      financialEntries: dataMap['jarvis:financialEntries'] ?? [],
+      savingsGoals: dataMap['jarvis:savingsGoals'] ?? [],
+      ventureFinancials: dataMap['jarvis:ventureFinancials'] ?? [],
+      weeklyReviews: dataMap['jarvis:weeklyReviews'] ?? [],
+      decisionLogs: dataMap['jarvis:decisionLogs'] ?? [],
+      readingItems: dataMap['jarvis:readingItems'] ?? [],
+      candidates: dataMap['jarvis:candidates'] ?? [],
+      clients,
+      notes: dataMap['jarvis:notes'] ?? [],
+      dailyEvents: dataMap['jarvis:dailyEvents'] ?? [],
+      dailyMoodLogs: dataMap['jarvis:dailyMoodLogs'] ?? [],
+      socialPosts: dataMap['jarvis:socialPosts'] ?? [],
+      socialApprovals: dataMap['jarvis:socialApprovals'] ?? [],
     };
 
-    // Try to fetch Google data (Gmail + Calendar) — non-fatal if unavailable
-    let gmailData: any[] = [];
-    let calendarData: any[] = [];
-    let googleStatus = 'not_connected';
-    try {
-      const googleToken = await getGoogleAccessToken(userId);
-      googleStatus = 'token_ok';
-      [gmailData, calendarData] = await Promise.all([
-        fetchRecentEmails(googleToken, 12),
-        fetchTodayCalendarEvents(googleToken),
-      ]);
-      googleStatus = `gmail:${gmailData.length},calendar:${calendarData.length}`;
-    } catch (e: any) {
-      googleStatus = `error: ${e?.message ?? 'unknown'}`;
-    }
+    // Build the prompt (improvement #3: pre-filtered data inside buildBriefingPrompt)
+    const userPrompt = buildBriefingPrompt(briefingData, googleData.gmail, googleData.calendar);
 
-    // Build the prompt
-    const userPrompt = buildBriefingPrompt(briefingData, gmailData, calendarData);
-
-    // Call Claude API
-    const r = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
+    // ── Improvement #1 & #6: AI SDK with structured output + Haiku for speed ──
+    const { output: sections } = await generateText({
+      model: anthropic('claude-haiku-4-5-20251001'),
+      system: SYSTEM_PROMPT,
+      prompt: userPrompt,
+      output: Output.object({ schema: briefingSchema }),
+      maxTokens: 4000,
     });
 
-    if (!r.ok) {
-      const text = await r.text();
-      res.status(502).json({ error: 'Claude API error', detail: text });
-      return;
-    }
-
-    const claudeResponse = await r.json();
-    let content = Array.isArray(claudeResponse.content) && claudeResponse.content[0]?.text
-      ? claudeResponse.content[0].text
-      : '';
-
-    // Strip markdown code fences if present
-    content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-
-    let sections;
-    try {
-      sections = JSON.parse(content);
-    } catch {
-      res.status(502).json({ error: 'Claude response was not valid JSON', raw: content });
+    if (!sections) {
+      res.status(502).json({ error: 'Claude returned empty structured output' });
       return;
     }
 
@@ -197,7 +262,7 @@ export default async function handler(req: any, res: any) {
       }, { onConflict: 'user_id,key' }),
     ]);
 
-    res.status(200).json({ success: true, briefing, googleStatus });
+    res.status(200).json({ success: true, briefing, googleStatus: googleData.status });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to generate briefing', detail: err?.message ?? String(err) });
   }

@@ -9,9 +9,53 @@ import {
   RefreshCw,
   Clock,
   Mail,
+  CalendarClock,
+  DollarSign,
+  GraduationCap,
+  Briefcase,
+  BookOpen,
+  Share2,
+  Heart,
+  Goal,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { MorningBriefing } from '../../types';
+
+// ── Improvement #5: Collapsible sub-sections for low-priority content ──
+function CollapsibleSection({
+  icon: Icon,
+  title,
+  defaultOpen = false,
+  hasContent = true,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  defaultOpen?: boolean;
+  hasContent?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!hasContent) return null;
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 group w-full"
+      >
+        <Icon className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+        <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          {title}
+        </h4>
+        {open
+          ? <ChevronUp className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+          : <ChevronDown className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+        }
+      </button>
+      {open && children}
+    </div>
+  );
+}
 
 interface Props {
   briefing: MorningBriefing | null;
@@ -174,44 +218,7 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
             </div>
           )}
 
-          {/* Goals Check-in */}
-          {sections.goalsCheckIn?.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                Goals Check-in
-              </h4>
-              <div className="space-y-1.5">
-                {sections.goalsCheckIn.map((goal, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                          {goal.title}
-                        </span>
-                        <span className="text-xs flex-shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>
-                          {goal.progress}%
-                        </span>
-                      </div>
-                      <div className="w-full rounded-full h-1" style={{ backgroundColor: 'var(--bg-elevated)' }}>
-                        <div
-                          className="h-1 rounded-full transition-all"
-                          style={{
-                            width: `${goal.progress}%`,
-                            backgroundColor: goal.progress >= 75 ? 'var(--text-secondary)' : goal.progress >= 40 ? 'var(--text-muted)' : 'var(--priority-high, #ef4444)',
-                          }}
-                        />
-                      </div>
-                      {goal.note && (
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{goal.note}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Contact Follow-ups */}
+          {/* ── Always visible: Contact Follow-ups (actionable) ── */}
           {sections.contactFollowUps?.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
@@ -231,7 +238,7 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
             </div>
           )}
 
-          {/* Email Digest */}
+          {/* ── Always visible: Email Digest (time-sensitive) ── */}
           {sections.emailDigest?.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
@@ -256,24 +263,148 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
             </div>
           )}
 
-          {/* Strategic Notes */}
-          {sections.strategicNotes?.length > 0 && (
+          {/* ── Always visible: Academic Alerts (deadline-driven) ── */}
+          {sections.academicAlerts && sections.academicAlerts.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <Lightbulb className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <GraduationCap className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                 <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                  Strategic Notes
+                  Academic Alerts
                 </h4>
               </div>
               <ul className="space-y-1">
-                {sections.strategicNotes.map((note, i) => (
-                  <li key={i} className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    {note}
+                {sections.academicAlerts.map((a, i) => (
+                  <li key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{a.course}</span>
+                    {' — '}{a.alert}
                   </li>
                 ))}
               </ul>
             </div>
           )}
+
+          {/* ── Collapsible secondary sections (click to expand) ── */}
+
+          <CollapsibleSection icon={Goal} title="Goals Check-in" hasContent={(sections.goalsCheckIn?.length ?? 0) > 0} defaultOpen={false}>
+            <div className="space-y-1.5">
+              {sections.goalsCheckIn?.map((goal, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                        {goal.title}
+                      </span>
+                      <span className="text-xs flex-shrink-0 ml-2" style={{ color: 'var(--text-muted)' }}>
+                        {goal.progress}%
+                      </span>
+                    </div>
+                    <div className="w-full rounded-full h-1" style={{ backgroundColor: 'var(--bg-elevated)' }}>
+                      <div
+                        className="h-1 rounded-full transition-all"
+                        style={{
+                          width: `${goal.progress}%`,
+                          backgroundColor: goal.progress >= 75 ? 'var(--text-secondary)' : goal.progress >= 40 ? 'var(--text-muted)' : 'var(--priority-high, #ef4444)',
+                        }}
+                      />
+                    </div>
+                    {goal.note && (
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{goal.note}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={CalendarClock} title="Schedule Recommendations" hasContent={(sections.scheduleRecommendations?.length ?? 0) > 0}>
+            <ul className="space-y-1.5">
+              {sections.scheduleRecommendations?.map((rec, i) => (
+                <li key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{rec.suggestion}</span>
+                  <span className="text-xs ml-1.5" style={{ color: 'var(--text-muted)' }}>— {rec.reasoning}</span>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={DollarSign} title="Financial Snapshot" hasContent={!!sections.financialSnapshot}>
+            <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+              <p>{sections.financialSnapshot?.recentSpending}</p>
+              <p>{sections.financialSnapshot?.savingsProgress}</p>
+              {(sections.financialSnapshot?.actionItems?.length ?? 0) > 0 && (
+                <ul className="space-y-0.5 mt-1">
+                  {sections.financialSnapshot!.actionItems.map((item, i) => (
+                    <li key={i} className="font-medium" style={{ color: 'var(--text-primary)' }}>→ {item}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={Briefcase} title="Recruitment & Clients" hasContent={(sections.recruitmentPipeline?.length ?? 0) > 0}>
+            <ul className="space-y-1">
+              {sections.recruitmentPipeline?.map((r, i) => (
+                <li key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{r.item}</span>
+                  {' — '}{r.action}
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={Heart} title="Wellness Check" hasContent={!!sections.wellnessCheck}>
+            <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+              <p>
+                Energy: <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{sections.wellnessCheck?.energyTrend}</span>
+                {' · '}Mood: <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{sections.wellnessCheck?.moodTrend}</span>
+              </p>
+              <p style={{ color: 'var(--text-muted)' }}>{sections.wellnessCheck?.recommendation}</p>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={Goal} title="Suggested Goals" hasContent={(sections.suggestedGoals?.length ?? 0) > 0}>
+            <ul className="space-y-1.5">
+              {sections.suggestedGoals?.map((g, i) => (
+                <li key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{g.title}</span>
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] uppercase" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>{g.area}</span>
+                  <p className="mt-0.5" style={{ color: 'var(--text-muted)' }}>{g.reasoning}</p>
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={BookOpen} title="Reading" hasContent={!!sections.readingProgress}>
+            <div className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+              {(sections.readingProgress?.currentlyReading?.length ?? 0) > 0 && (
+                <p>Currently: {sections.readingProgress!.currentlyReading.join(', ')}</p>
+              )}
+              {sections.readingProgress?.suggestion && (
+                <p style={{ color: 'var(--text-muted)' }}>{sections.readingProgress.suggestion}</p>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={Share2} title="Social Media" hasContent={(sections.socialMedia?.length ?? 0) > 0}>
+            <ul className="space-y-1">
+              {sections.socialMedia?.map((s, i) => (
+                <li key={i} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{s.item}</span>
+                  {' — '}{s.action}
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
+
+          <CollapsibleSection icon={Lightbulb} title="Strategic Notes" hasContent={(sections.strategicNotes?.length ?? 0) > 0}>
+            <ul className="space-y-1">
+              {sections.strategicNotes?.map((note, i) => (
+                <li key={i} className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </CollapsibleSection>
 
           {/* Connect Google prompt — only show if no email AND no calendar data */}
           {(!sections.emailDigest || sections.emailDigest.length === 0) &&

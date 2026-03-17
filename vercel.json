@@ -8,12 +8,19 @@
   "functions": {
     "api/morning-briefing.ts": {
       "maxDuration": 60
+    },
+    "api/auto-complete-todos.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/morning-briefing",
-      "schedule": "0 14 * * *"
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/auto-complete-todos",
+      "schedule": "0 13 * * *"
     }
   ]
 }
