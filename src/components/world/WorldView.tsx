@@ -350,91 +350,164 @@ function createMoatShieldTower(cx: number, cz: number, logoTex: THREE.Texture): 
 
   // ── Materials ──
   const glassMat = () => new THREE.MeshStandardMaterial({
-    color: '#0C1E3A', roughness: 0.03, metalness: 0.70, transparent: true, opacity: 0.85,
+    color: '#0A1828', roughness: 0.02, metalness: 0.75, transparent: true, opacity: 0.88,
   });
-  const steelMat = () => new THREE.MeshStandardMaterial({ color: '#8A9BB0', roughness: 0.15, metalness: 0.90 });
-  const darkSteelMat = () => new THREE.MeshStandardMaterial({ color: '#3A4A5E', roughness: 0.12, metalness: 0.92 });
-  const accentMat = () => new THREE.MeshStandardMaterial({ color: '#40B0FF', emissive: '#40B0FF', emissiveIntensity: 0.6 });
-  const glowMat = new THREE.MeshStandardMaterial({ color: '#60CCFF', emissive: '#60CCFF', emissiveIntensity: 1.5 });
-  const lineMat = () => new THREE.MeshStandardMaterial({ color: '#1A3050', roughness: 0.10, metalness: 0.50 });
-  const padMat = new THREE.MeshStandardMaterial({ color: '#2A3A4A', roughness: 0.6, metalness: 0.4 });
+  const steelMat = () => new THREE.MeshStandardMaterial({ color: '#7A8A9C', roughness: 0.18, metalness: 0.92 });
+  const darkSteelMat = () => new THREE.MeshStandardMaterial({ color: '#2E3C4E', roughness: 0.12, metalness: 0.94 });
+  const brushedSteelMat = () => new THREE.MeshStandardMaterial({ color: '#5A6878', roughness: 0.25, metalness: 0.88 });
+  const concreteMat = () => new THREE.MeshStandardMaterial({ color: '#4A5058', roughness: 0.92, metalness: 0.02 });
+  const accentMat = () => new THREE.MeshStandardMaterial({ color: '#2890D8', emissive: '#2890D8', emissiveIntensity: 0.35 });
+  const warmGlowMat = () => new THREE.MeshStandardMaterial({ color: '#FFE8C0', emissive: '#FFD090', emissiveIntensity: 0.3 });
+  const mullionMat = () => new THREE.MeshStandardMaterial({ color: '#1C2838', roughness: 0.15, metalness: 0.65 });
+  const padMat = new THREE.MeshStandardMaterial({ color: '#2A3440', roughness: 0.7, metalness: 0.35 });
 
-  // ── Helper: curtain-wall glass box with horizontal panel lines ──
-  const glassBox = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+  // ── Helper: box shorthand ──
+  const box = (w: number, h: number, d: number, mat: THREE.MeshStandardMaterial, px = 0, py = 0, pz = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(px, py, pz);
+    m.castShadow = true; m.receiveShadow = true;
+    g.add(m); return m;
+  };
+
+  // ── Helper: curtain-wall glass section with mullion grid ──
+  const glassSection = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    // Main glass volume
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glassMat());
     mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.position.set(x, y + h / 2, z);
     g.add(mesh);
-    const lineCount = Math.floor(h / 2.0);
-    const lm = lineMat();
-    for (let i = 1; i <= lineCount; i++) {
-      const ly = y + i * (h / (lineCount + 1));
-      // +Z face
-      const fz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.06), lm.clone());
-      fz.position.set(x, ly, z + d / 2 + 0.02); g.add(fz);
-      // -Z face
-      const bz = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.06), lm.clone());
-      bz.position.set(x, ly, z - d / 2 - 0.02); bz.rotation.y = Math.PI; g.add(bz);
-      // +X face
-      const rx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.06), lm.clone());
-      rx.position.set(x + w / 2 + 0.02, ly, z); rx.rotation.y = Math.PI / 2; g.add(rx);
-      // -X face
-      const lx = new THREE.Mesh(new THREE.PlaneGeometry(d - 0.2, 0.06), lm.clone());
-      lx.position.set(x - w / 2 - 0.02, ly, z); lx.rotation.y = -Math.PI / 2; g.add(lx);
+
+    const mm = mullionMat();
+    // Horizontal mullions (floor lines)
+    const hCount = Math.floor(h / 3.2);
+    for (let i = 1; i <= hCount; i++) {
+      const ly = y + i * (h / (hCount + 1));
+      // Front/back faces
+      for (const zSign of [1, -1]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, 0.08, 0.04), mm.clone());
+        bar.position.set(x, ly, z + zSign * (d / 2 + 0.02)); g.add(bar);
+      }
+      // Side faces
+      for (const xSign of [1, -1]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, d - 0.1), mm.clone());
+        bar.position.set(x + xSign * (w / 2 + 0.02), ly, z); g.add(bar);
+      }
+    }
+    // Vertical mullions
+    const vCountW = Math.floor(w / 4);
+    for (let i = 1; i <= vCountW; i++) {
+      const lx = x - w / 2 + i * (w / (vCountW + 1));
+      for (const zSign of [1, -1]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06, h, 0.04), mm.clone());
+        bar.position.set(lx, y + h / 2, z + zSign * (d / 2 + 0.02)); g.add(bar);
+      }
+    }
+    const vCountD = Math.floor(d / 4);
+    for (let i = 1; i <= vCountD; i++) {
+      const lz = z - d / 2 + i * (d / (vCountD + 1));
+      for (const xSign of [1, -1]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.04, h, 0.06), mm.clone());
+        bar.position.set(x + xSign * (w / 2 + 0.02), y + h / 2, lz); g.add(bar);
+      }
     }
     return mesh;
   };
 
-  // ── Steel trim ledge ──
+  // ── Helper: structural corner columns ──
+  const cornerColumns = (w: number, d: number, h: number, y: number, z: number) => {
+    const colMat = brushedSteelMat();
+    const colW = 0.6, colD = 0.6;
+    for (const [sx, sz] of [[1,1],[-1,1],[1,-1],[-1,-1]] as [number,number][]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(colW, h, colD), colMat.clone());
+      col.position.set(sx * (w / 2 - colW / 2), y + h / 2, z + sz * (d / 2 - colD / 2));
+      col.castShadow = true; g.add(col);
+    }
+  };
+
+  // ── Helper: mechanical floor band (dark louvered strip) ──
+  const mechFloor = (w: number, d: number, y: number, z: number) => {
+    const mechMat = new THREE.MeshStandardMaterial({ color: '#1A2028', roughness: 0.85, metalness: 0.3 });
+    box(w + 0.3, 1.2, d + 0.3, mechMat, 0, y + 0.6, z);
+    // Louver lines
+    const louverMat = new THREE.MeshStandardMaterial({ color: '#0E1418', roughness: 0.9 });
+    for (let i = 0; i < 4; i++) {
+      const ly = y + 0.2 + i * 0.28;
+      for (const zs of [1, -1]) {
+        const louver = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.5, 0.08), louverMat.clone());
+        louver.position.set(0, ly, z + zs * (d / 2 + 0.16)); g.add(louver);
+      }
+    }
+  };
+
+  // ── Helper: steel trim ledge with drip edge ──
   const ledge = (w: number, d: number, x: number, y: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.35, d + 0.8), steelMat());
-    mesh.castShadow = true; mesh.position.set(x, y, z); g.add(mesh);
+    box(w + 0.6, 0.18, d + 0.6, steelMat(), x, y, z);
+    // Drip edge (slight overhang)
+    box(w + 1.0, 0.06, d + 1.0, darkSteelMat(), x, y - 0.12, z);
   };
 
   // ════════════════════════════════════════════════════════════════════════
-  // AVENGERS-TOWER SHAPE — wide base tapering to asymmetric cantilevered crown
+  // TOWER GEOMETRY — tapering supertall with structural expression
   // ════════════════════════════════════════════════════════════════════════
 
-  // ── 1. BASE SECTION: 0→22 — widest part, slightly rectangular ──
-  glassBox(38, 22, 34, 0, 0, 0);
-  ledge(38, 34, 0, 22.2, 0);
+  // ── 0. GROUND-LEVEL PLAZA & LOBBY ──
+  // Stone plaza base
+  const plazaMat = new THREE.MeshStandardMaterial({ color: '#B8B0A4', roughness: 0.88 });
+  box(44, 0.3, 40, plazaMat, 0, 0.15, 0);
+  // Entry steps (front)
+  for (let s = 0; s < 3; s++) {
+    box(16 - s * 2, 0.15, 1.2, concreteMat(), 0, 0.08 + s * 0.15, 20.5 + s * 1.2);
+  }
+  // Lobby glass facade (double-height, recessed)
+  const lobbyGlass = new THREE.MeshStandardMaterial({
+    color: '#0C1828', roughness: 0.02, metalness: 0.6, transparent: true, opacity: 0.7,
+  });
+  box(30, 5, 0.15, lobbyGlass, 0, 3, 17.02);
+  // Lobby warm interior glow (behind glass)
+  box(28, 4, 0.1, warmGlowMat(), 0, 2.8, 16.8);
+  // Canopy over entrance
+  box(18, 0.15, 3, darkSteelMat(), 0, 5.2, 18.5);
+  // Canopy support rods
+  for (const sx of [-8, 8]) {
+    box(0.08, 0.08, 3, steelMat(), sx, 5.1, 18.5);
+  }
+  // Bollards
+  for (let bx = -7; bx <= 7; bx += 2) {
+    const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.7, 6), concreteMat());
+    bollard.position.set(bx, 0.65, 22.5); bollard.castShadow = true; g.add(bollard);
+  }
 
-  // ── 2. LOWER-MID: 22→36 — first setback ──
-  glassBox(32, 14, 28, 0, 22.4, 0);
-  ledge(32, 28, 0, 36.6, 0);
+  // ── 1. BASE SECTION: 0.3→22 — widest ──
+  glassSection(36, 22, 34, 0, 0.3, 0);
+  cornerColumns(36, 34, 22, 0.3, 0);
+  mechFloor(36, 34, 22.3, 0);
+  ledge(36, 34, 0, 23.7, 0);
 
-  // ── 3. UPPER-MID: 36→48 — narrower ──
-  glassBox(24, 11.5, 22, 0, 36.8, 0);
-  ledge(24, 22, 0, 48.5, 0);
+  // ── 2. LOWER-MID: 24→38 ──
+  glassSection(30, 14, 28, 0, 24, 0);
+  cornerColumns(30, 28, 14, 24, 0);
+  mechFloor(30, 28, 38, 0);
+  ledge(30, 28, 0, 39.4, 0);
 
-  // ── 4. CROWN SECTION: 48→58 — the distinctive Avengers Tower angular top ──
-  // Main crown column — slightly offset forward (+Z) to create asymmetry
-  glassBox(16, 10, 16, 0, 48.7, 1.5);
-  ledge(16, 16, 0, 58.9, 1.5);
+  // ── 3. UPPER-MID: 40→52 ──
+  glassSection(22, 12, 20, 0, 40, 0);
+  cornerColumns(22, 20, 12, 40, 0);
+  ledge(22, 20, 0, 52.2, 0);
 
-  // ── 5. CANTILEVERED FORWARD SECTION — the signature Avengers Tower overhang ──
-  // This is the angled/jutting section that makes it look like the MCU tower
-  // Angled glass wedge extending forward from the crown
+  // ── 4. CROWN: 52.5→62 — offset forward ──
+  glassSection(14, 9.5, 14, 0, 52.5, 1.5);
+  cornerColumns(14, 14, 9.5, 52.5, 1.5);
+  ledge(14, 14, 0, 62.2, 1.5);
+
+  // ── 5. CANTILEVER — angled glass wedge ──
   const cantileverGeo = new THREE.BufferGeometry();
   const cv = new Float32Array([
-    // Bottom face (y=49)
-    -7, 49, 9,    7, 49, 9,    7, 49, 18,   -7, 49, 18,
-    // Top face — angled: back edge at y=58, front edge at y=52
-    -7, 58, 9,    7, 58, 9,    7, 52, 18,   -7, 52, 18,
+    -6, 52.5, 8,    6, 52.5, 8,    6, 52.5, 17,   -6, 52.5, 17,
+    -6, 62, 8,      6, 62, 8,      6, 55, 17,     -6, 55, 17,
   ]);
   const ci = new Uint16Array([
-    // bottom
-    0,2,1, 0,3,2,
-    // top
-    4,5,6, 4,6,7,
-    // front (the angled face)
-    3,2,6, 3,6,7,
-    // back
-    0,1,5, 0,5,4,
-    // left
-    0,4,7, 0,7,3,
-    // right
-    1,2,6, 1,6,5,
+    0,2,1, 0,3,2,  4,5,6, 4,6,7,  3,2,6, 3,6,7,
+    0,1,5, 0,5,4,  0,4,7, 0,7,3,  1,2,6, 1,6,5,
   ]);
   cantileverGeo.setAttribute('position', new THREE.BufferAttribute(cv, 3));
   cantileverGeo.setIndex(new THREE.BufferAttribute(ci, 1));
@@ -443,129 +516,142 @@ function createMoatShieldTower(cx: number, cz: number, logoTex: THREE.Texture): 
   cantilever.castShadow = true; cantilever.receiveShadow = true;
   g.add(cantilever);
 
-  // Steel edge framing on the cantilever
+  // Structural truss inside cantilever (visible through glass)
+  const trussMat = darkSteelMat();
+  for (let ty = 53; ty < 61; ty += 2.5) {
+    // Diagonal braces
+    for (const sx of [-5, 5]) {
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 10), trussMat.clone());
+      brace.position.set(sx, ty + 1.25, 12.5);
+      brace.rotation.x = Math.atan2(2.5, 9) * (ty % 5 < 2.5 ? 1 : -1);
+      g.add(brace);
+    }
+  }
+
+  // Steel edge framing on cantilever
   const edgeMat = darkSteelMat();
-  // Bottom front edge
-  const bfe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
-  bfe.position.set(0, 49, 18); g.add(bfe);
-  // Top front edge (angled)
-  const tfe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
-  tfe.position.set(0, 52, 18); g.add(tfe);
-  // Top back edge
-  const tbe = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.3, 0.3), edgeMat.clone());
-  tbe.position.set(0, 58, 9); g.add(tbe);
-  // Side edges (left)
-  const calcLen = Math.sqrt(81 + 36); // ~10.8
-  const sle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, calcLen), edgeMat.clone());
-  sle.position.set(-7, 55, 13.5);
-  sle.rotation.x = Math.atan2(6, 9); g.add(sle);
-  // Side edges (right)
-  const sre = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, calcLen), edgeMat.clone());
-  sre.position.set(7, 55, 13.5);
-  sre.rotation.x = Math.atan2(6, 9); g.add(sre);
-
-  // ── 6. LANDING PAD / TERRACE — the iconic balcony at the cantilever base ──
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(20, 0.4, 12), padMat);
-  pad.position.set(0, 49, 15); pad.receiveShadow = true; g.add(pad);
-  // Pad accent ring (landing circle)
-  const padRing = new THREE.Mesh(
-    new THREE.RingGeometry(3.5, 4.2, 32),
-    accentMat()
-  );
-  padRing.rotation.x = -Math.PI / 2;
-  padRing.position.set(0, 49.25, 16); g.add(padRing);
-  // Inner circle on pad
-  const padInner = new THREE.Mesh(
-    new THREE.RingGeometry(1.0, 1.5, 32),
-    accentMat()
-  );
-  padInner.rotation.x = -Math.PI / 2;
-  padInner.position.set(0, 49.25, 16); g.add(padInner);
-
-  // Railing posts along pad edge
-  const railMat = steelMat();
-  for (let rx = -9; rx <= 9; rx += 3) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.2, 0.15), railMat.clone());
-    post.position.set(rx, 49.8, 21); g.add(post);
-  }
-  // Railing bar
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(18.5, 0.12, 0.12), railMat.clone());
-  rail.position.set(0, 50.3, 21); g.add(rail);
-
-  // ── 7. ANTENNA / SPIRE — tall and aggressive ──
-  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.8, 12, 8), darkSteelMat());
-  spire.castShadow = true; spire.position.set(0, 59 + 6, 1.5); g.add(spire);
-  // Cross-arms on spire
-  for (const sy of [62, 64.5]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 0.15), steelMat());
-    arm.position.set(0, sy, 1.5); g.add(arm);
-    const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 4), steelMat());
-    arm2.position.set(0, sy, 1.5); g.add(arm2);
-  }
-  // Glowing tip
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), glowMat.clone());
-  tip.position.set(0, 71.5, 1.5); g.add(tip);
-  // Secondary glow ring at spire base
-  const spireRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.9, 1.3, 16),
-    accentMat()
-  );
-  spireRing.rotation.x = -Math.PI / 2;
-  spireRing.position.set(0, 59.2, 1.5); g.add(spireRing);
-
-  // ── 8. VERTICAL ACCENT STRIPS — glowing blue lines running up the tower faces ──
-  const stripMat = accentMat();
+  box(12.5, 0.25, 0.25, edgeMat.clone(), 0, 52.5, 17);
+  box(12.5, 0.25, 0.25, edgeMat.clone(), 0, 55, 17);
+  box(12.5, 0.25, 0.25, edgeMat.clone(), 0, 62, 8);
+  const sideLen = Math.sqrt(81 + 6.25);
   for (const sx of [-6, 6]) {
-    // Front face strips (full height)
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.15, 48, 0.05), stripMat.clone());
-    strip.position.set(sx, 24, 17.02); g.add(strip);
-    // Back face strips
-    const stripB = new THREE.Mesh(new THREE.BoxGeometry(0.15, 48, 0.05), stripMat.clone());
-    stripB.position.set(sx, 24, -17.02); g.add(stripB);
-  }
-  // Side face vertical strips
-  for (const sz of [-6, 6]) {
-    const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 48, 0.15), stripMat.clone());
-    stripL.position.set(-19.02, 24, sz); g.add(stripL);
-    const stripR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 48, 0.15), stripMat.clone());
-    stripR.position.set(19.02, 24, sz); g.add(stripR);
+    const se = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, sideLen), edgeMat.clone());
+    se.position.set(sx, 57.25, 12.5);
+    se.rotation.x = Math.atan2(7, 9); g.add(se);
   }
 
-  // ── 9. LOGO — "MoatandshieldAI" on crown section + cantilever face ──
-  // Large logo on the front face of the crown (the main branding surface)
-  const logoW = 14, logoPH = 8;
+  // ── 6. OBSERVATION TERRACE ──
+  box(16, 0.35, 10, padMat, 0, 52.5, 14);
+  // Glass railing
+  const railGlass = new THREE.MeshStandardMaterial({
+    color: '#C8DCF0', roughness: 0.04, metalness: 0.15, transparent: true, opacity: 0.35,
+  });
+  box(16, 1.1, 0.06, railGlass, 0, 53.1, 19);
+  // Steel rail cap
+  box(16.2, 0.06, 0.12, steelMat(), 0, 53.7, 19);
+  // Railing posts
+  for (let rx = -7; rx <= 7; rx += 2) {
+    box(0.06, 1.1, 0.06, steelMat(), rx, 53.1, 19);
+  }
+  // Side railings
+  for (const sx of [-8, 8]) {
+    box(0.06, 1.1, 10, railGlass.clone(), sx, 53.1, 14);
+    box(0.12, 0.06, 10.2, steelMat(), sx, 53.7, 14);
+  }
+  // Landing pad markings (subtle circle)
+  const padCircleMat = new THREE.MeshStandardMaterial({ color: '#3A4450', roughness: 0.8 });
+  const padCircle = new THREE.Mesh(new THREE.RingGeometry(2.5, 3.0, 32), padCircleMat);
+  padCircle.rotation.x = -Math.PI / 2; padCircle.position.set(0, 52.55, 15); g.add(padCircle);
+  const padInner = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.9, 16), padCircleMat.clone());
+  padInner.rotation.x = -Math.PI / 2; padInner.position.set(0, 52.55, 15); g.add(padInner);
+
+  // ── 7. SPIRE / ANTENNA ARRAY ──
+  // Main mast
+  const mastMat = darkSteelMat();
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.55, 14, 8), mastMat);
+  mast.castShadow = true; mast.position.set(0, 62.2 + 7, 1.5); g.add(mast);
+  // Lattice braces on mast
+  for (let my = 64; my < 74; my += 2.8) {
+    for (const [ax, az] of [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 1.8), steelMat());
+      arm.position.set(ax * 0.9, my, 1.5 + az * 0.9);
+      arm.rotation.y = Math.atan2(ax, az); g.add(arm);
+    }
+  }
+  // Cross-arms with dishes
+  for (const my of [66, 70]) {
+    box(3.5, 0.1, 0.1, steelMat(), 0, my, 1.5);
+    box(0.1, 0.1, 3.5, steelMat(), 0, my, 1.5);
+    // Small dish
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 4, 0, Math.PI), steelMat());
+    dish.position.set(1.8, my, 1.5); dish.rotation.z = Math.PI / 2; g.add(dish);
+  }
+  // Aviation warning light
+  const avLight = new THREE.MeshStandardMaterial({ color: '#FF3020', emissive: '#FF3020', emissiveIntensity: 1.2 });
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), avLight);
+  tip.position.set(0, 76.5, 1.5); g.add(tip);
+
+  // ── 8. STRUCTURAL EXPRESSION — exposed corner braces at setbacks ──
+  const braceMat = brushedSteelMat();
+  // Base-to-mid diagonal braces (architectural X-braces on each face)
+  const braceConfigs: [number, number, number, number, number, string][] = [
+    // [w, startY, endY, faceOffset, depth, axis]
+    [36, 5, 20, 17.05, 34, 'z'],
+    [30, 26, 36, 14.05, 28, 'z'],
+  ];
+  for (const [bw, by1, by2, faceOff, , axis] of braceConfigs) {
+    const bLen = Math.sqrt((by2 - by1) ** 2 + (bw * 0.4) ** 2);
+    const bAngle = Math.atan2(by2 - by1, bw * 0.4);
+    for (const sign of [1, -1]) {
+      if (axis === 'z') {
+        // Front/back faces — diagonal from lower-left to upper-right
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(bLen, 0.18, 0.18), braceMat.clone());
+        brace.position.set(0, (by1 + by2) / 2, sign * faceOff);
+        brace.rotation.z = bAngle; g.add(brace);
+        const brace2 = new THREE.Mesh(new THREE.BoxGeometry(bLen, 0.18, 0.18), braceMat.clone());
+        brace2.position.set(0, (by1 + by2) / 2, sign * faceOff);
+        brace2.rotation.z = -bAngle; g.add(brace2);
+      }
+    }
+  }
+
+  // ── 9. LOGO — on upper-mid section face ──
+  const logoW = 12, logoPH = 7;
   const logoMat = new THREE.MeshStandardMaterial({
     map: logoTex, transparent: true, alphaTest: 0.05,
-    emissive: '#FFFFFF', emissiveIntensity: 0.35,
+    emissive: '#FFFFFF', emissiveIntensity: 0.25,
     roughness: 0.1, metalness: 0.1,
   });
-  // Front face of upper-mid section (most visible, like the "A" on Avengers Tower)
+  // Front face of upper-mid section
   const lp1 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp1.position.set(0, 43, 11.02); g.add(lp1);
-  // Back face
+  lp1.position.set(0, 46, 10.05); g.add(lp1);
   const lp2 = new THREE.Mesh(new THREE.PlaneGeometry(logoW, logoPH), logoMat.clone());
-  lp2.position.set(0, 43, -11.02); lp2.rotation.y = Math.PI; g.add(lp2);
-  // +X face
+  lp2.position.set(0, 46, -10.05); lp2.rotation.y = Math.PI; g.add(lp2);
   const lp3 = new THREE.Mesh(new THREE.PlaneGeometry(logoPH, logoPH), logoMat.clone());
-  lp3.position.set(12.02, 43, 0); lp3.rotation.y = Math.PI / 2; g.add(lp3);
-  // -X face
+  lp3.position.set(11.05, 46, 0); lp3.rotation.y = Math.PI / 2; g.add(lp3);
   const lp4 = new THREE.Mesh(new THREE.PlaneGeometry(logoPH, logoPH), logoMat.clone());
-  lp4.position.set(-12.02, 43, 0); lp4.rotation.y = -Math.PI / 2; g.add(lp4);
+  lp4.position.set(-11.05, 46, 0); lp4.rotation.y = -Math.PI / 2; g.add(lp4);
 
-  // ── 10. ACCENT LIGHTING at setback ledges ──
-  for (const ly of [22.2, 36.6, 48.5]) {
-    const lw = ly < 30 ? 38 : ly < 40 ? 32 : 24;
-    const ld = ly < 30 ? 34 : ly < 40 ? 28 : 22;
-    // Front + Back glow strips
+  // ── 10. SUBTLE ACCENT LIGHTING at ledges (toned down) ──
+  for (const [ly, lw, ld] of [[23.7, 36, 34], [39.4, 30, 28], [52.2, 22, 20]] as [number,number,number][]) {
     for (const zs of [1, -1]) {
-      const ls = new THREE.Mesh(new THREE.BoxGeometry(lw - 2, 0.15, 0.15), accentMat());
-      ls.position.set(0, ly + 0.3, zs * (ld / 2 + 0.2)); g.add(ls);
+      const ls = new THREE.Mesh(new THREE.BoxGeometry(lw - 4, 0.08, 0.08), accentMat());
+      ls.position.set(0, ly + 0.15, zs * (ld / 2 + 0.35)); g.add(ls);
     }
-    // Left + Right glow strips
     for (const xs of [1, -1]) {
-      const ls = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, ld - 2), accentMat());
-      ls.position.set(xs * (lw / 2 + 0.2), ly + 0.3, 0); g.add(ls);
+      const ls = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, ld - 4), accentMat());
+      ls.position.set(xs * (lw / 2 + 0.35), ly + 0.15, 0); g.add(ls);
     }
+  }
+
+  // ── 11. GROUND-LEVEL LANDSCAPING ──
+  const treeMat = new THREE.MeshStandardMaterial({ color: '#3A6830', roughness: 0.85 });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: '#5A4A30', roughness: 0.95 });
+  for (const [tx, tz] of [[-18,18],[18,18],[-18,-18],[18,-18],[-8,20],[8,20]] as [number,number][]) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 2, 6), trunkMat.clone());
+    trunk.position.set(tx, 1.3, tz); trunk.castShadow = true; g.add(trunk);
+    const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), treeMat.clone());
+    canopy.position.set(tx, 3, tz); canopy.castShadow = true; g.add(canopy);
   }
 
   return g;
@@ -2539,49 +2625,152 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
 
         if (zone === 'park') {
           const rng = seededRandom(`park-${col}-${row}`);
-          // Grass base
+
+          // ── Multi-tone grass base ──
+          const grassDark = new THREE.MeshStandardMaterial({ color: '#3A7030', roughness: 0.95 });
+          const grassLight = new THREE.MeshStandardMaterial({ color: '#4A8840', roughness: 0.95 });
           const grass = new THREE.Mesh(
-            new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2),
-            new THREE.MeshStandardMaterial({ color: '#4A8040', roughness: 0.95 })
+            new THREE.PlaneGeometry(BLOCK_SIZE - 2, BLOCK_SIZE - 2), grassDark
           );
           grass.rotation.x = -Math.PI / 2; grass.position.set(cx, 0.005, cz);
           grass.receiveShadow = true; cityGroup.add(grass);
-          // Gravel cross-paths
-          const gravelMat = new THREE.MeshStandardMaterial({ color: '#B0A890', roughness: 0.92 });
+          // Lighter grass patches for variation
+          for (let gp = 0; gp < 6; gp++) {
+            const pw = 6 + rng() * 10, pd = 6 + rng() * 10;
+            const gpx = cx + (rng() - 0.5) * (BLOCK_SIZE - 16);
+            const gpz = cz + (rng() - 0.5) * (BLOCK_SIZE - 16);
+            const patch = new THREE.Mesh(new THREE.PlaneGeometry(pw, pd), grassLight.clone());
+            patch.rotation.x = -Math.PI / 2; patch.position.set(gpx, 0.006, gpz);
+            patch.receiveShadow = true; cityGroup.add(patch);
+          }
+
+          // ── Winding gravel paths (cross + curved) ──
+          const gravelMat = new THREE.MeshStandardMaterial({ color: '#B0A890', roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+          const gravelEdgeMat = new THREE.MeshStandardMaterial({ color: '#9A9078', roughness: 0.95 });
+          // Main cross-paths
           for (const [pw, pd, px, pz] of [
-            [BLOCK_SIZE - 4, 2.0, cx, cz] as const,
-            [2.0, BLOCK_SIZE - 4, cx, cz] as const,
+            [BLOCK_SIZE - 4, 2.2, cx, cz] as const,
+            [2.2, BLOCK_SIZE - 4, cx, cz] as const,
           ]) {
             const path = new THREE.Mesh(new THREE.PlaneGeometry(pw, pd), gravelMat.clone());
-            path.rotation.x = -Math.PI / 2; path.position.set(px, 0.007, pz);
+            path.rotation.x = -Math.PI / 2; path.position.set(px, 0.008, pz);
             path.receiveShadow = true; cityGroup.add(path);
           }
-          // Benches near path intersections
-          const benchMat = new THREE.MeshStandardMaterial({ color: '#8A7048', roughness: 0.85 });
-          const legMat   = new THREE.MeshStandardMaterial({ color: '#606060', roughness: 0.9 });
-          for (const [bx, bz] of [[-7, -7], [7, 7], [-7, 7]] as [number,number][]) {
-            const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 0.6), benchMat.clone());
+          // Diagonal path
+          const diagLen = BLOCK_SIZE * 0.65;
+          const diagPath = new THREE.Mesh(new THREE.PlaneGeometry(1.8, diagLen), gravelMat.clone());
+          diagPath.rotation.x = -Math.PI / 2; diagPath.rotation.z = Math.PI / 4;
+          diagPath.position.set(cx + 5, 0.008, cz - 5); cityGroup.add(diagPath);
+
+          // ── Benches (6, along paths) ──
+          const benchMat = new THREE.MeshStandardMaterial({ color: '#7A5838', roughness: 0.85 });
+          const legMat   = new THREE.MeshStandardMaterial({ color: '#505050', roughness: 0.9 });
+          for (const [bx, bz] of [[-7,-7],[7,7],[-7,7],[7,-7],[-14,0],[14,0]] as [number,number][]) {
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.65), benchMat.clone());
             seat.position.set(cx + bx, 0.47, cz + bz); seat.castShadow = true; cityGroup.add(seat);
-            const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.55, 0.08), benchMat.clone());
-            back.position.set(cx + bx, 0.75, cz + bz - 0.26); back.castShadow = true; cityGroup.add(back);
-            for (const lx of [-0.9, 0.9]) {
-              const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.5), legMat.clone());
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.55, 0.08), benchMat.clone());
+            back.position.set(cx + bx, 0.75, cz + bz - 0.28); back.castShadow = true; cityGroup.add(back);
+            for (const lx of [-1.0, 1.0]) {
+              const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.55), legMat.clone());
               leg.position.set(cx + bx + lx, 0.22, cz + bz); cityGroup.add(leg);
             }
           }
-          // Fountain at center of even-row parks
+
+          // ── Fountain (improved, with tiered basin) ──
           if (row % 2 === 0) {
-            const fountainMat = new THREE.MeshStandardMaterial({ color: '#8898A8', roughness: 0.7 });
-            const base = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.5, 0.45, 16), fountainMat.clone());
-            base.position.set(cx, 0.22, cz); base.castShadow = true; cityGroup.add(base);
-            const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.18, 16),
-              new THREE.MeshStandardMaterial({ color: '#5090B8', roughness: 0.2, transparent: true, opacity: 0.75 }));
-            basin.position.set(cx, 0.44, cz); cityGroup.add(basin);
-            const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8), fountainMat.clone());
-            spout.position.set(cx, 0.7, cz); cityGroup.add(spout);
+            const fMat = new THREE.MeshStandardMaterial({ color: '#808890', roughness: 0.65, metalness: 0.1 });
+            // Lower basin
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.3, 0.5, 20), fMat.clone());
+            base.position.set(cx, 0.25, cz); base.castShadow = true; cityGroup.add(base);
+            // Water
+            const waterMat2 = new THREE.MeshStandardMaterial({ color: '#4888B8', roughness: 0.15, transparent: true, opacity: 0.7 });
+            const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.12, 20), waterMat2);
+            basin.position.set(cx, 0.52, cz); cityGroup.add(basin);
+            // Upper tier
+            const mid = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, 1.0, 12), fMat.clone());
+            mid.position.set(cx, 1.0, cz); mid.castShadow = true; cityGroup.add(mid);
+            const upperBasin = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 0.08, 12), waterMat2.clone());
+            upperBasin.position.set(cx, 1.52, cz); cityGroup.add(upperBasin);
+            // Spout
+            const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.8, 6), fMat.clone());
+            spout.position.set(cx, 1.9, cz); cityGroup.add(spout);
           }
-          // Trees (22, with roadside scatter)
-          for (let t = 0; t < 22; t++) {
+
+          // ── Flower beds ──
+          const flowerColors = ['#D44060', '#E86840', '#D0A020', '#8848A0', '#E878A0', '#F0C040'];
+          const bedEdgeMat = new THREE.MeshStandardMaterial({ color: '#6A5A40', roughness: 0.9 });
+          const soilMat = new THREE.MeshStandardMaterial({ color: '#5A4A30', roughness: 0.95 });
+          for (let fb = 0; fb < 4; fb++) {
+            const fbx = cx + (fb < 2 ? -1 : 1) * (8 + rng() * 6);
+            const fbz = cz + (fb % 2 === 0 ? -1 : 1) * (8 + rng() * 6);
+            const fbw = 3 + rng() * 3, fbd = 2 + rng() * 2;
+            // Raised bed edge
+            const edge = new THREE.Mesh(new THREE.BoxGeometry(fbw + 0.3, 0.25, fbd + 0.3), bedEdgeMat.clone());
+            edge.position.set(fbx, 0.12, fbz); edge.castShadow = true; cityGroup.add(edge);
+            // Soil
+            const soil = new THREE.Mesh(new THREE.PlaneGeometry(fbw, fbd), soilMat.clone());
+            soil.rotation.x = -Math.PI / 2; soil.position.set(fbx, 0.26, fbz); cityGroup.add(soil);
+            // Flowers (small colored spheres)
+            for (let f = 0; f < 8 + Math.floor(rng() * 6); f++) {
+              const fc = flowerColors[Math.floor(rng() * flowerColors.length)];
+              const flower = new THREE.Mesh(
+                new THREE.SphereGeometry(0.12 + rng() * 0.1, 5, 4),
+                new THREE.MeshStandardMaterial({ color: fc, roughness: 0.7 })
+              );
+              flower.position.set(fbx + (rng()-0.5)*fbw*0.8, 0.35, fbz + (rng()-0.5)*fbd*0.8);
+              cityGroup.add(flower);
+            }
+          }
+
+          // ── Lamp posts along paths ──
+          const parkLampMat = new THREE.MeshStandardMaterial({ color: '#3A3A3A', roughness: 0.8 });
+          const parkLampGlow = new THREE.MeshStandardMaterial({ color: '#FFE8C0', emissive: '#FFD090', emissiveIntensity: 0.5, roughness: 0.4 });
+          for (const [lpx, lpz] of [[12,1],[-12,1],[1,12],[1,-12],[-10,-10],[10,10]] as [number,number][]) {
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 3.2, 6), parkLampMat.clone());
+            pole.position.set(cx + lpx, 1.6, cz + lpz); pole.castShadow = true; cityGroup.add(pole);
+            // Curved arm
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.05), parkLampMat.clone());
+            arm.position.set(cx + lpx + 0.35, 3.2, cz + lpz); cityGroup.add(arm);
+            // Lantern
+            const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), parkLampGlow.clone());
+            lantern.position.set(cx + lpx + 0.7, 3.1, cz + lpz); cityGroup.add(lantern);
+          }
+
+          // ── Gazebo (odd-row parks) ──
+          if (row % 2 !== 0) {
+            const gazeboMat = new THREE.MeshStandardMaterial({ color: '#E8DCD0', roughness: 0.8 });
+            const roofMat = new THREE.MeshStandardMaterial({ color: '#6A5848', roughness: 0.85 });
+            // Floor
+            const gFloor = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 0.2, 8), gazeboMat.clone());
+            gFloor.position.set(cx, 0.1, cz); gFloor.receiveShadow = true; cityGroup.add(gFloor);
+            // Step
+            const gStep = new THREE.Mesh(new THREE.CylinderGeometry(4.0, 4.0, 0.1, 8), gazeboMat.clone());
+            gStep.position.set(cx, 0.02, cz); gStep.receiveShadow = true; cityGroup.add(gStep);
+            // Pillars (6)
+            for (let pi = 0; pi < 6; pi++) {
+              const a = (pi / 6) * Math.PI * 2;
+              const px2 = cx + Math.cos(a) * 3.0, pz2 = cz + Math.sin(a) * 3.0;
+              const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 3.0, 8), gazeboMat.clone());
+              pillar.position.set(px2, 1.7, pz2); pillar.castShadow = true; cityGroup.add(pillar);
+            }
+            // Roof (cone)
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 1.8, 8), roofMat);
+            roof.position.set(cx, 4.1, cz); roof.castShadow = true; cityGroup.add(roof);
+            // Finial
+            const finial = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), gazeboMat.clone());
+            finial.position.set(cx, 5.05, cz); cityGroup.add(finial);
+          }
+
+          // ── Big trees (8 large statement trees + 20 regular) ──
+          for (let t = 0; t < 8; t++) {
+            const tx = cx + (rng() - 0.5) * (BLOCK_SIZE - 16);
+            const tz = cz + (rng() - 0.5) * (BLOCK_SIZE - 16);
+            const bigTree = makeTree(tx, tz, seededRandom(`bpt-${t}-${col}-${row}`));
+            bigTree.scale.setScalar(1.8 + rng() * 1.0); // 1.8x-2.8x normal size
+            treeGroups.push(bigTree); cityGroup.add(bigTree);
+          }
+          // Regular trees
+          for (let t = 0; t < 20; t++) {
             const tx = cx + (rng() - 0.5) * (BLOCK_SIZE - 10);
             const tz = cz + (rng() - 0.5) * (BLOCK_SIZE - 10);
             const tree = makeTree(tx, tz, seededRandom(`pt-${t}-${col}-${row}`));
