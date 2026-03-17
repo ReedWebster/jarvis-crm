@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 import { buildBriefingPrompt } from '../lib/_briefingHelpers.js';
 import type { BriefingData } from '../lib/_briefingHelpers.js';
 import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from '../lib/_googleAuth.js';
-import { generateText, tool } from 'ai';
+import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
@@ -83,17 +83,37 @@ Rules:
 - priorityTasks: Pick the 3-5 most impactful tasks. Cross-reference todos, project next actions, academic deadlines, client deliverables, and recruitment needs.
 - goalsCheckIn: Only include goals that need attention (behind schedule, near deadline, or blocked).
 - suggestedGoals: Propose 1-3 new goals based on gaps you see in current data — areas without goals, patterns in time/energy data, upcoming deadlines, etc. Only suggest if genuinely useful.
-- scheduleRecommendations: Suggest 1-3 specific schedule changes based on energy patterns, time block analysis, deadline proximity, and workload distribution. Be concrete (e.g., "Block 2 hours for X at Y time when your energy is typically highest").
+- scheduleRecommendations: Suggest 1-3 specific schedule changes based on energy patterns, time block analysis, deadline proximity, and workload distribution. Be concrete.
 - financialSnapshot: Summarize recent financial activity, savings goal progress, and flag anything concerning. Return empty actionItems array if nothing to flag.
 - academicAlerts: Flag assignments due within 7 days, upcoming exams, and courses where grades are below target. Return empty array if no alerts.
 - recruitmentPipeline: Summarize active candidates and clients needing attention. Return empty array if nothing active.
 - readingProgress: Note what's currently being read and suggest next reads from the want-to-read list.
 - socialMedia: Flag posts needing approval, content that should be created, or scheduling gaps. Return empty array if nothing pending.
 - wellnessCheck: Analyze recent mood/energy logs to surface trends and give one actionable recommendation.
-- strategicNotes: Surface non-obvious patterns across ALL data — energy trends, scheduling conflicts, financial patterns, relationship maintenance gaps, goal alignment issues.
+- strategicNotes: Array of plain strings. Surface non-obvious patterns across ALL data.
 - calendar: If Google Calendar events are provided, use those. Include prep notes for meetings.
 - emailDigest: Summarize overnight emails. Flag urgent ones. Return empty array if no emails provided.
-- Be direct, practical, no fluff. Like a smart executive assistant who knows EVERYTHING about Reed's life.`;
+- Be direct, practical, no fluff. Like a smart executive assistant who knows EVERYTHING about Reed's life.
+
+You MUST respond with ONLY a JSON object (no markdown fences, no explanation) using EXACTLY these keys:
+{
+  "executiveSummary": "string",
+  "priorityTasks": [{"title": "string", "reasoning": "string", "priority": "high|medium|low"}],
+  "goalsCheckIn": [{"title": "string", "progress": 0, "note": "string"}],
+  "suggestedGoals": [{"title": "string", "area": "ventures|academic|health|spiritual|financial|relationships|personal", "reasoning": "string"}],
+  "scheduleRecommendations": [{"suggestion": "string", "reasoning": "string"}],
+  "contactFollowUps": [{"name": "string", "reason": "string"}],
+  "habits": {"yesterdayRate": 0, "focus": ["string"], "streakNote": "string"},
+  "financialSnapshot": {"recentSpending": "string", "savingsProgress": "string", "actionItems": ["string"]},
+  "academicAlerts": [{"course": "string", "alert": "string"}],
+  "recruitmentPipeline": [{"item": "string", "action": "string"}],
+  "readingProgress": {"currentlyReading": ["string"], "suggestion": "string"},
+  "socialMedia": [{"item": "string", "action": "string"}],
+  "wellnessCheck": {"energyTrend": "up|down|stable", "moodTrend": "up|down|stable", "recommendation": "string"},
+  "strategicNotes": ["plain string, not an object"],
+  "calendar": [{"time": "string", "title": "string", "prepNotes": "string"}],
+  "emailDigest": [{"from": "string", "subject": "string", "summary": "string", "urgent": true}]
+}`;
 
 export default async function handler(req: any, res: any) {
   // Accept GET (Vercel Cron) or POST (manual trigger)
@@ -224,24 +244,29 @@ export default async function handler(req: any, res: any) {
     // Build the prompt (improvement #3: pre-filtered data inside buildBriefingPrompt)
     const userPrompt = buildBriefingPrompt(briefingData, googleData.gmail, googleData.calendar);
 
-    // Use a forced tool call to get structured output (avoids grammar compilation limits)
-    const { toolCalls } = await generateText({
+    // Generate briefing as raw JSON (no schema/tool compilation — most reliable)
+    const { text: rawJson } = await generateText({
       model: anthropic('claude-haiku-4-5-20251001'),
-      system: SYSTEM_PROMPT + '\n\nYou MUST call the submit_briefing tool with your analysis. Do not respond with text.',
+      system: SYSTEM_PROMPT,
       prompt: userPrompt,
-      tools: {
-        submit_briefing: tool({
-          description: 'Submit the completed morning briefing',
-          parameters: briefingSchema,
-        }),
-      },
-      toolChoice: { type: 'tool', toolName: 'submit_briefing' },
       maxTokens: 4000,
     });
 
-    const sections = toolCalls[0]?.args;
-    if (!sections) {
-      res.status(502).json({ error: 'Claude did not return briefing data' });
+    if (!rawJson) {
+      res.status(502).json({ error: 'Claude returned empty response' });
+      return;
+    }
+
+    // Strip markdown fences if present, then parse
+    const cleaned = rawJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+    let sections: z.infer<typeof briefingSchema>;
+    try {
+      sections = briefingSchema.parse(JSON.parse(cleaned));
+    } catch (parseErr: any) {
+      // Log the raw response for debugging, return user-friendly error
+      console.error('[Briefing] Parse failed. Raw response:', rawJson.slice(0, 500));
+      console.error('[Briefing] Parse error:', parseErr?.message?.slice(0, 300));
+      res.status(502).json({ error: 'Briefing format error — retrying usually fixes this. Try again.' });
       return;
     }
 
