@@ -447,6 +447,7 @@ interface FlashcardViewProps {
   shuffled: boolean;
   onShuffleToggle: () => void;
   onBackToGrid: () => void;
+  onDelete: (id: string) => void;
 }
 
 function FlashcardView({
@@ -456,6 +457,7 @@ function FlashcardView({
   shuffled,
   onShuffleToggle,
   onBackToGrid,
+  onDelete,
 }: FlashcardViewProps) {
   const [index, setIndex] = useState(0);
   const [pendingTags, setPendingTags] = useState<ContactTag[]>([]);
@@ -586,6 +588,20 @@ function FlashcardView({
             <Shuffle size={14} />
             {shuffled ? 'Shuffled' : 'Shuffle'}
           </button>
+          {contact && (
+            <button
+              onClick={() => {
+                onDelete(contact.id);
+                // Adjust index if we deleted the last card
+                setIndex((i) => (i >= deck.length - 1 ? Math.max(0, deck.length - 2) : i));
+              }}
+              className="caesar-btn-ghost flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              title="Delete contact"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--text-muted)' }}>
           <span>
@@ -2405,6 +2421,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
           shuffled={flashcardShuffled}
           onShuffleToggle={() => setFlashcardShuffled((s) => !s)}
           onBackToGrid={() => setViewMode('grid')}
+          onDelete={handleDelete}
         />
       )}
 
