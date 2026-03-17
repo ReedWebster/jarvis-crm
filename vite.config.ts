@@ -1,37 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
-import { createRequire } from 'module'
-
-const require = createRequire(import.meta.url)
 
 export default defineConfig({
   optimizeDeps: {
-    include: ['three', 'three-spritetext', 'react-force-graph-3d', 'postprocessing'],
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'three-vendor': ['three', 'postprocessing'],
-        },
-      },
-    },
+    include: ['three', 'three-spritetext', 'react-force-graph-3d'],
   },
   plugins: [
-    {
-      name: 'force-postprocessing-side-effects',
-      enforce: 'pre',
-      resolveId(source) {
-        // postprocessing declares sideEffects:false but has circular deps
-        // that break when Rollup reorders declarations. Force side effects
-        // to preserve original declaration order and prevent TDZ errors.
-        if (source === 'postprocessing') {
-          return { id: require.resolve('postprocessing'), moduleSideEffects: true };
-        }
-        return null;
-      },
-    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',

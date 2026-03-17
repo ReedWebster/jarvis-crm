@@ -10,7 +10,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
+// postprocessing removed — its sideEffects:false + circular deps cause
+// TDZ errors in Rollup production builds. Bloom was barely visible (0.20).
 import { WorldDataPanel } from './WorldDataPanel';
 import type { WorldViewAppData } from './WorldDataPanel';
 import { WorldBlockDataCard, findLinkedProject } from './WorldBlockDataCard';
@@ -2053,7 +2054,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       sun.color.set(cfg.sunColor);
       hemi.intensity = cfg.hemiIntensity;
       fillLight.intensity = cfg.fillIntensity;
-      bloom.intensity = cfg.bloomIntensity;
       scene.fog      = new THREE.Fog(cfg.fogColor, 250, 900);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: 0 };
     }
@@ -2081,10 +2081,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     updateCameraOrbit();
 
     // ── Post-processing ───────────────────────────────────────────────────────
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloom = new BloomEffect({ intensity: 0.20, luminanceThreshold: 0.88, luminanceSmoothing: 0.04, mipmapBlur: true });
-    composer.addPass(new EffectPass(camera, bloom));
+    // Direct rendering (no postprocessing composer)
 
     // ── Materials (shared, cloned per building) ───────────────────────────────
     // Generate PMREM env map from sky for glass reflections
@@ -3511,7 +3508,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h, false);
-      composer.setSize(w, h);
+      renderer.setSize(w, h, false);
     };
     const resizeObs = new ResizeObserver(onResize);
     resizeObs.observe(canvas);
@@ -3868,7 +3865,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         }
       }
 
-      composer.render();
+      renderer.render(scene, camera);
       if (viewModeRef.current === 'city' && minimapDirty) drawMinimap();
     }
     animate();
@@ -3938,7 +3935,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     return () => {
       cancelAnimationFrame(rafId);
       renderer.dispose();
-      composer.dispose();
+      // renderer disposed above
       resizeObs.disconnect();
       canvas.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mousemove', onMouseMove);
