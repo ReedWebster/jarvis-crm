@@ -1965,7 +1965,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     // ── Renderer ──────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setSize(W, H, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
     renderer.toneMapping       = THREE.ACESFilmicToneMapping;
@@ -2020,7 +2020,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight('#ffffff', 2.5);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near   = 1;
     sun.shadow.camera.far    = 1200;
     sun.shadow.camera.left   = -320;
@@ -3317,6 +3317,15 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const hoveredMeshes: THREE.Mesh[] = [];
     let zoomVelocity = 0;
 
+    // Pre-allocated vectors for per-event math (avoids GC pressure)
+    const _tmpRight = new THREE.Vector3();
+    const _tmpFwd   = new THREE.Vector3();
+    const _tmpDir   = new THREE.Vector3();
+    const _up       = new THREE.Vector3(0, 1, 0);
+    const _zoomVec2 = new THREE.Vector2();
+    const _zoomVec3 = new THREE.Vector3();
+    let lastHoverRaycast = 0;
+
     const onMouseDown = (e: MouseEvent) => {
       lastX = e.clientX; lastY = e.clientY;
       clickStartX = e.clientX; clickStartY = e.clientY;
@@ -3332,11 +3341,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         lastX = e.clientX; lastY = e.clientY;
         if (isPanning && viewModeRef.current === 'city') {
           const panSpeed = orbitRadius * 0.0012;
-          const right = new THREE.Vector3();
-          right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
-          const fwd = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
-          orbitTarget.addScaledVector(right, -dx * panSpeed);
-          orbitTarget.addScaledVector(fwd,    dy * panSpeed);
+          _tmpDir.set(0, 0, 0);
+          _tmpRight.crossVectors(camera.getWorldDirection(_tmpDir), _up).normalize();
+          _tmpFwd.set(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(_tmpRight, -dx * panSpeed);
+          orbitTarget.addScaledVector(_tmpFwd,    dy * panSpeed);
           orbitTarget.y = 0;
         } else {
           orbitTheta += dx * 0.005;
@@ -3344,7 +3353,17 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         minimapDirty = true;
         updateCameraOrbit();
       } else if (viewModeRef.current === 'city') {
-        // Hover highlight
+        // Hover highlight — throttled to avoid raycasting every mousemove
+        const now = performance.now();
+        if (now - lastHoverRaycast < 50) {
+          // Still update tooltip position even when skipping raycast
+          if (tooltipRef.current && hoveredBlock) {
+            tooltipRef.current.style.left = `${e.clientX + 14}px`;
+            tooltipRef.current.style.top  = `${e.clientY - 10}px`;
+          }
+          return;
+        }
+        lastHoverRaycast = now;
         const rect = canvas.getBoundingClientRect();
         hoverPt.set(
           (e.clientX - rect.left) / rect.width * 2 - 1,
@@ -3456,11 +3475,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         const rect = canvas.getBoundingClientRect();
         const mx = (e.clientX - rect.left) / rect.width * 2 - 1;
         const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        zoomRaycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
-        const worldPt = new THREE.Vector3();
-        if (zoomRaycaster.ray.intersectPlane(zoomPlane, worldPt)) {
+        _zoomVec2.set(mx, my);
+        zoomRaycaster.setFromCamera(_zoomVec2, camera);
+        if (zoomRaycaster.ray.intersectPlane(zoomPlane, _zoomVec3)) {
           const t = Math.abs(e.deltaY * 0.35) / Math.max(orbitRadius, 1) * 0.55;
-          orbitTarget.lerp(worldPt, e.deltaY < 0 ? t : -t * 0.3);
+          orbitTarget.lerp(_zoomVec3, e.deltaY < 0 ? t : -t * 0.3);
           orbitTarget.y = 0;
         }
       }
@@ -3507,7 +3526,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       const w = canvas.clientWidth, h = canvas.clientHeight;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h, false);
       renderer.setSize(w, h, false);
     };
     const resizeObs = new ResizeObserver(onResize);
@@ -3893,40 +3911,26 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
             minimapPanRef.current = new THREE.Vector3(selectedBlockState.cx, 0, selectedBlockState.cz);
           }
           break;
-        case 'w': case 'W': {
-          const fwd = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
-          orbitTarget.addScaledVector(fwd, PAN_SPEED);
-          orbitTarget.y = 0;
-          minimapDirty = true;
-          updateCameraOrbit();
+        case 'w': case 'W':
+          _tmpFwd.set(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(_tmpFwd, PAN_SPEED);
+          orbitTarget.y = 0; minimapDirty = true; updateCameraOrbit();
           break;
-        }
-        case 's': case 'S': {
-          const back = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
-          orbitTarget.addScaledVector(back, -PAN_SPEED);
-          orbitTarget.y = 0;
-          minimapDirty = true;
-          updateCameraOrbit();
+        case 's': case 'S':
+          _tmpFwd.set(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(_tmpFwd, -PAN_SPEED);
+          orbitTarget.y = 0; minimapDirty = true; updateCameraOrbit();
           break;
-        }
-        case 'a': case 'A': {
-          const left = new THREE.Vector3();
-          left.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
-          orbitTarget.addScaledVector(left, PAN_SPEED);
-          orbitTarget.y = 0;
-          minimapDirty = true;
-          updateCameraOrbit();
+        case 'a': case 'A':
+          _tmpRight.crossVectors(camera.getWorldDirection(_tmpDir.set(0,0,0)), _up).normalize();
+          orbitTarget.addScaledVector(_tmpRight, PAN_SPEED);
+          orbitTarget.y = 0; minimapDirty = true; updateCameraOrbit();
           break;
-        }
-        case 'd': case 'D': {
-          const right = new THREE.Vector3();
-          right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
-          orbitTarget.addScaledVector(right, -PAN_SPEED);
-          orbitTarget.y = 0;
-          minimapDirty = true;
-          updateCameraOrbit();
+        case 'd': case 'D':
+          _tmpRight.crossVectors(camera.getWorldDirection(_tmpDir.set(0,0,0)), _up).normalize();
+          orbitTarget.addScaledVector(_tmpRight, -PAN_SPEED);
+          orbitTarget.y = 0; minimapDirty = true; updateCameraOrbit();
           break;
-        }
       }
     };
     document.addEventListener('keydown', onKeyDown);
