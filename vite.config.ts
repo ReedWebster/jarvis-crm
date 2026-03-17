@@ -6,6 +6,17 @@ export default defineConfig({
   optimizeDeps: {
     include: ['three', 'three-spritetext', 'react-force-graph-3d', 'postprocessing'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Keep postprocessing + three together in one chunk to avoid
+          // Rollup reordering module-level declarations (TDZ errors)
+          'three-vendor': ['three', 'postprocessing'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

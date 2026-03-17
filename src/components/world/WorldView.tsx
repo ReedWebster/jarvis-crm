@@ -10,8 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-// Dynamic import in useEffect to avoid Rollup TDZ errors with postprocessing
-type PostProcessing = typeof import('postprocessing');
+import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
 import { WorldDataPanel } from './WorldDataPanel';
 import type { WorldViewAppData } from './WorldDataPanel';
 import { WorldBlockDataCard, findLinkedProject } from './WorldBlockDataCard';
@@ -1953,18 +1952,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
   const enterBuildingCallbackRef = useRef<((block: BlockInfo) => void) | null>(null);
   const exitBuildingCallbackRef  = useRef<(() => void) | null>(null);
   const changeFloorCallbackRef   = useRef<((floor: number) => void) | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
-
   useEffect(() => {
     const canvas   = canvasRef.current!;
     const labelDiv = labelRef.current!;
     if (!canvas || !labelDiv) return;
-
-    let disposed = false;
-    (async () => {
-    const { EffectComposer, RenderPass, EffectPass, BloomEffect } = await import('postprocessing');
-    if (disposed) return;
-
     const mmCanvas = minimapRef.current;
 
     const W = canvas.clientWidth  || 900;
@@ -3944,7 +3935,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     document.addEventListener('keydown', onKeyDown);
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
-    cleanupRef.current = () => {
+    return () => {
       cancelAnimationFrame(rafId);
       renderer.dispose();
       composer.dispose();
@@ -3958,12 +3949,6 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       mmCanvas?.removeEventListener('click', onMinimapClick);
       document.removeEventListener('keydown', onKeyDown);
       clearInterval(todInterval);
-    };
-    })(); // end async IIFE
-
-    return () => {
-      disposed = true;
-      cleanupRef.current?.();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
