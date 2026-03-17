@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
-import { generateText, tool } from 'ai';
+import { generateText, tool, stepCountIs } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import { format } from 'date-fns';
@@ -324,7 +324,7 @@ function buildTools(state: RunState) {
             model: anthropic('claude-haiku-4-5-20251001'),
             system: 'You are a productivity assistant. Given a goal, generate 3-5 specific, actionable sub-tasks. Respond with ONLY a JSON array of objects with "title" (string) and "priority" ("high" | "medium" | "low") fields. No markdown fences.',
             prompt: `Goal: "${goal.title}"\nDescription: "${goal.description || 'No description'}"\nArea: ${goal.area}\nProgress: ${goal.progress}%\n\nGenerate 3-5 concrete next-step tasks to advance this goal.`,
-            maxTokens: 500,
+            maxOutputTokens: 500,
           });
 
           const cleaned = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
@@ -559,9 +559,8 @@ Go through EVERY todo and either complete it using your tools or skip it. Be tho
       system: SYSTEM_PROMPT,
       prompt,
       tools: buildTools(state),
-      maxTokens: 4000,
-      // @ts-ignore — maxSteps works at runtime in this AI SDK version
-      maxSteps,
+      maxOutputTokens: 4000,
+      stopWhen: stepCountIs(maxSteps),
     });
 
     // ── Apply completed todos to the full list ──

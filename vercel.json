@@ -2,6 +2,18 @@
   "buildCommand": "tsc && vite build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/oauth-start", "destination": "/api/oauth?action=start" },
+    { "source": "/api/google-oauth-callback", "destination": "/api/oauth?action=google-callback" },
+    { "source": "/api/linkedin-oauth-callback", "destination": "/api/oauth?action=linkedin-callback" },
+    { "source": "/api/x-oauth-callback", "destination": "/api/oauth?action=x-callback" },
+    { "source": "/api/social-status", "destination": "/api/social?action=status" },
+    { "source": "/api/social-ai-dm", "destination": "/api/social?action=ai-dm" },
+    { "source": "/api/social-ai-drafts", "destination": "/api/social?action=ai-drafts" },
+    { "source": "/api/linkedin-post", "destination": "/api/social?action=linkedin-post" },
+    { "source": "/api/github-sync", "destination": "/api/sync?provider=github" },
+    { "source": "/api/notion-sync", "destination": "/api/sync?provider=notion" },
+    { "source": "/api/news-sync", "destination": "/api/sync?provider=news" },
+    { "source": "/api/readwise-sync", "destination": "/api/sync?provider=readwise" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
@@ -12,16 +24,7 @@
     "api/auto-complete-todos.ts": {
       "maxDuration": 60
     },
-    "api/github-sync.ts": {
-      "maxDuration": 30
-    },
-    "api/notion-sync.ts": {
-      "maxDuration": 30
-    },
-    "api/news-sync.ts": {
-      "maxDuration": 30
-    },
-    "api/readwise-sync.ts": {
+    "api/sync.ts": {
       "maxDuration": 30
     }
   },

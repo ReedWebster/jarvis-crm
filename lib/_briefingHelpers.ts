@@ -667,7 +667,7 @@ export function buildBriefingPrompt(
     '',
     `CALENDAR TODAY (time blocks):`,
     calendarSection,
-  ];
+  );
 
   if (dailyEventsSection) {
     sections.push('', `DAILY EVENTS TODAY:`, dailyEventsSection);

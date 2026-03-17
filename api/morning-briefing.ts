@@ -382,7 +382,7 @@ export default async function handler(req: any, res: any) {
       model: anthropic('claude-haiku-4-5-20251001'),
       system: SYSTEM_PROMPT,
       prompt: userPrompt,
-      maxTokens: 4000,
+      maxOutputTokens: 4000,
     });
 
     if (!rawJson) {
@@ -455,7 +455,7 @@ Generate a structured weekly review. Respond with ONLY a JSON object (no markdow
           model: anthropic('claude-haiku-4-5-20251001'),
           system: 'You are a concise productivity analyst. Respond with only valid JSON.',
           prompt: weeklyReviewPrompt,
-          maxTokens: 1000,
+          maxOutputTokens: 1000,
         });
 
         const cleanedWeekly = weeklyJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();

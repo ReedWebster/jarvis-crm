@@ -95,7 +95,7 @@ export default async function handler(req: any, res: any) {
       model: anthropic('claude-haiku-4-5-20251001'),
       system: SYSTEM_PROMPT,
       prompt: userPrompt,
-      maxTokens: 4000,
+      maxOutputTokens: 4000,
     });
 
     if (!rawJson) {
