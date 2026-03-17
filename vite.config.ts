@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { createRequire } from 'module'
+
+const require = createRequire(import.meta.url)
 
 export default defineConfig({
   optimizeDeps: {
@@ -10,14 +13,25 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // Keep postprocessing + three together in one chunk to avoid
-          // Rollup reordering module-level declarations (TDZ errors)
           'three-vendor': ['three', 'postprocessing'],
         },
       },
     },
   },
   plugins: [
+    {
+      name: 'force-postprocessing-side-effects',
+      enforce: 'pre',
+      resolveId(source) {
+        // postprocessing declares sideEffects:false but has circular deps
+        // that break when Rollup reorders declarations. Force side effects
+        // to preserve original declaration order and prevent TDZ errors.
+        if (source === 'postprocessing') {
+          return { id: require.resolve('postprocessing'), moduleSideEffects: true };
+        }
+        return null;
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',
