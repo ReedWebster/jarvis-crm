@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Bell,
   RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import {
   format,
@@ -21,7 +22,7 @@ import {
   getDay,
   addMonths,
 } from 'date-fns';
-import type { TimeBlock, TimeCategory, Note, TodoItem } from '../../types';
+import type { TimeBlock, TimeCategory, Note, TodoItem, ScreenTimeEntry } from '../../types';
 import {
   generateId,
   todayStr,
@@ -63,6 +64,8 @@ interface Props {
   notes: Note[];
   setNotes: (v: Note[] | ((p: Note[]) => Note[])) => void;
   todos: TodoItem[];
+  screenTime: ScreenTimeEntry[];
+  setScreenTime: (v: ScreenTimeEntry[] | ((p: ScreenTimeEntry[]) => ScreenTimeEntry[])) => void;
 }
 
 type RepeatOption = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
@@ -1054,10 +1057,209 @@ function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 
   );
 }
 
+// ─── SCREEN TIME SECTION ──────────────────────────────────────────────────────
+
+interface ScreenTimeSectionProps {
+  screenTime: ScreenTimeEntry[];
+  setScreenTime: (v: ScreenTimeEntry[] | ((p: ScreenTimeEntry[]) => ScreenTimeEntry[])) => void;
+}
+
+function ScreenTimeSection({ screenTime, setScreenTime }: ScreenTimeSectionProps) {
+  const today = todayStr();
+  const [date, setDate] = useState(today);
+  const [totalHours, setTotalHours] = useState('');
+  const [pickups, setPickups] = useState('');
+  const [catName, setCatName] = useState('');
+  const [catMinutes, setCatMinutes] = useState('');
+  const [categories, setCategories] = useState<Record<string, number>>({});
+  const [expanded, setExpanded] = useState(false);
+
+  const handleAddCategory = () => {
+    const name = catName.trim();
+    const mins = parseInt(catMinutes, 10);
+    if (!name || isNaN(mins) || mins <= 0) return;
+    setCategories(prev => ({ ...prev, [name]: (prev[name] ?? 0) + mins }));
+    setCatName('');
+    setCatMinutes('');
+  };
+
+  const handleRemoveCategory = (name: string) => {
+    setCategories(prev => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const handleSave = () => {
+    const hours = parseFloat(totalHours);
+    if (isNaN(hours) || hours <= 0) return;
+    const entry: ScreenTimeEntry = {
+      date,
+      totalMinutes: Math.round(hours * 60),
+      categories,
+      pickups: parseInt(pickups, 10) || 0,
+    };
+    setScreenTime(prev => [...prev.filter(e => e.date !== date), entry]);
+    setTotalHours('');
+    setPickups('');
+    setCategories({});
+  };
+
+  const recentEntries = useMemo(() => {
+    const sorted = [...screenTime].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted.slice(0, 7);
+  }, [screenTime]);
+
+  return (
+    <div className="caesar-card p-4">
+      <button
+        onClick={() => setExpanded(prev => !prev)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <Smartphone size={16} style={{ color: 'var(--text-secondary)' }} />
+        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Screen Time</span>
+        <ChevronRight
+          size={14}
+          style={{
+            color: 'var(--text-muted)',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s',
+          }}
+        />
+      </button>
+
+      {expanded && (
+        <div className="mt-4 flex flex-col gap-3">
+          {/* Form */}
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="caesar-label">Date</label>
+              <input
+                type="date"
+                className="caesar-input w-full"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="caesar-label">Total Hours</label>
+              <input
+                type="number"
+                className="caesar-input w-full"
+                placeholder="e.g. 4.5"
+                value={totalHours}
+                onChange={e => setTotalHours(e.target.value)}
+                step="0.25"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="caesar-label">Pickups</label>
+              <input
+                type="number"
+                className="caesar-input w-full"
+                placeholder="e.g. 45"
+                value={pickups}
+                onChange={e => setPickups(e.target.value)}
+                min="0"
+              />
+            </div>
+          </div>
+
+          {/* Category input */}
+          <div>
+            <label className="caesar-label">Categories</label>
+            <div className="flex gap-2 mt-1">
+              <input
+                className="caesar-input flex-1"
+                placeholder="App / category"
+                value={catName}
+                onChange={e => setCatName(e.target.value)}
+              />
+              <input
+                type="number"
+                className="caesar-input w-20"
+                placeholder="min"
+                value={catMinutes}
+                onChange={e => setCatMinutes(e.target.value)}
+                min="0"
+              />
+              <button
+                onClick={handleAddCategory}
+                className="caesar-btn-ghost px-2 flex items-center gap-1 text-xs"
+                disabled={!catName.trim() || !catMinutes}
+              >
+                <Plus size={13} /> Add
+              </button>
+            </div>
+            {Object.keys(categories).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {Object.entries(categories).map(([name, mins]) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border"
+                    style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-elevated)' }}
+                  >
+                    {name}: {mins}m
+                    <button onClick={() => handleRemoveCategory(name)} className="ml-0.5" style={{ color: 'var(--text-muted)' }}>
+                      <Trash2 size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleSave}
+            className="caesar-btn-primary flex items-center gap-2 justify-center text-sm"
+            disabled={!totalHours || parseFloat(totalHours) <= 0}
+          >
+            <Plus size={14} /> Save Entry
+          </button>
+
+          {/* Recent entries */}
+          {recentEntries.length > 0 && (
+            <div className="mt-2">
+              <p className="caesar-label mb-2">Recent Entries</p>
+              <div className="flex flex-col gap-1.5">
+                {recentEntries.map(entry => (
+                  <div
+                    key={entry.date}
+                    className="flex items-center justify-between p-2 rounded-lg text-xs"
+                    style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
+                  >
+                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {format(parseISO(entry.date), 'MMM d')}
+                    </span>
+                    <span>{(entry.totalMinutes / 60).toFixed(1)}h</span>
+                    <span>{entry.pickups} pickups</span>
+                    <span className="truncate max-w-[120px]">
+                      {Object.keys(entry.categories).join(', ') || 'No categories'}
+                    </span>
+                    <button
+                      onClick={() => setScreenTime(prev => prev.filter(e => e.date !== entry.date))}
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 export function Calendar({
   timeBlocks, setTimeBlocks, timeCategories, setTimeCategories,
+  screenTime, setScreenTime,
 }: Props) {
   const today = todayStr();
 
@@ -1394,6 +1596,9 @@ export function Calendar({
           />
         )}
       </div>
+
+      {/* Screen Time */}
+      <ScreenTimeSection screenTime={screenTime} setScreenTime={setScreenTime} />
 
       {/* New / Edit Event Modal */}
       <Modal isOpen={logModalOpen} onClose={() => setLogModalOpen(false)}

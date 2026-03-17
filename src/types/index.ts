@@ -28,6 +28,7 @@ export interface Project {
   notes: string;
   links: string;
   createdAt: string;
+  githubRepo?: string;       // e.g. "owner/repo" — links project to GitHub activity
 }
 
 // ─── TIME TRACKING ───────────────────────────────────────────────────────────
@@ -64,6 +65,16 @@ export interface ContactInteraction {
   notes: string;
 }
 
+export interface AIEnrichment {
+  summary: string;           // 2-3 sentence profile summary
+  suggestedTags: string[];   // AI-suggested tags (existing + new)
+  strategicNotes: string;    // How to maintain this relationship
+  relationshipTier: string;  // "Inner Circle" | "Key Ally" | "Active Network" | "Acquaintance" | "Dormant"
+  followUpTiming: string;    // e.g. "Every 2 weeks"
+  talkingPoints: string[];   // Topics for next conversation
+  enrichedAt: string;        // ISO date of last enrichment
+}
+
 export interface Contact {
   id: string;
   name: string;
@@ -87,6 +98,7 @@ export interface Contact {
   notes: string;
   interactions: ContactInteraction[];
   linkedProjects: string[];
+  aiEnrichment?: AIEnrichment;
 }
 
 // ─── ACADEMIC ────────────────────────────────────────────────────────────────
@@ -521,11 +533,105 @@ export interface DocFile {
   content: string; // base64 data URL
 }
 
+// ─── GITHUB ACTIVITY ────────────────────────────────────────────────────────
+
+export interface GitHubActivity {
+  lastSyncAt: string;
+  recentCommits: Array<{ repo: string; message: string; date: string }>;
+  openPRs: Array<{ repo: string; title: string; url: string }>;
+  openIssues: Array<{ repo: string; title: string; url: string; labels: string[] }>;
+}
+
+// ─── NEWS FEED ──────────────────────────────────────────────────────────────
+
+export interface NewsItem {
+  title: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+  summary?: string;
+}
+
+export interface NewsConfig {
+  queries: string[];
+  enabled: boolean;
+}
+
+// ─── NOTION ─────────────────────────────────────────────────────────────────
+
+export interface NotionPageSummary {
+  id: string;
+  title: string;
+  lastEditedAt: string;
+  url: string;
+  contentPreview?: string;
+  database?: string;
+}
+
+export interface NotionConfig {
+  databaseIds: string[];
+  enabled: boolean;
+  lastSyncAt?: string;
+}
+
+// ─── READWISE ───────────────────────────────────────────────────────────────
+
+export interface ReadwiseHighlight {
+  id: string;
+  text: string;
+  bookTitle: string;
+  author: string;
+  highlightedAt: string;
+  note?: string;
+}
+
+// ─── SCREEN TIME ────────────────────────────────────────────────────────────
+
+export interface ScreenTimeEntry {
+  date: string;
+  totalMinutes: number;
+  categories: Record<string, number>;
+  pickups: number;
+}
+
+// ─── EMAIL DRAFTS ───────────────────────────────────────────────────────────
+
+export interface EmailDraft {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  todoId: string;
+  createdAt: string;
+  status: 'pending' | 'sent' | 'dismissed';
+}
+
+// ─── EVENT LOG ──────────────────────────────────────────────────────────────
+
+export interface EventLogEntry {
+  id: string;
+  key: string;
+  action: 'create' | 'update' | 'delete';
+  timestamp: string;
+  summary?: string;
+}
+
+// ─── DAILY REFLECTION ───────────────────────────────────────────────────────
+
+export interface DailyReflection {
+  date: string;           // YYYY-MM-DD
+  reflection: string;     // freeform
+  wins: string;
+  challenges: string;
+  createdAt: string;
+}
+
 // ─── MORNING BRIEFING ───────────────────────────────────────────────────────
 
 export interface MorningBriefing {
   date: string;
   generatedAt: string;
+  weather?: { temp: number; feelsLike: number; condition: string; high: number; low: number } | null;
   sections: {
     executiveSummary: string;
     priorityTasks: Array<{ title: string; reasoning: string; priority: string }>;

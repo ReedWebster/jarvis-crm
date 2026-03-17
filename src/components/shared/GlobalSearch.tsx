@@ -28,6 +28,12 @@ const TYPE_CONFIG = {
   note: { icon: <FileText size={14} />, color: 'var(--text-muted)', label: 'Note' },
 };
 
+// TODO (Phase 10b): Add semantic search toggle here. When enabled, use Supabase
+// pgvector embeddings (requires migration to add an embeddings column + OpenAI
+// dependency for generating embeddings) to perform similarity search alongside
+// the existing keyword search. The toggle would switch between "keyword" and
+// "semantic" search modes in the search input bar.
+
 export function GlobalSearch({ isOpen, onClose, onNavigate, contacts, projects, goals, notes }: GlobalSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);

@@ -1,7 +1,8 @@
 import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 import { buildBriefingPrompt } from '../lib/_briefingHelpers.js';
-import type { BriefingData } from '../lib/_briefingHelpers.js';
+import type { BriefingData, BriefingHistoryContext } from '../lib/_briefingHelpers.js';
 import { getGoogleAccessToken, fetchRecentEmails, fetchTodayCalendarEvents } from '../lib/_googleAuth.js';
+import { fetchGitHubActivity } from '../lib/_githubHelpers.js';
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
@@ -172,8 +173,49 @@ export default async function handler(req: any, res: any) {
       'jarvis:readingItems', 'jarvis:candidates',
       'jarvis:notes', 'jarvis:dailyEvents',
       'jarvis:dailyMoodLogs', 'jarvis:socialPosts',
-      'jarvis:socialApprovals',
+      'jarvis:socialApprovals', 'jarvis:github_activity',
+      'jarvis:screen_time', 'jarvis:news_feed',
+      'jarvis:notion_pages', 'jarvis:readwise_highlights',
     ];
+
+    // ── GitHub fetch (inline, 5s timeout, fallback to cached) ──
+    const githubPromise = (async () => {
+      const ghToken = process.env.GITHUB_TOKEN;
+      if (!ghToken) return null;
+      try {
+        return await fetchGitHubActivity(ghToken);
+      } catch {
+        return null;
+      }
+    })();
+
+    // ── Weather fetch (OpenWeatherMap, 5s timeout) ──
+    const weatherPromise = (async () => {
+      const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+      const lat = process.env.WEATHER_LAT;
+      const lon = process.env.WEATHER_LON;
+      if (!apiKey || !lat || !lon) return null;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=imperial&appid=${apiKey}`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        if (!res.ok) return null;
+        const d = await res.json();
+        return {
+          temp: Math.round(d.main?.temp ?? 0),
+          feelsLike: Math.round(d.main?.feels_like ?? 0),
+          high: Math.round(d.main?.temp_max ?? 0),
+          low: Math.round(d.main?.temp_min ?? 0),
+          condition: d.weather?.[0]?.description ?? 'unknown',
+        };
+      } catch {
+        return null;
+      }
+    })();
 
     // ── Improvement #2: Parallelize ALL data fetching ──
     // DB queries + Google API run concurrently instead of sequentially
@@ -190,7 +232,88 @@ export default async function handler(req: any, res: any) {
       }
     })();
 
-    const [userResult, workspaceResult, googleData] = await Promise.all([
+    // ── Fetch briefing history (last 7 days), reflections, and auto-complete logs ──
+    const historyPromise = (async (): Promise<BriefingHistoryContext> => {
+      try {
+        const [briefingArchive, reflectionsResult, autoLogResult] = await Promise.all([
+          supabaseAdmin
+            .from('user_data')
+            .select('key, value')
+            .eq('user_id', userId)
+            .like('key', 'jarvis:briefing:%')
+            .order('key', { ascending: false })
+            .limit(7),
+          supabaseAdmin
+            .from('user_data')
+            .select('value')
+            .eq('user_id', userId)
+            .eq('key', 'jarvis:reflections')
+            .maybeSingle(),
+          supabaseAdmin
+            .from('user_data')
+            .select('key, value')
+            .eq('user_id', userId)
+            .like('key', 'jarvis:auto_complete_log:%')
+            .order('key', { ascending: false })
+            .limit(7),
+        ]);
+
+        const pastBriefings = (briefingArchive.data ?? []).map(row => {
+          const val = row.value as any;
+          return {
+            date: val?.date ?? row.key.replace('jarvis:briefing:', ''),
+            executiveSummary: val?.sections?.executiveSummary ?? '',
+          };
+        }).filter(b => b.executiveSummary);
+
+        const allReflections = (reflectionsResult.data?.value ?? []) as Array<{ date: string; wins: string; challenges: string }>;
+        const recentReflections = allReflections
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .slice(0, 7);
+
+        // Compute completion velocity from auto-complete logs
+        let totalCompleted = 0;
+        let logDays = 0;
+        for (const row of autoLogResult.data ?? []) {
+          const log = row.value as any;
+          const completed = Array.isArray(log?.actions)
+            ? log.actions.filter((a: any) => a?.action === 'mark_todo_done').length
+            : 0;
+          totalCompleted += completed;
+          logDays++;
+        }
+        const avgPerDay = logDays > 0 ? totalCompleted / logDays : 0;
+        // Simple trend: compare first half vs second half
+        let trend = 'stable';
+        if (logDays >= 4) {
+          const mid = Math.floor(logDays / 2);
+          const logs = autoLogResult.data ?? [];
+          const recentHalf = logs.slice(0, mid);
+          const olderHalf = logs.slice(mid);
+          const recentAvg = recentHalf.reduce((s, r) => {
+            const v = r.value as any;
+            return s + (Array.isArray(v?.actions) ? v.actions.filter((a: any) => a?.action === 'mark_todo_done').length : 0);
+          }, 0) / recentHalf.length;
+          const olderAvg = olderHalf.reduce((s, r) => {
+            const v = r.value as any;
+            return s + (Array.isArray(v?.actions) ? v.actions.filter((a: any) => a?.action === 'mark_todo_done').length : 0);
+          }, 0) / olderHalf.length;
+          if (recentAvg > olderAvg * 1.2) trend = 'increasing';
+          else if (recentAvg < olderAvg * 0.8) trend = 'decreasing';
+        }
+
+        return {
+          pastBriefings,
+          completionVelocity: { avgPerDay, trend },
+          reflections: recentReflections,
+        };
+      } catch (e) {
+        console.error('[Briefing] History fetch failed:', e);
+        return { pastBriefings: [], completionVelocity: { avgPerDay: 0, trend: 'unknown' }, reflections: [] };
+      }
+    })();
+
+    const [userResult, workspaceResult, googleData, historyData, weatherData, githubData] = await Promise.all([
       supabaseAdmin
         .from('user_data')
         .select('key, value')
@@ -201,6 +324,9 @@ export default async function handler(req: any, res: any) {
         .select('key, value')
         .eq('key', 'clients'),
       googleDataPromise,
+      historyPromise,
+      weatherPromise,
+      githubPromise,
     ]);
 
     if (userResult.error) {
@@ -239,6 +365,13 @@ export default async function handler(req: any, res: any) {
       dailyMoodLogs: dataMap['jarvis:dailyMoodLogs'] ?? [],
       socialPosts: dataMap['jarvis:socialPosts'] ?? [],
       socialApprovals: dataMap['jarvis:socialApprovals'] ?? [],
+      history: historyData,
+      weather: weatherData,
+      githubActivity: githubData ?? dataMap['jarvis:github_activity'] ?? null,
+      screenTime: dataMap['jarvis:screen_time'] ?? [],
+      newsFeed: dataMap['jarvis:news_feed'] ?? [],
+      notionPages: dataMap['jarvis:notion_pages'] ?? [],
+      readwiseHighlights: dataMap['jarvis:readwise_highlights'] ?? [],
     };
 
     // Build the prompt (improvement #3: pre-filtered data inside buildBriefingPrompt)
@@ -275,6 +408,7 @@ export default async function handler(req: any, res: any) {
     const briefing = {
       date: today,
       generatedAt: new Date().toISOString(),
+      weather: weatherData ?? undefined,
       sections,
     };
 
@@ -294,7 +428,68 @@ export default async function handler(req: any, res: any) {
       }, { onConflict: 'user_id,key' }),
     ]);
 
-    res.status(200).json({ success: true, briefing, googleStatus: googleData.status });
+    // ── Weekly Review (Sundays only) ──────────────────────────────────────────
+    let weeklyReview = null;
+    if (new Date().getDay() === 0) {
+      try {
+        // Build summary from past briefings (already fetched in historyData)
+        const pastSummaries = (historyData.pastBriefings ?? [])
+          .map((b: any) => `${b.date}: ${b.executiveSummary}`)
+          .join('\n');
+
+        const weeklyReviewPrompt = `You are Reed Webster's chief of staff. It's Sunday — time for a weekly review.
+
+Here are the past 7 daily briefing summaries:
+${pastSummaries || 'No briefing history available.'}
+
+Generate a structured weekly review. Respond with ONLY a JSON object (no markdown fences):
+{
+  "wins": "string — key accomplishments this week",
+  "misses": "string — things that didn't get done or went wrong",
+  "blockers": "string — what's blocking progress",
+  "focusNextWeek": "string — top priorities for next week",
+  "energyAvg": number (0-100 estimate based on briefing tone and patterns)
+}`;
+
+        const { text: weeklyJson } = await generateText({
+          model: anthropic('claude-haiku-4-5-20251001'),
+          system: 'You are a concise productivity analyst. Respond with only valid JSON.',
+          prompt: weeklyReviewPrompt,
+          maxTokens: 1000,
+        });
+
+        const cleanedWeekly = weeklyJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        const parsed = JSON.parse(cleanedWeekly);
+
+        const review = {
+          id: crypto.randomUUID(),
+          weekOf: today,
+          wins: parsed.wins ?? '',
+          misses: parsed.misses ?? '',
+          blockers: parsed.blockers ?? '',
+          focusNextWeek: parsed.focusNextWeek ?? '',
+          energyAvg: typeof parsed.energyAvg === 'number' ? parsed.energyAvg : 50,
+          createdAt: new Date().toISOString(),
+        };
+
+        // Fetch existing weekly reviews, append, and upsert
+        const existingReviews: any[] = dataMap['jarvis:weeklyReviews'] ?? [];
+        existingReviews.push(review);
+
+        await supabaseAdmin.from('user_data').upsert({
+          user_id: userId,
+          key: 'jarvis:weeklyReviews',
+          value: existingReviews,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,key' });
+
+        weeklyReview = review;
+      } catch (e: any) {
+        console.error('[Briefing] Weekly review generation failed:', e?.message ?? e);
+      }
+    }
+
+    res.status(200).json({ success: true, briefing, googleStatus: googleData.status, weeklyReview });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to generate briefing', detail: err?.message ?? String(err) });
   }

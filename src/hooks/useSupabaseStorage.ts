@@ -42,6 +42,70 @@ function _subscribeUserId(fn: (uid: string | null) => void): () => void {
   return () => _listeners.delete(fn);
 }
 
+// ─── Event Log (Phase 10a — lightweight event sourcing) ──────────────────────
+
+interface EventLogEntry {
+  id: string;
+  key: string;
+  action: 'create' | 'update' | 'delete';
+  timestamp: string;
+  summary?: string;
+}
+
+const EVENT_LOG_KEY = 'jarvis:event_log';
+const EVENT_LOG_MAX = 500;
+let _eventBuffer: EventLogEntry[] = [];
+let _eventFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function _enqueueEvent(storageKey: string) {
+  // Prevent infinite loop: don't log events for the event log itself
+  if (storageKey === EVENT_LOG_KEY) return;
+
+  _eventBuffer.push({
+    id: crypto.randomUUID(),
+    key: storageKey,
+    action: 'update',
+    timestamp: new Date().toISOString(),
+  });
+
+  if (_eventFlushTimer) clearTimeout(_eventFlushTimer);
+  _eventFlushTimer = setTimeout(() => {
+    _flushEventBuffer();
+  }, 2000);
+}
+
+function _flushEventBuffer() {
+  if (_eventBuffer.length === 0) return;
+  const batch = [..._eventBuffer];
+  _eventBuffer = [];
+  _eventFlushTimer = null;
+
+  // Read current log from localStorage, append, prune, and save
+  try {
+    const raw = window.localStorage.getItem(EVENT_LOG_KEY);
+    const existing: EventLogEntry[] = raw ? JSON.parse(raw) : [];
+    const merged = [...existing, ...batch];
+    // Keep only the most recent EVENT_LOG_MAX entries
+    const pruned = merged.length > EVENT_LOG_MAX ? merged.slice(merged.length - EVENT_LOG_MAX) : merged;
+    window.localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(pruned));
+
+    // Also push to Supabase if we have a userId
+    if (_userId) {
+      supabase
+        .from('user_data')
+        .upsert(
+          { user_id: _userId, key: EVENT_LOG_KEY, value: pruned, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,key' },
+        )
+        .then(({ error }) => {
+          if (error) console.warn('[LITEHOUSE] Event log flush failed:', error.message);
+        });
+    }
+  } catch (e) {
+    console.warn('[LITEHOUSE] Event log write failed:', e);
+  }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSupabaseStorage<T>(
@@ -184,10 +248,12 @@ export function useSupabaseStorage<T>(
       setStoredValue(prev => {
         const next = value instanceof Function ? value(prev) : value;
         if (userId) syncToSupabase(next, userId);
+        // Event sourcing: log this mutation
+        _enqueueEvent(key);
         return next;
       });
     },
-    [userId, syncToSupabase]
+    [key, userId, syncToSupabase]
   );
 
   return [storedValue, setValue];

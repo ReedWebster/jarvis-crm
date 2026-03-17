@@ -11,6 +11,18 @@
     },
     "api/auto-complete-todos.ts": {
       "maxDuration": 60
+    },
+    "api/github-sync.ts": {
+      "maxDuration": 30
+    },
+    "api/notion-sync.ts": {
+      "maxDuration": 30
+    },
+    "api/news-sync.ts": {
+      "maxDuration": 30
+    },
+    "api/readwise-sync.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [

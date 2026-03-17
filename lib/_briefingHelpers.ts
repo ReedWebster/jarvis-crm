@@ -221,6 +221,12 @@ function daysUntil(dateStr: string): number {
 
 // ─── Build Claude prompt from raw Supabase data ────────────────────────────
 
+export interface BriefingHistoryContext {
+  pastBriefings: Array<{ date: string; executiveSummary: string }>;
+  completionVelocity: { avgPerDay: number; trend: string };
+  reflections: Array<{ date: string; wins: string; challenges: string }>;
+}
+
 export interface BriefingData {
   identity: Identity;
   todos: TodoItem[];
@@ -245,6 +251,18 @@ export interface BriefingData {
   dailyMoodLogs: DailyMoodLog[];
   socialPosts: SocialPost[];
   socialApprovals: SocialApprovalItem[];
+  history?: BriefingHistoryContext;
+  weather?: { temp: number; feelsLike: number; condition: string; high: number; low: number } | null;
+  githubActivity?: {
+    lastSyncAt: string;
+    recentCommits: Array<{ repo: string; message: string; date: string }>;
+    openPRs: Array<{ repo: string; title: string; url: string }>;
+    openIssues: Array<{ repo: string; title: string; url: string; labels: string[] }>;
+  } | null;
+  screenTime?: Array<{ date: string; totalMinutes: number; categories: Record<string, number>; pickups: number }>;
+  newsFeed?: Array<{ title: string; source: string; url: string; publishedAt: string }>;
+  notionPages?: Array<{ id: string; title: string; lastEditedAt: string; contentPreview?: string }>;
+  readwiseHighlights?: Array<{ id: string; text: string; bookTitle: string; author: string; highlightedAt: string }>;
 }
 
 export function buildBriefingPrompt(
@@ -631,6 +649,15 @@ export function buildBriefingPrompt(
 
   const sections = [
     `Today: ${dayOfWeek}, ${todayDate}`,
+  ];
+
+  if (data.weather) {
+    sections.push(
+      `WEATHER: ${data.weather.temp}°F (feels like ${data.weather.feelsLike}°F), ${data.weather.condition}, high ${data.weather.high}°F / low ${data.weather.low}°F`
+    );
+  }
+
+  sections.push(
     '',
     `MY PRIORITIES:`,
     prioritiesSection,
@@ -713,6 +740,90 @@ export function buildBriefingPrompt(
 
   if (emailSection) {
     sections.push('', `OVERNIGHT EMAILS (${emails.length}):`, emailSection);
+  }
+
+  // ── GitHub activity ──
+  if (data.githubActivity) {
+    const gh = data.githubActivity;
+    const ghLines: string[] = [];
+    if (gh.recentCommits.length > 0) {
+      ghLines.push(`Recent commits (${gh.recentCommits.length}):`);
+      for (const c of gh.recentCommits.slice(0, 5)) {
+        ghLines.push(`- ${c.repo}: "${c.message}" (${c.date.split('T')[0]})`);
+      }
+    }
+    if (gh.openPRs.length > 0) {
+      ghLines.push(`Open PRs (${gh.openPRs.length}): ${gh.openPRs.slice(0, 5).map(p => `${p.repo}: ${p.title}`).join('; ')}`);
+    }
+    if (gh.openIssues.length > 0) {
+      ghLines.push(`Open issues (${gh.openIssues.length}): ${gh.openIssues.slice(0, 5).map(i => `${i.repo}: ${i.title}`).join('; ')}`);
+    }
+    if (ghLines.length > 0) {
+      sections.push('', `GITHUB ACTIVITY:`, ...ghLines);
+    }
+  }
+
+  // ── News feed ──
+  if (data.newsFeed && data.newsFeed.length > 0) {
+    sections.push('', `INDUSTRY NEWS (${data.newsFeed.length} articles):`);
+    for (const n of data.newsFeed.slice(0, 5)) {
+      sections.push(`- "${n.title}" (${n.source}, ${n.publishedAt?.split('T')[0] ?? ''})`);
+    }
+  }
+
+  // ── Notion pages ──
+  if (data.notionPages && data.notionPages.length > 0) {
+    const recentPages = data.notionPages
+      .sort((a, b) => b.lastEditedAt.localeCompare(a.lastEditedAt))
+      .slice(0, 5);
+    sections.push('', `NOTION (recently edited pages):`);
+    for (const p of recentPages) {
+      sections.push(`- "${p.title}" (edited: ${p.lastEditedAt.split('T')[0]})${p.contentPreview ? ` — ${p.contentPreview.slice(0, 80)}` : ''}`);
+    }
+  }
+
+  // ── Readwise highlights ──
+  if (data.readwiseHighlights && data.readwiseHighlights.length > 0) {
+    sections.push('', `RECENT READING HIGHLIGHTS (${data.readwiseHighlights.length}):`);
+    for (const h of data.readwiseHighlights.slice(0, 5)) {
+      sections.push(`- "${h.text.slice(0, 100)}" — ${h.bookTitle} by ${h.author}`);
+    }
+  }
+
+  // ── Screen time ──
+  if (data.screenTime && data.screenTime.length > 0) {
+    const recent = data.screenTime.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
+    const avgMinutes = Math.round(recent.reduce((s, e) => s + e.totalMinutes, 0) / recent.length);
+    sections.push('', `SCREEN TIME (${recent.length}-day avg: ${Math.floor(avgMinutes / 60)}h ${avgMinutes % 60}m):`);
+    for (const s of recent) {
+      const cats = Object.entries(s.categories).map(([k, v]) => `${k}: ${v}m`).join(', ');
+      sections.push(`- ${s.date}: ${Math.floor(s.totalMinutes / 60)}h ${s.totalMinutes % 60}m (${s.pickups} pickups)${cats ? ` [${cats}]` : ''}`);
+    }
+  }
+
+  // ── Briefing history (past summaries, velocity, reflections) ────────────
+  if (data.history) {
+    const h = data.history;
+    if (h.pastBriefings.length > 0) {
+      sections.push('', `PAST BRIEFING SUMMARIES (last ${h.pastBriefings.length} days):`);
+      for (const b of h.pastBriefings) {
+        sections.push(`- ${b.date}: ${b.executiveSummary}`);
+      }
+    }
+    if (h.completionVelocity.avgPerDay > 0) {
+      sections.push('', `TASK COMPLETION VELOCITY:`,
+        `Average ${h.completionVelocity.avgPerDay.toFixed(1)} tasks/day (trend: ${h.completionVelocity.trend})`,
+        `Use this to calibrate how many tasks to recommend today.`);
+    }
+    if (h.reflections.length > 0) {
+      sections.push('', `RECENT END-OF-DAY REFLECTIONS:`);
+      for (const r of h.reflections) {
+        const parts = [];
+        if (r.wins) parts.push(`Wins: ${r.wins}`);
+        if (r.challenges) parts.push(`Challenges: ${r.challenges}`);
+        sections.push(`- ${r.date}: ${parts.join(' | ') || 'no details'}`);
+      }
+    }
   }
 
   return sections.join('\n');

@@ -6,7 +6,7 @@
 
 import { differenceInDays, parseISO, format, startOfDay, getHours } from 'date-fns';
 import type {
-  Contact, TimeBlock, TimeCategory, Goal, TodoItem,
+  Contact, ContactInteraction, TimeBlock, TimeCategory, Goal, TodoItem,
   FinancialEntry, SavingsGoal, ReadingItem, Note,
   DailyMoodLog, Habit, HabitTracker,
 } from '../types';
@@ -567,4 +567,232 @@ export function learnPreferences(timeBlocks: TimeBlock[]): LearnedPreferences {
   const consistencyScore = Math.round((daysWithTime / 30) * 100);
 
   return { topCategoryIds, peakWorkHours, avgSessionMinutes, consistencyScore };
+}
+
+// ─── CONTACT RELATIONSHIP SCORING ───────────────────────────────────────────
+
+/**
+ * Scores a contact's relationship health from 0-100 based on
+ * recency (40%), frequency (30%), and depth (30%) of interactions.
+ */
+export function scoreContactRelationship(
+  contact: Contact,
+  allInteractions: ContactInteraction[],
+): number {
+  const now = new Date();
+
+  // Recency: days since last interaction, scored 100 → 0 over 90 days
+  let recencyScore = 0;
+  if (contact.lastContacted) {
+    const daysSince = differenceInDays(startOfDay(now), startOfDay(parseISO(contact.lastContacted)));
+    recencyScore = Math.max(0, Math.round(100 - (daysSince / 90) * 100));
+  }
+
+  // Frequency: number of interactions in last 90 days, capped at 100
+  const ninetyDaysAgo = new Date(now);
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  const recentInteractions = allInteractions.filter(i => {
+    try {
+      return parseISO(i.date) >= ninetyDaysAgo;
+    } catch {
+      return false;
+    }
+  });
+  const frequencyScore = Math.min(100, recentInteractions.length * 10);
+
+  // Depth: weighted by type (meeting=3, call=2, everything else=1)
+  const typeWeights: Record<string, number> = { meeting: 3, call: 2 };
+  const totalDepth = recentInteractions.reduce((sum, i) => {
+    return sum + (typeWeights[i.type] ?? 1);
+  }, 0);
+  const depthScore = Math.min(100, totalDepth * 5);
+
+  return Math.round(recencyScore * 0.4 + frequencyScore * 0.3 + depthScore * 0.3);
+}
+
+// ─── TIME AUDIT ─────────────────────────────────────────────────────────────
+
+export interface TimeAuditResult {
+  byCategory: Record<string, { name: string; hours: number; color: string }>;
+  totalHours: number;
+}
+
+/**
+ * Computes a time audit breakdown by category for the last N days.
+ */
+export function computeTimeAudit(
+  timeBlocks: TimeBlock[],
+  categories: TimeCategory[],
+  days: number = 7,
+): TimeAuditResult {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const catMap = new Map(categories.map(c => [c.id, c]));
+  const byCategory: Record<string, { name: string; hours: number; color: string }> = {};
+  let totalHours = 0;
+
+  for (const b of timeBlocks) {
+    try {
+      if (parseISO(b.date) < startOfDay(cutoff)) continue;
+    } catch {
+      continue;
+    }
+    const [sh, sm] = b.startTime.split(':').map(Number);
+    const [eh, em] = b.endTime.split(':').map(Number);
+    const dur = Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+    totalHours += dur;
+
+    const cat = catMap.get(b.categoryId);
+    const name = cat?.name ?? 'Unknown';
+    const color = cat?.color ?? '#6b7280';
+    if (!byCategory[b.categoryId]) {
+      byCategory[b.categoryId] = { name, hours: 0, color };
+    }
+    byCategory[b.categoryId].hours += dur;
+  }
+
+  return { byCategory, totalHours };
+}
+
+// ─── GOAL-CALENDAR ALIGNMENT ────────────────────────────────────────────────
+
+export interface GoalAlignmentEntry {
+  goalTitle: string;
+  area: string;
+  hoursThisWeek: number;
+  alignment: 'good' | 'low' | 'none';
+}
+
+/**
+ * For each active goal, checks if any time category name loosely matches
+ * the goal's area or title and returns an alignment score.
+ */
+export function checkGoalCalendarAlignment(
+  goals: Goal[],
+  timeBlocks: TimeBlock[],
+  categories: TimeCategory[],
+): GoalAlignmentEntry[] {
+  const audit = computeTimeAudit(timeBlocks, categories, 7);
+  const catMap = new Map(categories.map(c => [c.id, c]));
+
+  return goals
+    .filter(g => g.status === 'in-progress' || g.status === 'not-started')
+    .map(g => {
+      const goalTerms = [g.area, g.title].map(s => s.toLowerCase());
+
+      // Sum hours from any category whose name loosely matches goal area or title
+      let hoursThisWeek = 0;
+      for (const [catId, data] of Object.entries(audit.byCategory)) {
+        const catName = data.name.toLowerCase();
+        const matches = goalTerms.some(term =>
+          catName.includes(term) || term.includes(catName)
+        );
+        if (matches) {
+          hoursThisWeek += data.hours;
+        }
+      }
+
+      const alignment: 'good' | 'low' | 'none' =
+        hoursThisWeek >= 3 ? 'good' :
+        hoursThisWeek > 0 ? 'low' : 'none';
+
+      return {
+        goalTitle: g.title,
+        area: g.area,
+        hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
+        alignment,
+      };
+    });
+}
+
+// ─── OPTIMAL SCHEDULE SUGGESTIONS ───────────────────────────────────────────
+
+export interface ScheduleSuggestion {
+  slot: string;
+  activity: string;
+  reason: string;
+}
+
+/**
+ * Analyses energy patterns by hour from timeBlocks and moodLogs
+ * to suggest best times for deep work, meetings, and admin.
+ */
+export function suggestOptimalSchedule(
+  timeBlocks: TimeBlock[],
+  moodLogs: DailyMoodLog[],
+): ScheduleSuggestion[] {
+  // Collect energy data per hour bucket from time blocks
+  const hourEnergy: Record<number, { total: number; count: number }> = {};
+
+  for (const b of timeBlocks) {
+    if (!b.energy) continue;
+    const h = parseInt(b.startTime.split(':')[0], 10);
+    if (!hourEnergy[h]) hourEnergy[h] = { total: 0, count: 0 };
+    hourEnergy[h].total += b.energy;
+    hourEnergy[h].count += 1;
+  }
+
+  // Incorporate mood log energy (assign to morning/afternoon/evening buckets)
+  for (const log of moodLogs) {
+    // Default mood log energy to midday (12) since logs are daily
+    if (!hourEnergy[12]) hourEnergy[12] = { total: 0, count: 0 };
+    hourEnergy[12].total += log.energy;
+    hourEnergy[12].count += 1;
+  }
+
+  // Calculate average energy per hour
+  const hourAvg: { hour: number; avg: number }[] = [];
+  for (const [h, data] of Object.entries(hourEnergy)) {
+    hourAvg.push({ hour: Number(h), avg: data.total / data.count });
+  }
+  hourAvg.sort((a, b) => b.avg - a.avg);
+
+  if (hourAvg.length === 0) {
+    return [
+      { slot: '9:00 AM', activity: 'Deep Work', reason: 'Not enough data yet — mornings are generally best for focus.' },
+      { slot: '1:00 PM', activity: 'Meetings', reason: 'Post-lunch is often good for collaborative work.' },
+      { slot: '4:00 PM', activity: 'Admin / Email', reason: 'Energy typically dips in late afternoon.' },
+    ];
+  }
+
+  const suggestions: ScheduleSuggestion[] = [];
+
+  // Highest energy hours → deep work
+  const topHours = hourAvg.slice(0, Math.max(1, Math.ceil(hourAvg.length * 0.33)));
+  const deepWorkSlot = topHours[0];
+  suggestions.push({
+    slot: formatHour(deepWorkSlot.hour),
+    activity: 'Deep Work',
+    reason: `Your average energy at this hour is ${deepWorkSlot.avg.toFixed(1)}/5 — your peak.`,
+  });
+
+  // Mid-energy hours → meetings
+  const midIdx = Math.floor(hourAvg.length / 2);
+  if (midIdx < hourAvg.length) {
+    const meetingSlot = hourAvg[midIdx];
+    suggestions.push({
+      slot: formatHour(meetingSlot.hour),
+      activity: 'Meetings',
+      reason: `Moderate energy (${meetingSlot.avg.toFixed(1)}/5) suits collaborative work.`,
+    });
+  }
+
+  // Lowest energy hours → admin
+  const lowSlot = hourAvg[hourAvg.length - 1];
+  if (lowSlot.hour !== deepWorkSlot.hour) {
+    suggestions.push({
+      slot: formatHour(lowSlot.hour),
+      activity: 'Admin / Email',
+      reason: `Energy dips to ${lowSlot.avg.toFixed(1)}/5 — good for low-stakes tasks.`,
+    });
+  }
+
+  return suggestions;
+}
+
+function formatHour(h: number): string {
+  const period = h >= 12 ? 'PM' : 'AM';
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${display}:00 ${period}`;
 }

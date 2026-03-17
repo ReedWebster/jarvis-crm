@@ -69,6 +69,8 @@ import type {
   DecisionLog, ReadingItem, Candidate, Note, DailyEvent, Habit,
   HabitTracker, DailyMoodLog, StatusMode, TodoItem, Client,
   DocFolder, DocFile, SocialAccount, SocialPost, SocialApprovalItem,
+  DailyReflection, NewsConfig, ScreenTimeEntry, EmailDraft,
+  GitHubActivity, NotionPageSummary, NotionConfig, ReadwiseHighlight,
 } from './types';
 
 const SECTION_TITLES: Record<NavSection, string> = {
@@ -209,6 +211,10 @@ function MainApp() {
   const [socialAccounts, setSocialAccounts] = useSupabaseStorage<SocialAccount[]>('jarvis:socialAccounts', []);
   const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
   const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
+  const [reflections, setReflections] = useSupabaseStorage<DailyReflection[]>('jarvis:reflections', []);
+  const [newsConfig] = useSupabaseStorage<NewsConfig>('jarvis:news_config', { queries: ['AI startups', 'tech'], enabled: true });
+  const [screenTime, setScreenTime] = useSupabaseStorage<ScreenTimeEntry[]>('jarvis:screen_time', []);
+  const [emailDrafts, setEmailDrafts] = useSupabaseStorage<EmailDraft[]>('jarvis:email_drafts', []);
   const [morningBriefing, setMorningBriefing] = useSupabaseStorage<import('./types').MorningBriefing | null>('jarvis:morning_briefing', null);
   const [absMembers, setAbsMembers] = useSupabaseStorage<ABSMember[]>('jarvis:absMembers', INITIAL_MEMBERS);
   const [districtTagMap, setDistrictTagMap] = useSupabaseStorage<Record<string, string>>('jarvis:districtTagMap', {
@@ -347,6 +353,8 @@ function MainApp() {
             setTodos={setTodos}
             morningBriefing={morningBriefing}
             onRefreshBriefing={setMorningBriefing}
+            reflections={reflections}
+            setReflections={setReflections}
           />
         );
       case 'identity':
@@ -363,6 +371,8 @@ function MainApp() {
             notes={notes}
             setNotes={setNotes}
             todos={todos}
+            screenTime={screenTime}
+            setScreenTime={setScreenTime}
           />
         );
       case 'contacts':

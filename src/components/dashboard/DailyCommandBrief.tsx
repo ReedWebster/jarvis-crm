@@ -11,6 +11,9 @@ import {
   ListTodo,
   Check,
   ExternalLink,
+  Sunset,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import type {
@@ -22,6 +25,7 @@ import type {
   Note,
   TodoItem,
   MorningBriefing,
+  DailyReflection,
 } from '../../types';
 import {
   getGreeting,
@@ -56,6 +60,8 @@ interface Props {
   setTodos: (v: TodoItem[] | ((p: TodoItem[]) => TodoItem[])) => void;
   morningBriefing?: MorningBriefing | null;
   onRefreshBriefing?: (newBriefing: MorningBriefing) => void;
+  reflections: DailyReflection[];
+  setReflections: (v: DailyReflection[] | ((p: DailyReflection[]) => DailyReflection[])) => void;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -259,6 +265,107 @@ function TodoSummaryPanel({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+// ─── End-of-Day Reflection Panel ─────────────────────────────────────────────
+
+function EndOfDayReflection({
+  reflections,
+  setReflections,
+}: {
+  reflections: DailyReflection[];
+  setReflections: (v: DailyReflection[] | ((p: DailyReflection[]) => DailyReflection[])) => void;
+}) {
+  const today = todayStr();
+  const existing = reflections.find(r => r.date === today);
+  const [wins, setWins] = useState(existing?.wins ?? '');
+  const [challenges, setChallenges] = useState(existing?.challenges ?? '');
+  const [reflection, setReflection] = useState(existing?.reflection ?? '');
+  const [saved, setSaved] = useState(false);
+  const [expanded, setExpanded] = useState(!!existing);
+
+  const handleSave = () => {
+    if (!wins.trim() && !challenges.trim() && !reflection.trim()) return;
+    const entry: DailyReflection = {
+      date: today,
+      wins: wins.trim(),
+      challenges: challenges.trim(),
+      reflection: reflection.trim(),
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
+    setReflections(prev => {
+      const idx = prev.findIndex(r => r.date === today);
+      if (idx >= 0) return prev.map((r, i) => i === idx ? entry : r);
+      return [...prev, entry];
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="caesar-card space-y-3">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2 w-full group"
+      >
+        <Sunset className="w-4 h-4 text-[var(--text-muted)]" />
+        <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          End-of-Day Reflection
+        </h3>
+        {expanded
+          ? <ChevronUp className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+          : <ChevronDown className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+        }
+      </button>
+      {expanded && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>Wins</label>
+            <textarea
+              className="caesar-input w-full text-xs resize-none"
+              rows={2}
+              placeholder="What went well today?"
+              value={wins}
+              onChange={e => setWins(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>Challenges</label>
+            <textarea
+              className="caesar-input w-full text-xs resize-none"
+              rows={2}
+              placeholder="What was difficult?"
+              value={challenges}
+              onChange={e => setChallenges(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>Freeform</label>
+            <textarea
+              className="caesar-input w-full text-xs resize-none"
+              rows={2}
+              placeholder="Anything else on your mind..."
+              value={reflection}
+              onChange={e => setReflection(e.target.value)}
+              onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSave(); }}
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={!wins.trim() && !challenges.trim() && !reflection.trim()}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: 'var(--bg-elevated)',
+              color: saved ? 'var(--text-secondary)' : 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            {saved ? <><Check className="w-3 h-3" /> Saved</> : 'Save Reflection'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DailyCommandBrief({
   identity,
   timeBlocks,
@@ -273,6 +380,8 @@ export default function DailyCommandBrief({
   setTodos,
   morningBriefing,
   onRefreshBriefing,
+  reflections,
+  setReflections,
 }: Props) {
 
   const today = todayStr();
@@ -364,6 +473,9 @@ export default function DailyCommandBrief({
             briefing={morningBriefing ?? null}
             onRefresh={onRefreshBriefing ?? (() => {})}
           />
+
+          {/* End-of-Day Reflection */}
+          <EndOfDayReflection reflections={reflections} setReflections={setReflections} />
 
           {/* Today's Schedule — interactive snapshot */}
           <div className="caesar-card space-y-3">

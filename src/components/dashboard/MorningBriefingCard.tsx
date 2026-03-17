@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Sparkles,
   ChevronDown,
@@ -17,6 +17,7 @@ import {
   Share2,
   Heart,
   Goal,
+  History,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { MorningBriefing } from '../../types';
@@ -60,6 +61,108 @@ function CollapsibleSection({
 interface Props {
   briefing: MorningBriefing | null;
   onRefresh: (newBriefing: MorningBriefing) => void;
+}
+
+// ─── Past Briefings Archive ──────────────────────────────────────────────────
+
+function PastBriefingsSection() {
+  const [open, setOpen] = useState(false);
+  const [pastBriefings, setPastBriefings] = useState<Array<{ date: string; summary: string; full: MorningBriefing | null }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || pastBriefings.length > 0) return;
+    setLoading(true);
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const { data } = await supabase
+          .from('user_data')
+          .select('key, value')
+          .eq('user_id', session.user.id)
+          .like('key', 'jarvis:briefing:%')
+          .order('key', { ascending: false })
+          .limit(7);
+        if (data) {
+          setPastBriefings(data.map(row => {
+            const val = row.value as any;
+            return {
+              date: val?.date ?? row.key.replace('jarvis:briefing:', ''),
+              summary: val?.sections?.executiveSummary ?? 'No summary available',
+              full: val as MorningBriefing | null,
+            };
+          }));
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [open, pastBriefings.length]);
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 group w-full"
+      >
+        <History className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+        <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          Past Briefings
+        </h4>
+        {open
+          ? <ChevronUp className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+          : <ChevronDown className="w-3 h-3 text-[var(--text-muted)] opacity-40 group-hover:opacity-100 transition-opacity ml-auto" />
+        }
+      </button>
+      {open && (
+        <div className="space-y-1.5">
+          {loading && (
+            <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>Loading...</p>
+          )}
+          {!loading && pastBriefings.length === 0 && (
+            <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>No past briefings yet.</p>
+          )}
+          {pastBriefings.map(b => (
+            <div key={b.date}>
+              <button
+                onClick={() => setExpandedDate(prev => prev === b.date ? null : b.date)}
+                className="flex items-start gap-2 w-full text-left rounded-lg px-2 py-1.5 transition-colors"
+                style={{ backgroundColor: expandedDate === b.date ? 'var(--bg-elevated)' : 'transparent' }}
+              >
+                <span className="text-xs font-medium flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                  {b.date}
+                </span>
+                <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                  {b.summary}
+                </span>
+              </button>
+              {expandedDate === b.date && b.full?.sections && (
+                <div className="ml-2 mt-1 pl-3 space-y-1 text-xs" style={{ borderLeft: '2px solid var(--border)', color: 'var(--text-secondary)' }}>
+                  <p style={{ color: 'var(--text-primary)' }}>{b.full.sections.executiveSummary}</p>
+                  {b.full.sections.priorityTasks?.length > 0 && (
+                    <div>
+                      <span className="font-semibold" style={{ color: 'var(--text-muted)' }}>Tasks: </span>
+                      {b.full.sections.priorityTasks.map(t => t.title).join(', ')}
+                    </div>
+                  )}
+                  {b.full.sections.strategicNotes?.length > 0 && (
+                    <div>
+                      <span className="font-semibold" style={{ color: 'var(--text-muted)' }}>Strategic: </span>
+                      {b.full.sections.strategicNotes.join(' | ')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
@@ -174,6 +277,11 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
           }
         </button>
         <div className="flex items-center gap-2">
+          {briefing.weather && (
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+              {briefing.weather.temp}°F · {briefing.weather.condition}
+            </span>
+          )}
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             <Clock className="w-3 h-3 inline mr-1" />
             {generatedTime}
@@ -414,6 +522,9 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
               ))}
             </ul>
           </CollapsibleSection>
+
+          {/* Past Briefings Archive */}
+          <PastBriefingsSection />
 
           {/* Connect Google prompt — only show if no email AND no calendar data */}
           {(!sections.emailDigest || sections.emailDigest.length === 0) &&

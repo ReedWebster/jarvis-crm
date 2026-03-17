@@ -30,6 +30,7 @@ import {
   Tag,
   Pencil,
   Check,
+  Sparkles,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { format, parseISO, differenceInDays, isWithinInterval, addDays } from 'date-fns';
@@ -43,6 +44,7 @@ import { EmailThread } from '../email/EmailThread';
 import { PhoneLink } from '../shared/PhoneLink';
 import { useGoogleContacts } from '../../hooks/useGoogleContacts';
 import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
+import OutreachCoach from '../outreach/OutreachCoach';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
 
@@ -269,7 +271,14 @@ function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogIn
             </span>
           )}
         </div>
-        <HealthCircle score={health} />
+        <div className="flex items-center gap-1.5">
+          {contact.aiEnrichment && (
+            <span title={`AI enriched · ${contact.aiEnrichment.relationshipTier}`}>
+              <Sparkles size={12} style={{ color: '#a78bfa' }} />
+            </span>
+          )}
+          <HealthCircle score={health} />
+        </div>
       </div>
 
       {/* Contact info rows */}
@@ -1145,13 +1154,16 @@ interface ContactDetailModalProps {
   onClose: () => void;
   contact: Contact | null;
   contactTags: TagDef[];
+  setContactTags?: (v: TagDef[] | ((p: TagDef[]) => TagDef[])) => void;
   projects?: Project[];
   onUpdate: (updated: Contact) => void;
   onSendEmail?: () => void;
   onViewEmails?: () => void;
+  onEnrich?: (contact: Contact) => void;
+  enriching?: boolean;
 }
 
-function ContactDetailModal({ isOpen, onClose, contact, contactTags, projects = [], onUpdate, onSendEmail, onViewEmails }: ContactDetailModalProps) {
+function ContactDetailModal({ isOpen, onClose, contact, contactTags, setContactTags, projects = [], onUpdate, onSendEmail, onViewEmails, onEnrich, enriching }: ContactDetailModalProps) {
   const [newInteraction, setNewInteraction] = useState<Omit<ContactInteraction, 'id'>>(emptyInteraction());
   const [showAddInteraction, setShowAddInteraction] = useState(false);
 
@@ -1260,6 +1272,105 @@ function ContactDetailModal({ isOpen, onClose, contact, contactTags, projects = 
             )}
           </div>
         </div>
+
+        {/* AI Enrich Button */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onEnrich?.(contact)}
+            disabled={enriching}
+            className="caesar-btn-ghost flex items-center gap-2 text-sm"
+          >
+            <Sparkles size={14} className={enriching ? 'animate-spin' : ''} />
+            {enriching ? 'Enriching…' : contact.aiEnrichment ? 'Re-enrich' : 'Enrich with AI'}
+          </button>
+          {contact.aiEnrichment?.enrichedAt && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Enriched {formatDate(contact.aiEnrichment.enrichedAt)}
+            </span>
+          )}
+        </div>
+
+        {/* AI Insights */}
+        {contact.aiEnrichment && (
+          <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles size={14} style={{ color: '#a78bfa' }} />
+              <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                AI Insights
+              </p>
+              <span
+                className="ml-auto text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ backgroundColor: '#a78bfa22', color: '#a78bfa', border: '1px solid #a78bfa44' }}
+              >
+                {contact.aiEnrichment.relationshipTier}
+              </span>
+            </div>
+
+            {/* Summary */}
+            <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>
+              {contact.aiEnrichment.summary}
+            </p>
+
+            {/* Strategic Notes */}
+            <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Strategy</p>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+              {contact.aiEnrichment.strategicNotes}
+            </p>
+
+            {/* Follow-up Timing */}
+            <div className="flex items-center gap-2 mb-3">
+              <Clock size={12} style={{ color: 'var(--text-muted)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                Recommended: {contact.aiEnrichment.followUpTiming}
+              </span>
+            </div>
+
+            {/* Talking Points */}
+            {contact.aiEnrichment.talkingPoints.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Next Conversation</p>
+                <ul className="flex flex-col gap-1">
+                  {contact.aiEnrichment.talkingPoints.map((tp, i) => (
+                    <li key={i} className="text-xs flex items-start gap-2" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }}>—</span>
+                      {tp}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Suggested Tags — accept to add */}
+            {(() => {
+              const newSuggested = contact.aiEnrichment!.suggestedTags.filter(t => !contact.tags.includes(t));
+              if (newSuggested.length === 0) return null;
+              return (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>Suggested Tags</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {newSuggested.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          // Auto-create TagDef if new
+                          if (setContactTags && !contactTags.find(t => t.name === tag)) {
+                            const color = TAG_PALETTE_FALLBACK[contactTags.length % TAG_PALETTE_FALLBACK.length];
+                            setContactTags(prev => [...prev, { name: tag, color }]);
+                          }
+                          onUpdate({ ...contact, tags: [...contact.tags, tag] });
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                        style={{ backgroundColor: '#a78bfa15', color: '#a78bfa', border: '1px dashed #a78bfa55' }}
+                      >
+                        <Plus size={10} /> {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {/* Tags — inline add / remove */}
         <div>
@@ -1625,7 +1736,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
   const [filterFollowUp, setFilterFollowUp] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [groupBy, setGroupBy] = useState<'none' | 'tag' | 'company'>('none');
-  const [viewMode, setViewMode] = useState<'grid' | 'flashcard'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'flashcard' | 'outreach'>('grid');
   const [flashcardShuffled, setFlashcardShuffled] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
@@ -1722,6 +1833,64 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
     );
     setSelectedContact(updated);
   };
+
+  // ── AI Enrichment ─────────────────────────────────────────────────────────
+  const [enriching, setEnriching] = useState<Set<string>>(new Set());
+  const [bulkEnriching, setBulkEnriching] = useState(false);
+
+  const enrichContacts = useCallback(async (targetContacts: Contact[]) => {
+    const batch = targetContacts.slice(0, 10);
+    const ids = new Set(batch.map(c => c.id));
+    setEnriching(prev => new Set([...prev, ...ids]));
+
+    try {
+      const res = await fetch('/api/enrich-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contacts: batch,
+          existingTags: contactTags.map(t => t.name),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Enrichment failed');
+      }
+      const { enrichments } = await res.json();
+
+      setContacts(prev => prev.map(c => {
+        const enrichment = enrichments.find((e: any) => e.contactId === c.id);
+        if (!enrichment) return c;
+        const { contactId: _, ...enrichData } = enrichment;
+        const enriched = {
+          ...c,
+          aiEnrichment: { ...enrichData, enrichedAt: new Date().toISOString() },
+        };
+        // Keep selectedContact in sync if detail modal is showing this contact
+        if (selectedContact?.id === c.id) setSelectedContact(enriched);
+        return enriched;
+      }));
+      toast.success(`Enriched ${enrichments.length} contact${enrichments.length !== 1 ? 's' : ''}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Enrichment failed');
+    } finally {
+      setEnriching(prev => {
+        const next = new Set(prev);
+        ids.forEach(id => next.delete(id));
+        return next;
+      });
+    }
+  }, [contactTags, setContacts, selectedContact, toast]);
+
+  const handleBulkEnrich = useCallback(async () => {
+    setBulkEnriching(true);
+    const unenriched = contacts.filter(c => !c.aiEnrichment);
+    const target = unenriched.length > 0 ? unenriched : contacts;
+    for (let i = 0; i < target.length; i += 10) {
+      await enrichContacts(target.slice(i, i + 10));
+    }
+    setBulkEnriching(false);
+  }, [contacts, enrichContacts]);
 
   const handleLogInteraction = (contactId: string, interaction: ContactInteraction) => {
     setContacts((prev) =>
@@ -2046,6 +2215,15 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
             </button>
           )}
           <button
+            onClick={handleBulkEnrich}
+            disabled={bulkEnriching}
+            className="caesar-btn flex items-center gap-2"
+            title="Enrich all contacts with AI-generated profiles and insights"
+          >
+            <Sparkles size={15} className={bulkEnriching ? 'animate-spin' : ''} />
+            {bulkEnriching ? 'Enriching…' : 'Enrich All'}
+          </button>
+          <button
             onClick={() => setManageTagsOpen(true)}
             className="caesar-btn flex items-center gap-2"
           >
@@ -2186,6 +2364,19 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
             <CreditCard size={14} />
             Flashcard {untagged.length > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs" style={{ backgroundColor: 'var(--accent)', color: '#fff' }}>{untagged.length}</span>}
           </button>
+          <button
+            onClick={() => setViewMode('outreach')}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: viewMode === 'outreach' ? 'var(--bg-elevated)' : 'transparent',
+              color: viewMode === 'outreach' ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderLeft: '1px solid var(--border)',
+            }}
+            title="Outreach Coach — draft re-engagement emails for stale contacts"
+          >
+            <Sparkles size={14} />
+            Outreach
+          </button>
         </div>
       </div>
 
@@ -2194,6 +2385,15 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         <p className="text-xs -mt-2" style={{ color: 'var(--text-muted)' }}>
           Showing {filtered.length} of {contacts.length} contacts
         </p>
+      )}
+
+      {/* Outreach Coach view */}
+      {viewMode === 'outreach' && (
+        <OutreachCoach
+          contacts={contacts}
+          setContacts={setContacts}
+          projects={projects}
+        />
       )}
 
       {/* Flashcard view */}
@@ -2334,10 +2534,13 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         onClose={() => { setDetailModalOpen(false); setSelectedContact(null); }}
         contact={selectedContact}
         contactTags={contactTags}
+        setContactTags={setContactTags}
         projects={projects}
         onUpdate={handleUpdateContact}
         onSendEmail={() => selectedContact && openCompose(selectedContact)}
         onViewEmails={() => selectedContact && openThread(selectedContact)}
+        onEnrich={(c) => enrichContacts([c])}
+        enriching={!!selectedContact && enriching.has(selectedContact.id)}
       />
 
       {/* Quick Log Modal */}

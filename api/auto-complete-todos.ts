@@ -208,6 +208,152 @@ function buildTools(state: RunState) {
         return { success: true, message: `Skipped: ${reason}` };
       },
     }),
+
+    draft_email: tool({
+      description: 'Draft an email for Reed to review later instead of sending immediately. Use when the email content needs Reed\'s approval first, or when the topic is sensitive enough to warrant a review. Saves the draft for Reed to send or dismiss.',
+      inputSchema: z.object({
+        todoId: z.string().describe('The todo ID this action relates to'),
+        to: z.string().describe('Recipient email address'),
+        subject: z.string().describe('Email subject line'),
+        body: z.string().describe('Email body text. Write as Reed — professional, direct, friendly. No fluff.'),
+      }),
+      execute: async ({ todoId, to, subject, body }) => {
+        try {
+          // Fetch existing drafts
+          const draftsResult = await supabaseAdmin!.from('user_data')
+            .select('value')
+            .eq('user_id', state.userId)
+            .eq('key', 'jarvis:email_drafts')
+            .maybeSingle();
+
+          const existingDrafts: any[] = draftsResult.data?.value ?? [];
+
+          const newDraft = {
+            id: crypto.randomUUID(),
+            to,
+            subject,
+            body,
+            todoId,
+            createdAt: new Date().toISOString(),
+            status: 'pending' as const,
+          };
+
+          existingDrafts.push(newDraft);
+
+          await supabaseAdmin!.from('user_data').upsert({
+            user_id: state.userId,
+            key: 'jarvis:email_drafts',
+            value: existingDrafts,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,key' });
+
+          // Set todo to in-progress instead of done
+          const todo = state.allTodos.find(t => t.id === todoId);
+          if (todo) todo.status = 'in-progress';
+
+          state.actions.push({ todoId, action: 'draft_email', detail: `Drafted email to ${to}: "${subject}"` });
+          return { success: true, message: `Email draft saved for review — to ${to}: "${subject}"` };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? String(e) };
+        }
+      },
+    }),
+
+    create_calendar_event: tool({
+      description: 'Create a Google Calendar event. Use for todos like "Schedule meeting with X", "Block time for Y", "Set up call with Z".',
+      inputSchema: z.object({
+        todoId: z.string().describe('The todo ID this action completes'),
+        title: z.string().describe('Event title'),
+        date: z.string().describe('Event date in YYYY-MM-DD format'),
+        startTime: z.string().describe('Start time in HH:MM format (24h)'),
+        endTime: z.string().describe('End time in HH:MM format (24h)'),
+        description: z.string().optional().describe('Optional event description'),
+      }),
+      execute: async ({ todoId, title, date, startTime, endTime, description }) => {
+        if (!state.googleToken) return { success: false, error: 'Google Calendar not connected' };
+        try {
+          const event = {
+            summary: title,
+            description: description ?? '',
+            start: {
+              dateTime: `${date}T${startTime}:00`,
+              timeZone: 'America/Chicago',
+            },
+            end: {
+              dateTime: `${date}T${endTime}:00`,
+              timeZone: 'America/Chicago',
+            },
+          };
+
+          const calRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${state.googleToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(event),
+          });
+
+          if (!calRes.ok) {
+            const text = await calRes.text();
+            return { success: false, error: `Google Calendar API error: ${text}` };
+          }
+
+          const created = await calRes.json();
+
+          state.completedTodoIds.add(todoId);
+          state.actions.push({ todoId, action: 'create_calendar_event', detail: `Created event "${title}" on ${date} ${startTime}-${endTime}` });
+          return { success: true, message: `Calendar event created: "${title}" on ${date}`, eventId: created.id };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? String(e) };
+        }
+      },
+    }),
+
+    decompose_goal: tool({
+      description: 'Break down a goal into 3-5 actionable sub-tasks. Use for todos like "Plan out X goal", "Break down Y into steps", or when a goal needs concrete next actions.',
+      inputSchema: z.object({
+        goalId: z.string().describe('The ID of the goal to decompose into sub-tasks'),
+      }),
+      execute: async ({ goalId }) => {
+        const goal = state.goals.find((g: any) => g.id === goalId);
+        if (!goal) return { success: false, error: `Goal "${goalId}" not found` };
+
+        try {
+          const { text } = await generateText({
+            model: anthropic('claude-haiku-4-5-20251001'),
+            system: 'You are a productivity assistant. Given a goal, generate 3-5 specific, actionable sub-tasks. Respond with ONLY a JSON array of objects with "title" (string) and "priority" ("high" | "medium" | "low") fields. No markdown fences.',
+            prompt: `Goal: "${goal.title}"\nDescription: "${goal.description || 'No description'}"\nArea: ${goal.area}\nProgress: ${goal.progress}%\n\nGenerate 3-5 concrete next-step tasks to advance this goal.`,
+            maxTokens: 500,
+          });
+
+          const cleaned = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          const subtasks: Array<{ title: string; priority: string }> = JSON.parse(cleaned);
+
+          const now = new Date().toISOString();
+          const newTodos: TodoItem[] = subtasks.slice(0, 5).map(st => ({
+            id: crypto.randomUUID(),
+            title: st.title,
+            notes: `Auto-generated sub-task for goal: ${goal.title}`,
+            status: 'todo',
+            priority: st.priority || 'medium',
+            createdAt: now,
+            linkedType: 'goal',
+            linkedId: goalId,
+            linkedLabel: goal.title,
+            checklist: [],
+          }));
+
+          // Add new todos to local state (will be persisted at the end)
+          state.allTodos.push(...newTodos);
+
+          state.actions.push({ todoId: goalId, action: 'decompose_goal', detail: `Created ${newTodos.length} sub-tasks for goal "${goal.title}"` });
+          return { success: true, message: `Created ${newTodos.length} sub-tasks for "${goal.title}"`, tasks: newTodos.map(t => t.title) };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? String(e) };
+        }
+      },
+    }),
   };
 }
 
@@ -219,9 +365,12 @@ It's early morning. You're reviewing Reed's todo list and completing everything 
 
 You have tools to ACTUALLY DO THINGS:
 - send_email: Send emails via Gmail as Reed (follow-ups, check-ins, quick replies)
+- draft_email: Save an email draft for Reed to review before sending (use for sensitive or important emails)
 - update_contact: Mark contacts as followed up, log interactions, set new follow-up dates
 - approve_social_post: Approve pending social media posts
 - update_project: Update project status, next actions, health
+- create_calendar_event: Create Google Calendar events (scheduling, time blocking)
+- decompose_goal: Break a goal into 3-5 actionable sub-tasks
 - mark_todo_done: Close stale/expired/irrelevant todos that need no action
 - skip_todo: Skip todos that need Reed personally
 

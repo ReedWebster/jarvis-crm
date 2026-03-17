@@ -152,6 +152,34 @@ export function useWorkspaceStorage<T>(
     [key],
   );
 
+  // ── Supabase Realtime subscription (Phase 10c) ──
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`workspace:${key}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspace_data',
+          filter: `key=eq.${key}`,
+        },
+        (payload) => {
+          const newValue = (payload.new as { value?: T })?.value;
+          if (newValue !== undefined) {
+            setStoredValue(newValue);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, key]);
+
   // Flush on tab hide / mobile app switch / page close
   useEffect(() => {
     const handleVisibilityChange = () => {
