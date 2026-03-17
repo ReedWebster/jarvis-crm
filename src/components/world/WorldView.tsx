@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect, SSAOEffect, NormalPass } from 'postprocessing';
+import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
 import { WorldDataPanel } from './WorldDataPanel';
 import type { WorldViewAppData } from './WorldDataPanel';
 import { WorldBlockDataCard, findLinkedProject } from './WorldBlockDataCard';
@@ -2087,17 +2087,8 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     const bloom = new BloomEffect({ intensity: 0.20, luminanceThreshold: 0.88, luminanceSmoothing: 0.04, mipmapBlur: true });
     composer.addPass(new EffectPass(camera, bloom));
 
-    // SSAO — ambient occlusion for depth at building bases and street canyons
-    const normalPass = new NormalPass(scene, camera);
-    composer.addPass(normalPass);
-    const ssao = new SSAOEffect(camera, normalPass.texture, {
-      samples: 16,
-      radius: 5,
-      intensity: 1.5,
-      luminanceInfluence: 0.6,
-      bias: 0.025,
-    });
-    composer.addPass(new EffectPass(camera, ssao));
+    // SSAO removed — NormalPass has tree-shaking issues with Vite/postprocessing v6
+    // AO contact shadows at building bases provide a lighter alternative
 
     // ── Materials (shared, cloned per building) ───────────────────────────────
     // Generate PMREM env map from sky for glass reflections
