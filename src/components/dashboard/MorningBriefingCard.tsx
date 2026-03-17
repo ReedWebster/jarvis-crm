@@ -76,6 +76,7 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
         setError('Not logged in — please sign in first.');
         return;
       }
+      console.log('[Briefing] Sending refresh request…');
       const res = await fetch('/api/morning-briefing', {
         method: 'POST',
         headers: {
@@ -83,13 +84,21 @@ export default function MorningBriefingCard({ briefing, onRefresh }: Props) {
           'Content-Type': 'application/json',
         },
       });
+      console.log('[Briefing] Response status:', res.status);
       if (res.ok) {
         const data = await res.json();
+        console.log('[Briefing] Response data keys:', Object.keys(data));
         if (data.googleStatus) console.log('[Briefing] Google status:', data.googleStatus);
-        if (data.briefing) onRefresh(data.briefing);
-        else setError('Empty response from server.');
+        if (data.briefing) {
+          console.log('[Briefing] Got briefing, calling onRefresh');
+          onRefresh(data.briefing);
+        } else {
+          console.error('[Briefing] No briefing in response:', data);
+          setError('Empty response from server.');
+        }
       } else {
         const body = await res.json().catch(() => ({}));
+        console.error('[Briefing] Error response:', res.status, body);
         setError(body.error ?? `Server error (${res.status})`);
       }
     } catch (e: any) {

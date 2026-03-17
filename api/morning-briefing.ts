@@ -15,7 +15,7 @@ const briefingSchema = z.object({
   })).describe('3-5 most impactful tasks, cross-referencing todos, project next actions, academic deadlines, client deliverables'),
   goalsCheckIn: z.array(z.object({
     title: z.string(),
-    progress: z.number().min(0).max(100),
+    progress: z.number().describe('0-100 percentage'),
     note: z.string().describe('status or suggestion'),
   })).describe('Only goals that need attention — behind schedule, near deadline, or blocked'),
   suggestedGoals: z.array(z.object({
@@ -32,7 +32,7 @@ const briefingSchema = z.object({
     reason: z.string().describe('why to reach out'),
   })),
   habits: z.object({
-    yesterdayRate: z.number().min(0).max(100),
+    yesterdayRate: z.number().describe('0-100 percentage'),
     focus: z.array(z.string()).describe('habit names to focus on today'),
     streakNote: z.string().describe('observation about habit trends'),
   }),
