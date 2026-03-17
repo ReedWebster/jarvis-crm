@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Project, TodoItem, Goal, Contact, FinancialEntry, Course, Habit, HabitTracker, TimeBlock, TimeCategory, Note } from '../../types';
+import type { Project, TodoItem, Goal, Contact, FinancialEntry, Course, Habit, HabitTracker, TimeBlock, TimeCategory, Note, Client } from '../../types';
 
 export interface WorldViewAppData {
   projects: Project[];
@@ -13,6 +13,7 @@ export interface WorldViewAppData {
   timeBlocks: TimeBlock[];
   timeCategories: TimeCategory[];
   notes: Note[];
+  clients: Client[];
 }
 
 const HEALTH_COLORS: Record<string, string> = { green: '#4ade80', yellow: '#fbbf24', red: '#ef4444' };

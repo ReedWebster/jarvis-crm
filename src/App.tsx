@@ -232,9 +232,9 @@ function MainApp() {
   // Bundled read-only data for WorldView data panel
   const worldAppData = useMemo(() => ({
     projects, todos, goals, contacts, financialEntries,
-    courses, habits, habitTracker, timeBlocks, timeCategories, notes,
+    courses, habits, habitTracker, timeBlocks, timeCategories, notes, clients,
   }), [projects, todos, goals, contacts, financialEntries,
-       courses, habits, habitTracker, timeBlocks, timeCategories, notes]);
+       courses, habits, habitTracker, timeBlocks, timeCategories, notes, clients]);
 
   // One-time migration: if workspace clients is empty and old user_data has clients, copy them over
   useEffect(() => {

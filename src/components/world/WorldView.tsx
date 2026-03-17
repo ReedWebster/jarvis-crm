@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { EffectComposer, RenderPass, EffectPass, BloomEffect } from 'postprocessing';
+import { EffectComposer, RenderPass, EffectPass, BloomEffect, SSAOEffect, NormalPass } from 'postprocessing';
 import { WorldDataPanel } from './WorldDataPanel';
 import type { WorldViewAppData } from './WorldDataPanel';
 import { WorldBlockDataCard, findLinkedProject } from './WorldBlockDataCard';
@@ -1731,15 +1731,73 @@ interface SkyConfig {
   zenith: string; horizon: string; fogColor: number; fogDensity: number;
   sunIntensity: number; hemiIntensity: number;
   sunX: number; sunY: number; sunZ: number;
+  sunColor: string; fillIntensity: number; bloomIntensity: number;
 }
 
-function getSkyConfig(_hour: number): SkyConfig {
-  // Warm midday haze — linear fog for cleaner depth falloff
+// Time-of-day keyframes — interpolated by fractional hour
+const SKY_KEYFRAMES: { hour: number; cfg: SkyConfig }[] = [
+  { hour: 0,    cfg: { zenith: '#0A0E1A', horizon: '#1A2030', fogColor: 0x0A0E1A, fogDensity: 0, sunIntensity: 0.08, hemiIntensity: 0.12, sunX: -80, sunY: -50, sunZ: -120, sunColor: '#8090B0', fillIntensity: 0.05, bloomIntensity: 1.8 } },
+  { hour: 5,    cfg: { zenith: '#1A2040', horizon: '#3A3050', fogColor: 0x1A2040, fogDensity: 0, sunIntensity: 0.15, hemiIntensity: 0.18, sunX: -60, sunY: 10, sunZ: -120, sunColor: '#9080A0', fillIntensity: 0.08, bloomIntensity: 1.4 } },
+  { hour: 6,    cfg: { zenith: '#4A6888', horizon: '#E8A870', fogColor: 0xD8B898, fogDensity: 0, sunIntensity: 1.0, hemiIntensity: 0.35, sunX: -40, sunY: 30, sunZ: -120, sunColor: '#FFB870', fillIntensity: 0.15, bloomIntensity: 0.6 } },
+  { hour: 7.5,  cfg: { zenith: '#5A98C0', horizon: '#F0D8B0', fogColor: 0xF0E0C8, fogDensity: 0, sunIntensity: 1.8, hemiIntensity: 0.50, sunX: 20, sunY: 100, sunZ: -120, sunColor: '#FFE8C8', fillIntensity: 0.25, bloomIntensity: 0.2 } },
+  { hour: 10,   cfg: { zenith: '#6AA8CC', horizon: '#EEE8DC', fogColor: 0xEEE8DC, fogDensity: 0, sunIntensity: 2.6, hemiIntensity: 0.65, sunX: 80, sunY: 200, sunZ: -120, sunColor: '#FFFFFF', fillIntensity: 0.35, bloomIntensity: 0.12 } },
+  { hour: 14,   cfg: { zenith: '#6AA8CC', horizon: '#EEE8DC', fogColor: 0xEEE8DC, fogDensity: 0, sunIntensity: 2.6, hemiIntensity: 0.65, sunX: 80, sunY: 200, sunZ: -120, sunColor: '#FFFFFF', fillIntensity: 0.35, bloomIntensity: 0.12 } },
+  { hour: 17,   cfg: { zenith: '#5898B8', horizon: '#F0D0A0', fogColor: 0xF0D8B0, fogDensity: 0, sunIntensity: 2.0, hemiIntensity: 0.55, sunX: 40, sunY: 80, sunZ: 120, sunColor: '#FFD8A0', fillIntensity: 0.20, bloomIntensity: 0.3 } },
+  { hour: 18.5, cfg: { zenith: '#3A5878', horizon: '#E8A058', fogColor: 0xD8A070, fogDensity: 0, sunIntensity: 1.2, hemiIntensity: 0.35, sunX: 20, sunY: 25, sunZ: 120, sunColor: '#FF9050', fillIntensity: 0.12, bloomIntensity: 0.7 } },
+  { hour: 19.5, cfg: { zenith: '#1C2848', horizon: '#6A4060', fogColor: 0x2A2040, fogDensity: 0, sunIntensity: 0.3, hemiIntensity: 0.20, sunX: 10, sunY: 5, sunZ: 120, sunColor: '#C06848', fillIntensity: 0.08, bloomIntensity: 1.2 } },
+  { hour: 20.5, cfg: { zenith: '#0C1424', horizon: '#1A2438', fogColor: 0x0C1424, fogDensity: 0, sunIntensity: 0.08, hemiIntensity: 0.12, sunX: -80, sunY: -50, sunZ: 120, sunColor: '#8090B0', fillIntensity: 0.05, bloomIntensity: 1.8 } },
+  { hour: 24,   cfg: { zenith: '#0A0E1A', horizon: '#1A2030', fogColor: 0x0A0E1A, fogDensity: 0, sunIntensity: 0.08, hemiIntensity: 0.12, sunX: -80, sunY: -50, sunZ: -120, sunColor: '#8090B0', fillIntensity: 0.05, bloomIntensity: 1.8 } },
+];
+
+function lerpColor(a: string, b: string, t: number): string {
+  const pa = parseInt(a.replace('#', ''), 16);
+  const pb = parseInt(b.replace('#', ''), 16);
+  const r = Math.round(((pa >> 16) & 0xff) * (1 - t) + ((pb >> 16) & 0xff) * t);
+  const g = Math.round(((pa >> 8) & 0xff) * (1 - t) + ((pb >> 8) & 0xff) * t);
+  const bl = Math.round((pa & 0xff) * (1 - t) + (pb & 0xff) * t);
+  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, '0')}`;
+}
+
+function lerpFogColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  const r = Math.round(ar * (1 - t) + br * t);
+  const g = Math.round(ag * (1 - t) + bg * t);
+  const bl = Math.round(ab * (1 - t) + bb * t);
+  return (r << 16) | (g << 8) | bl;
+}
+
+function getSkyConfig(hour: number): SkyConfig {
+  // Clamp to 0-24 range
+  hour = ((hour % 24) + 24) % 24;
+
+  // Find surrounding keyframes and interpolate
+  let lo = SKY_KEYFRAMES[0], hi = SKY_KEYFRAMES[1];
+  for (let i = 0; i < SKY_KEYFRAMES.length - 1; i++) {
+    if (hour >= SKY_KEYFRAMES[i].hour && hour < SKY_KEYFRAMES[i + 1].hour) {
+      lo = SKY_KEYFRAMES[i];
+      hi = SKY_KEYFRAMES[i + 1];
+      break;
+    }
+  }
+
+  const span = hi.hour - lo.hour;
+  const t = span > 0 ? (hour - lo.hour) / span : 0;
+  const a = lo.cfg, b = hi.cfg;
+
   return {
-    zenith: '#6AA8CC', horizon: '#EEE8DC',
-    fogColor: 0xEEE8DC, fogDensity: 0,
-    sunIntensity: 2.6, hemiIntensity: 0.65,
-    sunX: 80, sunY: 200, sunZ: -120,
+    zenith: lerpColor(a.zenith, b.zenith, t),
+    horizon: lerpColor(a.horizon, b.horizon, t),
+    fogColor: lerpFogColor(a.fogColor, b.fogColor, t),
+    fogDensity: 0,
+    sunIntensity: a.sunIntensity + (b.sunIntensity - a.sunIntensity) * t,
+    hemiIntensity: a.hemiIntensity + (b.hemiIntensity - a.hemiIntensity) * t,
+    sunX: a.sunX + (b.sunX - a.sunX) * t,
+    sunY: a.sunY + (b.sunY - a.sunY) * t,
+    sunZ: a.sunZ + (b.sunZ - a.sunZ) * t,
+    sunColor: lerpColor(a.sunColor, b.sunColor, t),
+    fillIntensity: a.fillIntensity + (b.fillIntensity - a.fillIntensity) * t,
+    bloomIntensity: a.bloomIntensity + (b.bloomIntensity - a.bloomIntensity) * t,
   };
 }
 
@@ -1831,6 +1889,7 @@ interface WorldViewProps {
 export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange, appData, onNavigateToSection }: WorldViewProps = {}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const labelRef   = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
 
   // City view state
@@ -1862,6 +1921,13 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
   const districtIndicatorsRef = useRef<Map<string, THREE.Group>>(new Map());
   const originalMaterialsRef = useRef<Map<THREE.Mesh, { color: THREE.Color; emissive: THREE.Color; emissiveIntensity: number }>>(new Map());
   const healthEmissiveRef = useRef<Map<string, { color: number; intensity: number }>>(new Map());
+  const appDataRef = useRef(appData);
+  appDataRef.current = appData;
+  const treeGroupsRef = useRef<THREE.Group[]>([]);
+  const parkBlockInfosRef = useRef<{ cx: number; cz: number }[]>([]);
+  const goalIndicatorsRef = useRef<Map<string, THREE.Group>>(new Map());
+  const financialBillboardRef = useRef<{ mesh: THREE.Mesh; texture: THREE.CanvasTexture } | null>(null);
+  const courseIndicatorsRef = useRef<THREE.Group | null>(null);
 
   // Time-of-day baseline (so exiting interior restores correct values)
   const cityLightRef   = useRef({ sunI: 2.5, hemiI: 0.5, fogColor: 0xe8f0f8, fogDensity: 0.0014 });
@@ -1876,6 +1942,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
 
   // District HUD
   const [districtLabel, setDistrictLabel] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const blocksRef = useRef<BlockInfo[]>([]);
   const districtLabelRef = useRef<string | null>(null);
 
   // Callback refs — set inside useEffect so they close over orbit vars
@@ -1981,7 +2051,10 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       skyMat.uniforms.uSunDir.value.set(cfg.sunX, cfg.sunY, cfg.sunZ).normalize();
       sun.position.set(cfg.sunX, cfg.sunY, cfg.sunZ);
       sun.intensity  = cfg.sunIntensity;
+      sun.color.set(cfg.sunColor);
       hemi.intensity = cfg.hemiIntensity;
+      fillLight.intensity = cfg.fillIntensity;
+      bloom.intensity = cfg.bloomIntensity;
       scene.fog      = new THREE.Fog(cfg.fogColor, 250, 900);
       cityLightRef.current = { sunI: cfg.sunIntensity, hemiI: cfg.hemiIntensity, fogColor: cfg.fogColor, fogDensity: 0 };
     }
@@ -2013,6 +2086,18 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     composer.addPass(new RenderPass(scene, camera));
     const bloom = new BloomEffect({ intensity: 0.20, luminanceThreshold: 0.88, luminanceSmoothing: 0.04, mipmapBlur: true });
     composer.addPass(new EffectPass(camera, bloom));
+
+    // SSAO — ambient occlusion for depth at building bases and street canyons
+    const normalPass = new NormalPass(scene, camera);
+    composer.addPass(normalPass);
+    const ssao = new SSAOEffect(camera, normalPass.texture, {
+      samples: 16,
+      radius: 5,
+      intensity: 1.5,
+      luminanceInfluence: 0.6,
+      bias: 0.025,
+    });
+    composer.addPass(new EffectPass(camera, ssao));
 
     // ── Materials (shared, cloned per building) ───────────────────────────────
     // Generate PMREM env map from sky for glass reflections
@@ -3161,6 +3246,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       }
     }
 
+    // Sync tree groups, park blocks, and block info to refs for data-driven effects
+    treeGroupsRef.current = treeGroups;
+    blocksRef.current = blocks;
+    parkBlockInfosRef.current = blocks.filter(b => b.zone === 'park').map(b => ({ cx: b.cx, cz: b.cz }));
+
     // ── AO contact shadows at building bases ──
     const aoMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.12, depthWrite: false });
     for (const b of blocks) {
@@ -3170,6 +3260,64 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       aoPlane.position.set(b.cx, 0.02, b.cz);
       cityGroup.add(aoPlane);
     }
+
+    // ── Animated Traffic (InstancedMesh) ────────────────────────────────────────
+    const VEHICLE_COUNT = 80;
+    const vehicleGeo = new THREE.BoxGeometry(3.5, 1.2, 1.8);
+    const vehicleColors = [0x2A3848, 0x404858, 0x505868, 0x3A4858, 0x283040, 0xC8C0B0, 0x8A2020];
+    const vehicleMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.3 });
+    const vehicleInstances = new THREE.InstancedMesh(vehicleGeo, vehicleMat, VEHICLE_COUNT);
+    vehicleInstances.castShadow = true;
+    vehicleInstances.receiveShadow = false;
+
+    // Build route paths along roads
+    interface VehicleState { routeType: 'x' | 'z'; roadPos: number; offset: number; speed: number; dir: number; routeMin: number; routeMax: number; }
+    const vehicleStates: VehicleState[] = [];
+    const roadRng = seededRandom('traffic-routes');
+    const GRID_EXTENT_APPROX = HALF * BLOCK_SIZE + 30;
+    for (let v = 0; v < VEHICLE_COUNT; v++) {
+      const isXRoute = roadRng() > 0.5;
+      const routeArr = isXRoute ? roadZs : roadXs;
+      const routeIdx = Math.floor(roadRng() * routeArr.length);
+      const roadPos = routeArr[routeIdx]?.pos ?? 0;
+      const dir = roadRng() > 0.5 ? 1 : -1;
+      vehicleStates.push({
+        routeType: isXRoute ? 'x' : 'z',
+        roadPos,
+        offset: (roadRng() - 0.5) * 2 * GRID_EXTENT_APPROX,
+        speed: 0.15 + roadRng() * 0.25,
+        dir,
+        routeMin: -GRID_EXTENT_APPROX,
+        routeMax: GRID_EXTENT_APPROX,
+      });
+      // Assign per-instance color
+      vehicleInstances.setColorAt(v, new THREE.Color(vehicleColors[Math.floor(roadRng() * vehicleColors.length)]));
+    }
+    if (vehicleInstances.instanceColor) vehicleInstances.instanceColor.needsUpdate = true;
+    cityGroup.add(vehicleInstances);
+
+    const vehicleDummy = new THREE.Object3D();
+    function updateTraffic() {
+      for (let v = 0; v < VEHICLE_COUNT; v++) {
+        const s = vehicleStates[v];
+        s.offset += s.speed * s.dir;
+        // Wrap around
+        if (s.offset > s.routeMax) s.offset = s.routeMin;
+        if (s.offset < s.routeMin) s.offset = s.routeMax;
+
+        if (s.routeType === 'x') {
+          vehicleDummy.position.set(s.offset, 0.7, s.roadPos + s.dir * 1.2);
+          vehicleDummy.rotation.y = s.dir > 0 ? 0 : Math.PI;
+        } else {
+          vehicleDummy.position.set(s.roadPos + s.dir * 1.2, 0.7, s.offset);
+          vehicleDummy.rotation.y = s.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        }
+        vehicleDummy.updateMatrix();
+        vehicleInstances.setMatrixAt(v, vehicleDummy.matrix);
+      }
+      vehicleInstances.instanceMatrix.needsUpdate = true;
+    }
+    updateTraffic(); // initial placement
 
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
     let isDragging = false, isPanning = false;
@@ -3247,6 +3395,30 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           }
         }
         canvas.style.cursor = newBlock ? 'pointer' : 'default';
+
+        // Hover tooltip
+        if (tooltipRef.current) {
+          if (newBlock) {
+            const project = appDataRef.current ? findLinkedProject(newBlock.label, appDataRef.current.projects) : null;
+            const linkedTodos = project && appDataRef.current
+              ? appDataRef.current.todos.filter(t => t.linkedType === 'project' && t.linkedId === project.id && t.status !== 'done')
+              : [];
+            const healthDot = project ? ({ green: '#4ade80', yellow: '#fbbf24', red: '#ef4444' }[project.health] || '#64748b') : '';
+
+            tooltipRef.current.innerHTML = `
+              <div style="font-weight:700;font-size:11px;color:#e2e8f0;margin-bottom:2px">${newBlock.label}</div>
+              ${project ? `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:#94a3b8">
+                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${healthDot}"></span>
+                ${project.name} &middot; ${linkedTodos.length} todo${linkedTodos.length !== 1 ? 's' : ''}
+              </div>` : `<div style="font-size:10px;color:#475569">${newBlock.zone}</div>`}
+            `;
+            tooltipRef.current.style.display = 'block';
+            tooltipRef.current.style.left = `${e.clientX + 14}px`;
+            tooltipRef.current.style.top = `${e.clientY - 10}px`;
+          } else {
+            tooltipRef.current.style.display = 'none';
+          }
+        }
       }
     };
     document.addEventListener('mousemove', onMouseMove);
@@ -3381,6 +3553,36 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
           mmCtx.strokeRect(bx - bw / 2, bz - bw / 2, bw, bw);
         }
       }
+      // Health dots on minimap for blocks with linked projects
+      if (appDataRef.current) {
+        for (const b of blocks) {
+          const project = findLinkedProject(b.label, appDataRef.current.projects);
+          if (project && project.status === 'active') {
+            const dotColor = { green: '#4ade80', yellow: '#fbbf24', red: '#ef4444' }[project.health] || '#64748b';
+            const bx = 80 + b.cx * MM_SCALE;
+            const bz = 80 + b.cz * MM_SCALE;
+            mmCtx.beginPath(); mmCtx.arc(bx, bz, 2.5, 0, Math.PI * 2);
+            mmCtx.fillStyle = dotColor; mmCtx.fill();
+          }
+        }
+      }
+
+      // Camera direction cone on minimap
+      const dirX = -Math.sin(orbitTheta);
+      const dirZ = -Math.cos(orbitTheta);
+      const coneTipX = 80 + orbitTarget.x * MM_SCALE + dirX * 12;
+      const coneTipZ = 80 + orbitTarget.z * MM_SCALE + dirZ * 12;
+      const perpX = -dirZ, perpZ = dirX;
+      const coneBaseX = 80 + orbitTarget.x * MM_SCALE;
+      const coneBaseZ = 80 + orbitTarget.z * MM_SCALE;
+      mmCtx.beginPath();
+      mmCtx.moveTo(coneTipX, coneTipZ);
+      mmCtx.lineTo(coneBaseX + perpX * 5, coneBaseZ + perpZ * 5);
+      mmCtx.lineTo(coneBaseX - perpX * 5, coneBaseZ - perpZ * 5);
+      mmCtx.closePath();
+      mmCtx.fillStyle = 'rgba(255,255,255,0.15)'; mmCtx.fill();
+      mmCtx.strokeStyle = 'rgba(255,255,255,0.3)'; mmCtx.lineWidth = 0.8; mmCtx.stroke();
+
       const vx = 80 + orbitTarget.x * MM_SCALE;
       const vz = 80 + orbitTarget.z * MM_SCALE;
       mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 1.5;
@@ -3523,11 +3725,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       rafId = requestAnimationFrame(animate);
       frameCount++;
 
-      // Bloom intensity by time of day (update every ~45s; bloom is always initialized here)
-      if (frameCount % 2700 === 1) {
-        const hr = new Date().getHours() + new Date().getMinutes() / 60;
-        bloom.intensity = hr < 6 || hr >= 18 ? 1.2 : 0.12;
-      }
+      // Bloom intensity is now managed by applyTimeOfDay() via getSkyConfig()
 
       // Fade transition
       const tr = transitionRef.current;
@@ -3615,6 +3813,13 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         updateCameraOrbit();
       }
 
+      // Dynamic fog density by zoom level — denser when close for street-level atmosphere
+      if (viewModeRef.current === 'city' && scene.fog instanceof THREE.Fog) {
+        const zoomT = Math.max(0, Math.min(1, (orbitRadius - 60) / (800 - 60))); // 0 = closest, 1 = farthest
+        scene.fog.near = 80 + zoomT * 250;   // close: 80, far: 330
+        scene.fog.far  = 350 + zoomT * 700;  // close: 350, far: 1050
+      }
+
       // Bird's eye fly-to
       if (birdEyeTargetRef.current && viewModeRef.current === 'city') {
         orbitPhi    = orbitPhi    * 0.88 + birdEyeTargetRef.current.phi    * 0.12;
@@ -3647,6 +3852,11 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         }
       }
 
+      // Animated traffic (every other frame for performance)
+      if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
+        updateTraffic();
+      }
+
       // Tree sway (subtle wind)
       if (viewModeRef.current === 'city' && frameCount % 2 === 0) {
         const windTime = performance.now() * 0.001;
@@ -3676,6 +3886,67 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     }
     animate();
 
+    // ── Keyboard Shortcuts ─────────────────────────────────────────────────
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't capture when typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      const PAN_SPEED = 15;
+      switch (e.key) {
+        case 'Escape':
+          if (viewModeRef.current === 'interior') {
+            setViewMode('city');
+          } else {
+            selectedBlockState = null;
+            setSelectedBlock(null);
+          }
+          break;
+        case 'b': case 'B':
+          birdEyeTargetRef.current = { phi: 0.06, radius: 220 };
+          break;
+        case 'f': case 'F':
+          if (selectedBlockState) {
+            minimapPanRef.current = new THREE.Vector3(selectedBlockState.cx, 0, selectedBlockState.cz);
+          }
+          break;
+        case 'w': case 'W': {
+          const fwd = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(fwd, PAN_SPEED);
+          orbitTarget.y = 0;
+          minimapDirty = true;
+          updateCameraOrbit();
+          break;
+        }
+        case 's': case 'S': {
+          const back = new THREE.Vector3(-Math.sin(orbitTheta), 0, -Math.cos(orbitTheta));
+          orbitTarget.addScaledVector(back, -PAN_SPEED);
+          orbitTarget.y = 0;
+          minimapDirty = true;
+          updateCameraOrbit();
+          break;
+        }
+        case 'a': case 'A': {
+          const left = new THREE.Vector3();
+          left.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
+          orbitTarget.addScaledVector(left, PAN_SPEED);
+          orbitTarget.y = 0;
+          minimapDirty = true;
+          updateCameraOrbit();
+          break;
+        }
+        case 'd': case 'D': {
+          const right = new THREE.Vector3();
+          right.crossVectors(camera.getWorldDirection(new THREE.Vector3()), new THREE.Vector3(0,1,0)).normalize();
+          orbitTarget.addScaledVector(right, -PAN_SPEED);
+          orbitTarget.y = 0;
+          minimapDirty = true;
+          updateCameraOrbit();
+          break;
+        }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
     // ── Cleanup ───────────────────────────────────────────────────────────────
     return () => {
       cancelAnimationFrame(rafId);
@@ -3689,6 +3960,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove',  onTouchMove);
       mmCanvas?.removeEventListener('click', onMinimapClick);
+      document.removeEventListener('keydown', onKeyDown);
       clearInterval(todInterval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3829,6 +4101,475 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
         }
       }
     }
+
+    // ── HABIT COMPLETION → PARK VITALITY ──────────────────────────────────────
+    // Modulate park tree colors based on today's habit completion percentage
+    const habitPct = (() => {
+      if (!appData.habits.length) return 1;
+      const todayLog = appData.habitTracker.find(h => h.date === todayStr);
+      if (!todayLog) return 0;
+      const done = appData.habits.filter(h => todayLog.habits[h.id]).length;
+      return done / appData.habits.length;
+    })();
+
+    // Interpolate tree colors: vibrant green at 100%, brown/yellow at 0%
+    const vibrantLeaf = new THREE.Color('#4A8040');
+    const wiltedLeaf  = new THREE.Color('#8A7838');
+    const bareLeaf    = new THREE.Color('#6A5A30');
+    const vibrantConifer = new THREE.Color('#2A5C30');
+    const wiltedConifer  = new THREE.Color('#5A6838');
+
+    for (const tg of treeGroupsRef.current) {
+      tg.traverse(obj => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        const mat = obj.material as THREE.MeshStandardMaterial;
+        if (!mat.color) return;
+        const hex = '#' + mat.color.getHexString();
+        // Only modulate leaf/canopy materials (greens), not trunks (browns)
+        const r = mat.color.r, g = mat.color.g, b = mat.color.b;
+        if (g > r && g > b) {
+          // This is a green material (leaf/canopy)
+          const isConifer = hex.startsWith('#1') || hex.startsWith('#2') || hex.startsWith('#3');
+          if (isConifer) {
+            mat.color.lerpColors(wiltedConifer, vibrantConifer, habitPct);
+          } else {
+            if (habitPct < 0.3) {
+              mat.color.lerpColors(bareLeaf, wiltedLeaf, habitPct / 0.3);
+            } else {
+              mat.color.lerpColors(wiltedLeaf, vibrantLeaf, (habitPct - 0.3) / 0.7);
+            }
+          }
+          // Scale canopy down when habits are poor (bare trees)
+          if (obj.geometry.type === 'SphereGeometry' || obj.geometry.type === 'ConeGeometry') {
+            const s = 0.5 + habitPct * 0.5; // 50% to 100% scale
+            obj.scale.setScalar(s);
+          }
+        }
+      });
+    }
+
+    // Vitality ring around park blocks
+    for (const park of parkBlockInfosRef.current) {
+      const ringColor = habitPct >= 0.8 ? 0x4ade80 : habitPct >= 0.5 ? 0xfbbf24 : 0xef4444;
+      const existingKey = `park-vitality-${park.cx}-${park.cz}`;
+      let vRing = districtIndicatorsRef.current.get(existingKey);
+      if (!vRing) {
+        vRing = new THREE.Group();
+        cityGroupRef.current?.add(vRing);
+        districtIndicatorsRef.current.set(existingKey, vRing);
+      }
+      while (vRing.children.length > 0) {
+        const c = vRing.children[0]; vRing.remove(c);
+        if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
+      }
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: ringColor, emissive: ringColor, emissiveIntensity: 0.3,
+        transparent: true, opacity: 0.4, side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(20, 23, 32), ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(park.cx, 0.06, park.cz);
+      vRing.add(ring);
+    }
+
+    // ── GOAL PROGRESS → CONSTRUCTION INDICATORS ──────────────────────────────
+    const LIFE_AREA_COLORS: Record<string, number> = {
+      ventures: 0x3b82f6, academic: 0x8b5cf6, health: 0x22c55e,
+      spiritual: 0xeab308, financial: 0x10b981, relationships: 0xec4899,
+      personal: 0x0ea5e9,
+    };
+
+    // Clear old goal indicators
+    for (const [key, group] of goalIndicatorsRef.current) {
+      group.traverse(c => { if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); } });
+      group.parent?.remove(group);
+    }
+    goalIndicatorsRef.current.clear();
+
+    const activeGoals = appData.goals.filter(g => g.status === 'in-progress' || g.status === 'completed');
+    // Goals linked to projects → show in that project's district
+    const linkedGoals = activeGoals.filter(g => g.linkedProjectId);
+    for (const goal of linkedGoals) {
+      const project = appData.projects.find(p => p.id === goal.linkedProjectId);
+      if (!project) continue;
+      // Find the district for this project
+      let districtCx = 0, districtCz = 0;
+      for (const [label, meshes] of districtBuildingMeshesRef.current) {
+        const linked = findLinkedProject(label, [project]);
+        if (linked && meshes.length > 0) {
+          const bi = meshes[0].userData.blockInfo;
+          if (bi) { districtCx = bi.cx; districtCz = bi.cz; }
+          break;
+        }
+      }
+      if (districtCx === 0 && districtCz === 0) continue;
+
+      const goalGroup = new THREE.Group();
+      const areaColor = LIFE_AREA_COLORS[goal.area] ?? 0x64748b;
+      const maxH = 15;
+      const goalH = Math.max(1, maxH * (goal.progress / 100));
+
+      if (goal.status === 'completed' || goal.progress >= 100) {
+        // Completed: solid monument pillar with green glow
+        const pillarMat = new THREE.MeshStandardMaterial({ color: areaColor, emissive: 0x4ade80, emissiveIntensity: 0.5 });
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, maxH, 8), pillarMat);
+        pillar.position.set(districtCx - 18, maxH / 2, districtCz - 18);
+        pillar.castShadow = true;
+        goalGroup.add(pillar);
+        // Flag on top
+        const flagMat = new THREE.MeshStandardMaterial({ color: 0x4ade80, emissive: 0x4ade80, emissiveIntensity: 0.8 });
+        const flag = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.1), flagMat);
+        flag.position.set(districtCx - 17, maxH + 1, districtCz - 18);
+        goalGroup.add(flag);
+      } else {
+        // In-progress: wireframe + solid fill to progress height
+        const wireMat = new THREE.MeshBasicMaterial({ color: areaColor, wireframe: true, transparent: true, opacity: 0.3 });
+        const wireframe = new THREE.Mesh(new THREE.BoxGeometry(3, maxH, 3), wireMat);
+        wireframe.position.set(districtCx - 18, maxH / 2, districtCz - 18);
+        goalGroup.add(wireframe);
+        // Solid fill to current progress
+        const fillMat = new THREE.MeshStandardMaterial({ color: areaColor, emissive: areaColor, emissiveIntensity: 0.2, transparent: true, opacity: 0.7 });
+        const fill = new THREE.Mesh(new THREE.BoxGeometry(2.8, goalH, 2.8), fillMat);
+        fill.position.set(districtCx - 18, goalH / 2, districtCz - 18);
+        fill.castShadow = true;
+        goalGroup.add(fill);
+      }
+
+      cityGroupRef.current?.add(goalGroup);
+      goalIndicatorsRef.current.set(goal.id, goalGroup);
+    }
+
+    // Unlinked goals → place in Central Commons park block (col=-3, row=1)
+    const unlinkedGoals = activeGoals.filter(g => !g.linkedProjectId);
+    if (unlinkedGoals.length > 0) {
+      const plazaCx = -3 * 50; // approximate center of col=-3
+      const plazaCz = 1 * 50;  // approximate center of row=1
+      // Find actual block center from blocks array if available
+      let foundCx = plazaCx, foundCz = plazaCz;
+      const commonsBlock = districtIndicatorsRef.current.get('Central Commons');
+      if (commonsBlock) {
+        // Use an approximate position
+      }
+      // Find from districtBuildingMeshesRef
+      for (const [label, meshes] of districtBuildingMeshesRef.current) {
+        if (label === 'Central Commons' && meshes.length > 0) {
+          const bi = meshes[0].userData.blockInfo;
+          if (bi) { foundCx = bi.cx; foundCz = bi.cz; }
+          break;
+        }
+      }
+
+      unlinkedGoals.forEach((goal, i) => {
+        const goalGroup = new THREE.Group();
+        const areaColor = LIFE_AREA_COLORS[goal.area] ?? 0x64748b;
+        const maxH = 12;
+        const goalH = Math.max(1, maxH * (goal.progress / 100));
+        const offsetX = (i % 4) * 6 - 9;
+        const offsetZ = Math.floor(i / 4) * 6 - 6;
+
+        const fillMat = new THREE.MeshStandardMaterial({ color: areaColor, emissive: areaColor, emissiveIntensity: 0.15, transparent: true, opacity: 0.8 });
+        const column = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.3, goalH, 8), fillMat);
+        column.position.set(foundCx + offsetX, goalH / 2, foundCz + offsetZ);
+        column.castShadow = true;
+        goalGroup.add(column);
+
+        // Wireframe target height
+        const wireMat = new THREE.MeshBasicMaterial({ color: areaColor, wireframe: true, transparent: true, opacity: 0.2 });
+        const wire = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, maxH, 8), wireMat);
+        wire.position.set(foundCx + offsetX, maxH / 2, foundCz + offsetZ);
+        goalGroup.add(wire);
+
+        cityGroupRef.current?.add(goalGroup);
+        goalIndicatorsRef.current.set(goal.id, goalGroup);
+      });
+    }
+
+    // ── FINANCIAL HEALTH → DOWNTOWN PROSPERITY ───────────────────────────────
+    const monthStart = todayStr.slice(0, 7);
+    const monthEntries = appData.financialEntries.filter(e => e.date.startsWith(monthStart));
+    const monthIncome = monthEntries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+    const monthExpense = monthEntries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
+    const monthNet = monthIncome - monthExpense;
+
+    // Update or create financial billboard in Financial Core district
+    const finCoreMeshes = districtBuildingMeshesRef.current.get('Financial Core');
+    if (finCoreMeshes && finCoreMeshes.length > 0) {
+      const bi = finCoreMeshes[0].userData.blockInfo;
+      const billboardCx = bi?.cx ?? 0;
+      const billboardCz = bi?.cz ?? 0;
+
+      // Remove old billboard
+      if (financialBillboardRef.current) {
+        financialBillboardRef.current.mesh.geometry.dispose();
+        (financialBillboardRef.current.mesh.material as THREE.Material).dispose();
+        financialBillboardRef.current.mesh.parent?.remove(financialBillboardRef.current.mesh);
+        financialBillboardRef.current.texture.dispose();
+        financialBillboardRef.current = null;
+      }
+
+      // Create canvas texture for the billboard
+      const bbCanvas = document.createElement('canvas');
+      bbCanvas.width = 512; bbCanvas.height = 256;
+      const bbCtx = bbCanvas.getContext('2d')!;
+
+      // Background
+      bbCtx.fillStyle = '#0C1424'; bbCtx.fillRect(0, 0, 512, 256);
+      bbCtx.fillStyle = '#1A2838'; bbCtx.fillRect(4, 4, 504, 248);
+
+      // Title
+      bbCtx.fillStyle = '#C0D0E8'; bbCtx.font = 'bold 24px Arial'; bbCtx.textAlign = 'center';
+      bbCtx.fillText('MONTHLY FINANCE', 256, 36);
+
+      // Bars
+      const maxVal = Math.max(monthIncome, monthExpense, 1);
+      const barMaxH = 140;
+
+      // Income bar
+      const incomeH = (monthIncome / maxVal) * barMaxH;
+      bbCtx.fillStyle = '#4ade80';
+      bbCtx.fillRect(120, 200 - incomeH, 80, incomeH);
+      bbCtx.fillStyle = '#C0D0E8'; bbCtx.font = '16px Arial';
+      bbCtx.fillText('Income', 160, 220);
+      bbCtx.fillText(`$${Math.round(monthIncome).toLocaleString()}`, 160, 200 - incomeH - 8);
+
+      // Expense bar
+      const expenseH = (monthExpense / maxVal) * barMaxH;
+      bbCtx.fillStyle = '#ef4444';
+      bbCtx.fillRect(312, 200 - expenseH, 80, expenseH);
+      bbCtx.fillStyle = '#C0D0E8';
+      bbCtx.fillText('Expense', 352, 220);
+      bbCtx.fillText(`$${Math.round(monthExpense).toLocaleString()}`, 352, 200 - expenseH - 8);
+
+      // Net indicator
+      bbCtx.fillStyle = monthNet >= 0 ? '#4ade80' : '#ef4444';
+      bbCtx.font = 'bold 20px Arial';
+      bbCtx.fillText(`Net: ${monthNet >= 0 ? '+' : ''}$${Math.round(monthNet).toLocaleString()}`, 256, 250);
+
+      const bbTex = new THREE.CanvasTexture(bbCanvas);
+      const bbMat = new THREE.MeshStandardMaterial({
+        map: bbTex, emissive: '#FFFFFF', emissiveIntensity: 0.15, emissiveMap: bbTex,
+        roughness: 0.1, metalness: 0.1,
+      });
+      const bbMesh = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), bbMat);
+      bbMesh.position.set(billboardCx, 35, billboardCz + 22);
+      cityGroupRef.current?.add(bbMesh);
+      financialBillboardRef.current = { mesh: bbMesh, texture: bbTex };
+
+      // Modulate downtown building warmth based on net cash flow
+      const netWarmth = monthNet >= 0 ? 0.06 : 0.01;
+      for (const mesh of finCoreMeshes) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (!mat.emissive) continue;
+        // Layer financial warmth on top of health emissive
+        const existing = healthEmissiveRef.current.get('Financial Core');
+        if (existing) {
+          mat.emissiveIntensity = existing.intensity + netWarmth;
+        }
+      }
+    }
+
+    // ── CONTACT POPULATION DENSITY ──────────────────────────────────────────
+    // Small colored spheres at ground level in districts proportional to linked contacts
+    for (const [label, meshes] of districtBuildingMeshesRef.current) {
+      const project = findLinkedProject(label, appData.projects);
+      if (!project || project.status !== 'active') continue;
+      const linkedContacts = appData.contacts.filter(c => c.linkedProjects.includes(project.id));
+      if (linkedContacts.length === 0) continue;
+
+      const bi = meshes[0]?.userData.blockInfo;
+      if (!bi) continue;
+
+      // Check for existing contact indicators
+      const contactKey = `contacts-${label}`;
+      let cGroup = districtIndicatorsRef.current.get(contactKey);
+      if (!cGroup) {
+        cGroup = new THREE.Group();
+        cityGroupRef.current?.add(cGroup);
+        districtIndicatorsRef.current.set(contactKey, cGroup);
+      }
+      while (cGroup.children.length > 0) {
+        const c = cGroup.children[0]; cGroup.remove(c);
+        if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
+      }
+
+      const pedestrianGeo = new THREE.SphereGeometry(0.4, 6, 4);
+      const contactCount = Math.min(linkedContacts.length, 8);
+      const cRng = seededRandom(`contacts-${label}`);
+      for (let ci = 0; ci < contactCount; ci++) {
+        const hasFollowUp = linkedContacts[ci]?.followUpNeeded && linkedContacts[ci]?.followUpDate && linkedContacts[ci].followUpDate! <= todayStr;
+        const pColor = hasFollowUp ? 0xfbbf24 : 0x7EB8F8;
+        const pMat = new THREE.MeshStandardMaterial({ color: pColor, emissive: pColor, emissiveIntensity: 0.15 });
+        const p = new THREE.Mesh(pedestrianGeo, pMat);
+        p.position.set(
+          bi.cx + (cRng() - 0.5) * 30,
+          0.5,
+          bi.cz + (cRng() - 0.5) * 30,
+        );
+        cGroup.add(p);
+      }
+
+      // Follow-up flag if any contacts need follow-up
+      const followUpCount = linkedContacts.filter(c => c.followUpNeeded && c.followUpDate && c.followUpDate <= todayStr).length;
+      if (followUpCount > 0) {
+        const flagMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xfbbf24, emissiveIntensity: 0.5 });
+        const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 4), new THREE.MeshStandardMaterial({ color: '#505050' }));
+        flagPole.position.set(bi.cx + 22, 1.5, bi.cz + 22);
+        cGroup.add(flagPole);
+        const flag = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 0.05), flagMat);
+        flag.position.set(bi.cx + 22.8, 2.8, bi.cz + 22);
+        cGroup.add(flag);
+      }
+    }
+
+    // ── CLIENT REVENUE SIGNAGE ───────────────────────────────────────────────
+    // Illuminated signs on tallest buildings for districts with linked clients
+    for (const [label, meshes] of districtBuildingMeshesRef.current) {
+      const project = findLinkedProject(label, appData.projects);
+      if (!project || project.status !== 'active') continue;
+
+      // Find clients linked to this project
+      const projectClients = appData.clients.filter(c => c.status === 'active' && c.linkedProjectId === project.id);
+      if (projectClients.length === 0) continue;
+
+      const bi = meshes[0]?.userData.blockInfo;
+      if (!bi) continue;
+
+      // Find tallest building
+      let maxBuildingH = 0;
+      for (const m of meshes) {
+        const bbox = new THREE.Box3().setFromObject(m);
+        if (bbox.max.y > maxBuildingH) maxBuildingH = bbox.max.y;
+      }
+      if (maxBuildingH < 10) continue;
+
+      const signKey = `client-sign-${label}`;
+      let sGroup = districtIndicatorsRef.current.get(signKey);
+      if (!sGroup) {
+        sGroup = new THREE.Group();
+        cityGroupRef.current?.add(sGroup);
+        districtIndicatorsRef.current.set(signKey, sGroup);
+      }
+      while (sGroup.children.length > 0) {
+        const c = sGroup.children[0]; sGroup.remove(c);
+        if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
+      }
+
+      // Create sign canvas for first client
+      const client = projectClients[0];
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 256; signCanvas.height = 64;
+      const sCtx = signCanvas.getContext('2d')!;
+      sCtx.fillStyle = '#0C1424'; sCtx.fillRect(0, 0, 256, 64);
+      sCtx.fillStyle = '#E2E8F0'; sCtx.font = 'bold 20px Arial'; sCtx.textAlign = 'center';
+      sCtx.fillText(client.company || client.name, 128, 38);
+
+      const signTex = new THREE.CanvasTexture(signCanvas);
+      const hasPending = client.payments?.some(p => p.status === 'pending');
+      const hasOverdue = client.payments?.some(p => p.status === 'overdue');
+      const signColor = hasOverdue ? '#ef4444' : hasPending ? '#fbbf24' : '#4ade80';
+      const signMat = new THREE.MeshStandardMaterial({
+        map: signTex, emissive: signColor, emissiveIntensity: 0.3,
+        emissiveMap: signTex, roughness: 0.1,
+      });
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 2), signMat);
+      sign.position.set(bi.cx, maxBuildingH - 3, bi.cz + 15);
+      sGroup.add(sign);
+      // Only show on first qualifying district to avoid clutter
+      break;
+    }
+
+    // ── SCHEDULE/ENERGY → CITY ACTIVITY LEVEL ────────────────────────────────
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const activeBlock = appData.timeBlocks.find(
+      b => b.date === todayStr && b.startTime <= hhmm && b.endTime > hhmm
+    );
+    const currentEnergy = activeBlock?.energy ?? 3;
+    // Energy modulates a global ambient boost: 5 = warm bright, 1 = cool dim
+    const energyT = (currentEnergy - 1) / 4; // 0 to 1
+    // Apply subtle ambient tint — boost hemi sky color warmth based on energy
+    // This is a lightweight effect: just tweak fill light intensity
+    // (actual fill light is managed by applyTimeOfDay, so we layer on a small delta)
+    // We store the energy boost in cityLightRef for the animate loop to pick up
+    const energyBoost = energyT * 0.15; // 0 to 0.15 extra intensity
+    cityLightRef.current.hemiI += energyBoost;
+
+    // ── COURSES → BYU CAMPUS ENHANCEMENT ─────────────────────────────────────
+    if (appData.courses.length > 0 && cityGroupRef.current) {
+      // Remove old course indicators
+      if (courseIndicatorsRef.current) {
+        courseIndicatorsRef.current.traverse(c => {
+          if (c instanceof THREE.Mesh) { c.geometry.dispose(); (c.material as THREE.Material).dispose(); }
+        });
+        courseIndicatorsRef.current.parent?.remove(courseIndicatorsRef.current);
+      }
+
+      const courseGroup = new THREE.Group();
+
+      // BYU Campus is at col=1, row=1 — find its center
+      let byuCx = 50, byuCz = 50; // approximate
+      for (const [label, meshes] of districtBuildingMeshesRef.current) {
+        if (label === 'BYU Campus' && meshes.length > 0) {
+          const bi = meshes[0].userData.blockInfo;
+          if (bi) { byuCx = bi.cx; byuCz = bi.cz; }
+          break;
+        }
+      }
+
+      const weekAhead = new Date();
+      weekAhead.setDate(weekAhead.getDate() + 7);
+      const weekStr = `${weekAhead.getFullYear()}-${String(weekAhead.getMonth() + 1).padStart(2, '0')}-${String(weekAhead.getDate()).padStart(2, '0')}`;
+
+      appData.courses.forEach((course, i) => {
+        const angle = (i / appData.courses.length) * Math.PI * 2;
+        const radius = 28; // distance from campus center
+        const cx = byuCx + Math.cos(angle) * radius;
+        const cz = byuCz + Math.sin(angle) * radius;
+
+        // Building sized by credits (3 credits = 8 height, 5 = 14)
+        const bH = 4 + course.credits * 2;
+        const bW = 5, bD = 4;
+
+        // Grade-based color: meeting target = green glow, below = yellow/red
+        const meetingTarget = course.currentGrade >= (course.targetGrade ?? 0);
+        const gradeColor = meetingTarget ? 0x4ade80 : course.currentGrade >= 70 ? 0xfbbf24 : 0xef4444;
+
+        const buildingMat = new THREE.MeshStandardMaterial({
+          color: course.color || '#6A8AA0',
+          roughness: 0.7,
+          emissive: gradeColor,
+          emissiveIntensity: 0.15,
+        });
+        const building = new THREE.Mesh(new THREE.BoxGeometry(bW, bH, bD), buildingMat);
+        building.position.set(cx, bH / 2, cz);
+        building.castShadow = true;
+        courseGroup.add(building);
+
+        // Roof trim
+        const trimMat = new THREE.MeshStandardMaterial({ color: '#002E5D', roughness: 0.6 });
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(bW + 0.3, 0.3, bD + 0.3), trimMat);
+        trim.position.set(cx, bH + 0.15, cz);
+        courseGroup.add(trim);
+
+        // Check for upcoming exams → beacon
+        const hasUpcomingExam = course.examDates.some(
+          ex => ex.date >= todayStr && ex.date <= weekStr
+        );
+        if (hasUpcomingExam) {
+          const examBeaconMat = new THREE.MeshStandardMaterial({
+            color: '#fbbf24', emissive: '#fbbf24', emissiveIntensity: 0.9,
+          });
+          const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.5, 6), examBeaconMat);
+          beacon.position.set(cx, bH + 1.5, cz);
+          beacon.userData.type = 'beacon';
+          courseGroup.add(beacon);
+        }
+      });
+
+      cityGroupRef.current.add(courseGroup);
+      courseIndicatorsRef.current = courseGroup;
+    }
+
   }, [appData]);
 
   // Draw floor plan when selected building changes
@@ -3845,6 +4586,15 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', overflow: 'hidden' }}>
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       <div ref={labelRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+      <div
+        ref={tooltipRef}
+        style={{
+          display: 'none', position: 'fixed', zIndex: 60, pointerEvents: 'none',
+          background: 'rgba(8,12,24,0.92)', border: '1px solid rgba(100,160,255,0.2)',
+          borderRadius: 8, padding: '6px 10px', backdropFilter: 'blur(10px)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)', maxWidth: 220,
+        }}
+      />
 
       {/* Fade overlay */}
       <div
@@ -3880,6 +4630,85 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
             }}>{districtLabel}</div>
           )}
 
+          {/* District search */}
+          <div style={{
+            position: 'absolute', top: 14, right: 14, zIndex: 15,
+            display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end',
+          }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {searchOpen && (
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); }
+                    if (e.key === 'Enter' && searchQuery.trim()) {
+                      const match = blocksRef.current.find(b =>
+                        b.label.toLowerCase().includes(searchQuery.toLowerCase())
+                      );
+                      if (match) {
+                        minimapPanRef.current = new THREE.Vector3(match.cx, 0, match.cz);
+                        setSearchOpen(false); setSearchQuery('');
+                      }
+                    }
+                  }}
+                  placeholder="Search district..."
+                  autoFocus
+                  style={{
+                    background: 'rgba(8,12,24,0.90)', border: '1px solid rgba(100,160,255,0.3)',
+                    borderRadius: 8, padding: '6px 10px', color: '#e2e8f0', fontSize: 11,
+                    outline: 'none', width: 160, backdropFilter: 'blur(10px)',
+                  }}
+                />
+              )}
+              <button
+                className="wv-top-btn"
+                onClick={() => { setSearchOpen(o => !o); setSearchQuery(''); }}
+                title="Search districts"
+                style={{
+                  background: 'rgba(8,12,24,0.80)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8, padding: '7px 11px', color: '#8899B4',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  backdropFilter: 'blur(10px)', transition: 'background 0.15s',
+                }}
+              >&#x1F50D;</button>
+            </div>
+            {/* Search results dropdown */}
+            {searchOpen && searchQuery.length > 0 && (
+              <div style={{
+                background: 'rgba(8,12,24,0.95)', border: '1px solid rgba(100,160,255,0.2)',
+                borderRadius: 8, maxHeight: 180, overflowY: 'auto', width: 200,
+                backdropFilter: 'blur(10px)',
+              }}>
+                {blocksRef.current
+                  .filter(b => b.label.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .filter((b, i, arr) => arr.findIndex(x => x.label === b.label) === i)
+                  .slice(0, 8)
+                  .map((b, i) => (
+                    <button
+                      key={`${b.col}-${b.row}-${i}`}
+                      onClick={() => {
+                        minimapPanRef.current = new THREE.Vector3(b.cx, 0, b.cz);
+                        setSearchOpen(false); setSearchQuery('');
+                      }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left',
+                        background: 'none', border: 'none', padding: '6px 10px',
+                        color: '#c0d0e8', fontSize: 11, cursor: 'pointer',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(80,140,220,0.15)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                    >
+                      <span style={{ fontWeight: 600 }}>{b.label}</span>
+                      <span style={{ color: '#475569', marginLeft: 6, fontSize: 9, textTransform: 'uppercase' }}>{b.zone}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+
           {/* Bottom-right: Bird's eye button (moved away from info card) */}
           <button
             className="wv-top-btn"
@@ -3895,6 +4724,62 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
             }}
           >↑ Top</button>
 
+          {/* Legend button */}
+          <button
+            className="wv-top-btn"
+            onClick={() => setLegendOpen(o => !o)}
+            title="Data legend"
+            style={{
+              position: 'absolute', bottom: 14, right: 80, zIndex: 10,
+              background: legendOpen ? 'rgba(60,120,220,0.22)' : 'rgba(8,12,24,0.80)',
+              border: `1px solid ${legendOpen ? 'rgba(100,160,240,0.35)' : 'rgba(255,255,255,0.12)'}`,
+              borderRadius: 8, padding: '7px 11px', color: legendOpen ? '#7EB8F8' : '#8899B4',
+              cursor: 'pointer', fontSize: 11, fontWeight: 600,
+              backdropFilter: 'blur(10px)', transition: 'background 0.15s',
+            }}
+          >Legend</button>
+
+          {/* Data legend panel */}
+          {legendOpen && (
+            <div style={{
+              position: 'absolute', bottom: 50, right: 14, zIndex: 15,
+              background: 'rgba(8,12,24,0.92)', border: '1px solid rgba(100,160,255,0.2)',
+              borderRadius: 10, padding: '10px 14px', backdropFilter: 'blur(12px)',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.5)', width: 220,
+              animation: 'fadeIn 0.2s ease-out',
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Indicator Legend</div>
+              {[
+                { color: '#4ade80', label: 'Healthy project' },
+                { color: '#fbbf24', label: 'At-risk project / in-progress todos' },
+                { color: '#ef4444', label: 'Overdue todos / red health' },
+                { color: '#fbbf24', glyph: '▭', label: 'Scaffolding — active work' },
+                { color: '#ef4444', glyph: '●', label: 'Beacon — overdue items' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  {item.glyph
+                    ? <span style={{ color: item.color, fontSize: 12, width: 10, textAlign: 'center', flexShrink: 0 }}>{item.glyph}</span>
+                    : <span style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, flexShrink: 0, boxShadow: `0 0 4px ${item.color}55` }} />
+                  }
+                  <span style={{ fontSize: 10, color: '#94a3b8' }}>{item.label}</span>
+                </div>
+              ))}
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '6px 0' }} />
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#7EB8F8', marginBottom: 4 }}>Data Integrations</div>
+              {[
+                { color: '#4ade80', label: 'Park vitality — habit completion %' },
+                { color: '#3b82f6', label: 'Goal columns — progress by life area' },
+                { color: '#10b981', label: 'Financial billboard — monthly income/expense' },
+                { color: '#8b5cf6', label: 'Campus buildings — courses & grades' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: '#94a3b8' }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Controls hint */}
           <div style={{
             position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
@@ -3902,7 +4787,7 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
             borderRadius: 20, padding: '4px 14px', color: '#64748b', fontSize: 10,
             pointerEvents: 'none', whiteSpace: 'nowrap', letterSpacing: '0.04em',
           }}>
-            Drag · Scroll · Right-drag to pan · Click to inspect
+            Drag · Scroll · Right-drag/WASD to pan · Click to inspect · B bird's eye · F focus · Esc deselect
           </div>
 
           {/* Selected block info card */}
