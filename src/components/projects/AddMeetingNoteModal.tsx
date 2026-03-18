@@ -1,5 +1,5 @@
-import React, { useState, useRef, KeyboardEvent } from 'react';
-import { X, Sparkles, Save, Loader2 } from 'lucide-react';
+import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
+import { X, Sparkles, Save, Loader2, Mic, MicOff, Circle } from 'lucide-react';
 import type { Project, MeetingNote, MeetingAISummary } from '../../types';
 
 interface Props {
@@ -12,6 +12,11 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Check for Web Speech API support
+const hasSpeechAPI =
+  typeof window !== 'undefined' &&
+  (('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window));
+
 export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -20,7 +25,17 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
   const [rawNotes, setRawNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const attendeeRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   function addAttendee(value: string) {
     const trimmed = value.trim().replace(/,+$/, '').trim();
@@ -37,6 +52,44 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
     } else if (e.key === 'Backspace' && attendeeInput === '' && attendees.length > 0) {
       setAttendees(prev => prev.slice(0, -1));
     }
+  }
+
+  function toggleRecording() {
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          const text = event.results[i][0].transcript.trim();
+          if (text) {
+            setRawNotes(prev => (prev ? prev + ' ' + text : text));
+          }
+        }
+      }
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
   }
 
   function buildNote(): MeetingNote {
@@ -83,7 +136,6 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
         };
         onSave({ ...note, aiSummary });
       } else {
-        // Save without summary if AI fails
         onSave(note);
       }
     } catch {
@@ -171,7 +223,8 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
           {/* Attendees */}
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
-              Attendees <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(press Enter or comma to add)</span>
+              Attendees{' '}
+              <span style={{ fontWeight: 400 }}>(press Enter or comma to add)</span>
             </label>
             <div
               className="flex flex-wrap gap-1.5 px-3 py-2 rounded min-h-[38px] cursor-text"
@@ -190,7 +243,10 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
                   {name}
                   {!isLoading && (
                     <button
-                      onClick={e => { e.stopPropagation(); setAttendees(prev => prev.filter(a => a !== name)); }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setAttendees(prev => prev.filter(a => a !== name));
+                      }}
                     >
                       <X size={10} />
                     </button>
@@ -212,23 +268,91 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
             </div>
           </div>
 
-          {/* Notes */}
+          {/* Notes + Voice Recording */}
           <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
-              Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(required)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                Notes{' '}
+                <span style={{ fontWeight: 400 }}>(required)</span>
+              </label>
+              {hasSpeechAPI && (
+                <button
+                  type="button"
+                  onClick={toggleRecording}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors duration-200 disabled:opacity-40"
+                  style={
+                    isRecording
+                      ? {
+                          backgroundColor: 'rgba(239,68,68,0.15)',
+                          border: '1px solid rgba(239,68,68,0.4)',
+                          color: '#f87171',
+                        }
+                      : {
+                          backgroundColor: 'var(--bg-card)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-muted)',
+                        }
+                  }
+                  onMouseEnter={e => {
+                    if (!isRecording && !isLoading)
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={e => {
+                    if (!isRecording) e.currentTarget.style.color = 'var(--text-muted)';
+                  }}
+                  title={isRecording ? 'Stop recording' : 'Record & transcribe audio'}
+                >
+                  {isRecording ? (
+                    <>
+                      <Circle size={8} className="animate-pulse" style={{ fill: '#f87171' }} />
+                      <MicOff size={12} />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic size={12} />
+                      <span>Record</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {isRecording && (
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded mb-2 text-xs"
+                style={{
+                  backgroundColor: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  color: '#f87171',
+                }}
+              >
+                <Circle size={6} className="animate-pulse" style={{ fill: '#f87171' }} />
+                Listening… speak clearly. Transcription will appear in notes below.
+              </div>
+            )}
+
             <textarea
+              ref={notesRef}
               value={rawNotes}
               onChange={e => setRawNotes(e.target.value)}
-              placeholder="Paste or type your meeting notes here. The more detail, the better the AI summary."
+              placeholder={
+                isRecording
+                  ? 'Transcription will appear here as you speak…'
+                  : 'Paste or type your meeting notes here, or use the Record button to transcribe audio.'
+              }
               disabled={isLoading}
               rows={8}
               className="w-full rounded px-3 py-2 text-sm outline-none resize-y disabled:opacity-50"
               style={{
                 backgroundColor: 'var(--bg-card)',
-                border: '1px solid var(--border)',
+                border: isRecording
+                  ? '1px solid rgba(239,68,68,0.4)'
+                  : '1px solid var(--border)',
                 color: 'var(--text-primary)',
                 minHeight: 160,
+                transition: 'border-color 0.2s',
               }}
             />
           </div>
@@ -259,7 +383,9 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
               border: '1px solid var(--border)',
               color: 'var(--text-secondary)',
             }}
-            onMouseEnter={e => { if (canSave && !isLoading) e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseEnter={e => {
+              if (canSave && !isLoading) e.currentTarget.style.color = 'var(--text-primary)';
+            }}
             onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
           >
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}

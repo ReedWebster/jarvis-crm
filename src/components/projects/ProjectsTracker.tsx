@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ChevronRight, ExternalLink, Globe, Instagram, Linkedin } from 'lucide-react';
+import { ChevronRight, ExternalLink, Globe, Instagram, Linkedin, Plus } from 'lucide-react';
 import type { Project, Contact } from '../../types';
 import type { NavSection } from '../layout/Sidebar';
 import { ProjectDetailView } from './ProjectDetailView';
+import { AddProjectModal } from './AddProjectModal';
 
 interface Props {
   projects: Project[];
@@ -41,6 +42,7 @@ const HEALTH_COLORS: Record<string, string> = {
 
 export function ProjectsTracker({ projects, setProjects, contacts = [], onNavigate }: Props) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const selectedProject = selectedProjectId
     ? projects.find(p => p.id === selectedProjectId) ?? null
@@ -65,9 +67,29 @@ export function ProjectsTracker({ projects, setProjects, contacts = [], onNaviga
     );
   }
 
+  function handleAddProject(project: Project) {
+    setProjects(prev => (Array.isArray(prev) ? [...prev, project] : [project]));
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="section-title">Projects</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="section-title" style={{ marginBottom: 0 }}>Projects</h1>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-colors duration-200"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-secondary)',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+        >
+          <Plus size={12} />
+          <span>Add Project</span>
+        </button>
+      </div>
 
       <div className="flex flex-col gap-1">
         {projects.map((project) => {
@@ -140,6 +162,13 @@ export function ProjectsTracker({ projects, setProjects, contacts = [], onNaviga
           );
         })}
       </div>
+
+      {showAddModal && (
+        <AddProjectModal
+          onClose={() => setShowAddModal(false)}
+          onSave={handleAddProject}
+        />
+      )}
     </div>
   );
 }
