@@ -449,6 +449,7 @@ interface FlashcardViewProps {
   onBackToGrid: () => void;
   onDelete: (id: string) => void;
   onEdit: (contact: Contact) => void;
+  isModalOpen?: boolean;
 }
 
 function FlashcardView({
@@ -460,6 +461,7 @@ function FlashcardView({
   onBackToGrid,
   onDelete,
   onEdit,
+  isModalOpen = false,
 }: FlashcardViewProps) {
   const [index, setIndex] = useState(0);
   const [pendingTags, setPendingTags] = useState<ContactTag[]>([]);
@@ -532,6 +534,13 @@ function FlashcardView({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (isModalOpen) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isEditable =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+        (e.target as HTMLElement)?.isContentEditable;
+      if (isEditable) return;
+
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         goPrev();
@@ -543,7 +552,7 @@ function FlashcardView({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [goPrev, goNext]);
+  }, [goPrev, goNext, isModalOpen]);
 
   useEffect(() => {
     setIndex(0);
@@ -2435,6 +2444,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
           onBackToGrid={() => setViewMode('grid')}
           onDelete={handleDelete}
           onEdit={openEdit}
+          isModalOpen={editModalOpen}
         />
       )}
 
