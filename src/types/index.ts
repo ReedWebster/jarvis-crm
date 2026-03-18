@@ -17,6 +17,29 @@ export interface Identity {
 export type ProjectStatus = 'active' | 'on-hold' | 'completed';
 export type HealthColor = 'green' | 'yellow' | 'red';
 
+export interface ActionItem {
+  assignee: string;
+  action: string;
+  dueDate?: string;
+}
+
+export interface MeetingAISummary {
+  summary: string;
+  keyPoints: string[];
+  actionItems: ActionItem[];
+  summarizedAt: string;
+}
+
+export interface MeetingNote {
+  id: string;
+  title: string;
+  date: string;         // YYYY-MM-DD
+  attendees: string[];  // free-text names
+  rawNotes: string;
+  aiSummary?: MeetingAISummary;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -29,6 +52,7 @@ export interface Project {
   links: string;
   createdAt: string;
   githubRepo?: string;       // e.g. "owner/repo" — links project to GitHub activity
+  meetingNotes?: MeetingNote[];
 }
 
 // ─── TIME TRACKING ───────────────────────────────────────────────────────────

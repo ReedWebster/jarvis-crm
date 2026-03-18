@@ -42,10 +42,11 @@ export const DEFAULT_STATE: AppState = {
         'BYU student org focused on AI applications in business contexts. Focus on growing membership and speaker pipeline.',
       links: '',
       createdAt: today,
+      meetingNotes: [],
     },
     {
       id: 'proj_2',
-      name: 'Vanta Marketing Co.',
+      name: 'Vanta Marketing',
       status: 'active',
       health: 'yellow',
       nextAction: 'Finalize financial statements and pitch first client',
@@ -55,6 +56,7 @@ export const DEFAULT_STATE: AppState = {
         'Marketing venture focused on client acquisition and brand strategy. Financial statements completed — income statement and balance sheet ready.',
       links: '',
       createdAt: today,
+      meetingNotes: [],
     },
     {
       id: 'proj_3',
@@ -68,6 +70,7 @@ export const DEFAULT_STATE: AppState = {
         'AI consulting and solutions venture. Financial statements processed — strong foundation established.',
       links: '',
       createdAt: today,
+      meetingNotes: [],
     },
     {
       id: 'proj_4',
@@ -81,6 +84,7 @@ export const DEFAULT_STATE: AppState = {
         'Property management operations in Orem, UT. Competitive analysis against Orem/Provo complexes in progress. Digital lock modernization project scoped.',
       links: '',
       createdAt: today,
+      meetingNotes: [],
     },
     {
       id: 'proj_6',
@@ -93,6 +97,7 @@ export const DEFAULT_STATE: AppState = {
       notes: 'AI defense and strategy platform.',
       links: 'https://moatandshieldai.vercel.app/',
       createdAt: today,
+      meetingNotes: [],
     },
     {
       id: 'proj_5',
@@ -106,6 +111,7 @@ export const DEFAULT_STATE: AppState = {
         'Personal Jarvis-style AI chief of staff and CRM platform. Inspired by Iron Man\'s JARVIS. Voice commands and streaming responses in roadmap.',
       links: '',
       createdAt: today,
+      meetingNotes: [],
     },
   ],
 

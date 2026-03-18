@@ -26,6 +26,9 @@
     },
     "api/sync.ts": {
       "maxDuration": 30
+    },
+    "api/summarize-meeting.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [

@@ -2073,10 +2073,22 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
 
   // Flashcard deck: filtered list, optionally shuffled
   const untagged = useMemo(() => contacts.filter(c => c.tags.length === 0), [contacts]);
-  const flashcardDeck = useMemo(
-    () => (flashcardShuffled ? shuffleArray([...untagged]) : untagged),
-    [untagged, flashcardShuffled]
-  );
+  const flashcardDeck = useMemo(() => {
+    if (flashcardShuffled) return shuffleArray([...untagged]);
+    const today = todayStr();
+    return [...untagged].sort((a, b) => {
+      const priority = (c: Contact): number => {
+        if (c.followUpNeeded) {
+          if (c.followUpDate && c.followUpDate < today) return 0; // overdue
+          if (c.followUpDate === today) return 1;                  // due today
+          return 2;                                                // needs follow-up
+        }
+        // Stale relationships next — lowest health (most at-risk) first
+        return 3 + calcRelationshipHealth(c.lastContacted);
+      };
+      return priority(a) - priority(b);
+    });
+  }, [untagged, flashcardShuffled]);
 
   // CRUD helpers
   const handleAdd = (data: ContactFormData) => {
