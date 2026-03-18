@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   Send, RefreshCw, X, ChevronDown, ChevronRight, Sparkles,
   Clock, Building, User, AlertCircle, Check, SkipForward, Mail,
+  MessageSquare, Copy, Phone,
 } from 'lucide-react';
 import { differenceInDays, parseISO, format } from 'date-fns';
 import type { Contact, ContactInteraction, Project } from '../../types';
@@ -12,17 +13,21 @@ import { useToast } from '../shared/Toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type Channel = 'email' | 'imessage';
+
 interface OutreachDraft {
   contactId: string;
   subject: string;
   message: string;
   reasoning: string;
+  channel: Channel;
 }
 
 interface OutreachHistoryEntry {
   contactId: string;
   sentAt: string;
   subject: string;
+  channel?: Channel;
 }
 
 interface OutreachSettings {
@@ -66,13 +71,13 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
   const [editedSubjects, setEditedSubjects] = useState<Record<string, string>>({});
   const [editedMessages, setEditedMessages] = useState<Record<string, string>>({});
 
-  // ─── Stale contacts ───────────────────────────────────────────────────────
+  // ─── Stale contacts (now includes phone-only contacts) ──────────────────
 
   const staleContacts = useMemo(() => {
     const now = new Date();
     return contacts
       .filter(c => {
-        if (!c.email) return false;
+        if (!c.email && !c.phone) return false; // need at least one channel
         if (dismissedIds.has(c.id)) return false;
         const days = differenceInDays(now, parseISO(c.lastContacted));
         return days >= staleDays;
@@ -80,10 +85,10 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
       .sort((a, b) => parseISO(a.lastContacted).getTime() - parseISO(b.lastContacted).getTime());
   }, [contacts, staleDays, dismissedIds]);
 
-  const contactsWithoutEmail = useMemo(() => {
+  const contactsWithNoChannel = useMemo(() => {
     const now = new Date();
     return contacts.filter(c => {
-      if (c.email) return false;
+      if (c.email || c.phone) return false;
       const days = differenceInDays(now, parseISO(c.lastContacted));
       return days >= staleDays;
     }).length;
@@ -128,6 +133,8 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
       recentInteractions: c.interactions.slice(-5).reverse(),
       linkedProjects: c.linkedProjects.map(id => projectMap.get(id) ?? id),
       notes: c.notes,
+      hasEmail: !!c.email,
+      hasPhone: !!c.phone,
     }));
 
     try {
@@ -218,7 +225,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
 
       // Record in outreach history
       setHistory(prev => [
-        { contactId: contact.id, sentAt: new Date().toISOString(), subject },
+        { contactId: contact.id, sentAt: new Date().toISOString(), subject, channel: 'email' as Channel },
         ...prev,
       ]);
 
@@ -237,6 +244,59 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
       setSendingId(null);
     }
   }, [getDraftForContact, editedSubjects, editedMessages, sendEmail, setContacts, setHistory, staleContacts, toast]);
+
+  // ─── Copy iMessage draft ─────────────────────────────────────────────────
+
+  const handleCopyText = useCallback(async (contact: Contact) => {
+    const draft = getDraftForContact(contact.id);
+    const message = getEditedMessage(contact.id, draft);
+    if (!message) return;
+
+    try {
+      await navigator.clipboard.writeText(message);
+
+      // Update contact's lastContacted + add interaction
+      const today = todayStr();
+      const subject = getEditedSubject(contact.id, draft);
+      setContacts(prev =>
+        prev.map(c =>
+          c.id === contact.id
+            ? {
+                ...c,
+                lastContacted: today,
+                followUpNeeded: false,
+                interactions: [
+                  ...c.interactions,
+                  {
+                    id: generateId(),
+                    date: today,
+                    type: 'imessage',
+                    notes: `Outreach text: ${subject}`,
+                  } satisfies ContactInteraction,
+                ],
+              }
+            : c
+        )
+      );
+
+      // Record in outreach history
+      setHistory(prev => [
+        { contactId: contact.id, sentAt: new Date().toISOString(), subject: subject || '(text)', channel: 'imessage' as Channel },
+        ...prev,
+      ]);
+
+      // Remove draft & dismiss
+      setDrafts(prev => prev.filter(d => d.contactId !== contact.id));
+      setDismissedIds(prev => new Set([...prev, contact.id]));
+
+      const remaining = staleContacts.filter(c => c.id !== contact.id);
+      setSelectedContactId(remaining[0]?.id ?? null);
+
+      toast.success(`Text copied — open Messages and send to ${contact.name}`);
+    } catch (err: any) {
+      toast.error('Failed to copy to clipboard');
+    }
+  }, [getDraftForContact, editedSubjects, editedMessages, setContacts, setHistory, staleContacts, toast]);
 
   // ─── Skip contact ─────────────────────────────────────────────────────────
 
@@ -263,6 +323,24 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
 
   const selectedContact = staleContacts.find(c => c.id === selectedContactId);
   const selectedDraft = selectedContact ? getDraftForContact(selectedContact.id) : undefined;
+
+  // ─── Channel helpers ──────────────────────────────────────────────────────
+
+  const getContactChannels = (contact: Contact): Channel[] => {
+    const channels: Channel[] = [];
+    if (contact.email) channels.push('email');
+    if (contact.phone) channels.push('imessage');
+    return channels;
+  };
+
+  const channelIcon = (ch: Channel) =>
+    ch === 'imessage' ? <MessageSquare size={10} /> : <Mail size={10} />;
+
+  const channelLabel = (ch: Channel) =>
+    ch === 'imessage' ? 'iMessage' : 'Email';
+
+  const channelColor = (ch: Channel) =>
+    ch === 'imessage' ? { bg: 'rgba(52,199,89,0.15)', text: '#34c759' } : { bg: 'rgba(52,211,153,0.15)', text: '#34d399' };
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -327,7 +405,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
               }}
             >
               {loading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {loading ? 'Generating…' : 'Generate Drafts'}
+              {loading ? 'Generating...' : 'Generate Drafts'}
             </button>
           </div>
         </div>
@@ -339,9 +417,9 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
           </div>
         )}
 
-        {contactsWithoutEmail > 0 && (
+        {contactsWithNoChannel > 0 && (
           <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-            {contactsWithoutEmail} stale contact{contactsWithoutEmail > 1 ? 's' : ''} without email excluded
+            {contactsWithNoChannel} stale contact{contactsWithNoChannel > 1 ? 's' : ''} without email or phone excluded
           </p>
         )}
       </div>
@@ -357,7 +435,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
             No stale contacts
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            All contacts with emails have been reached within the last {staleDays} days.
+            All contacts have been reached within the last {staleDays} days.
           </p>
         </div>
       ) : (
@@ -374,8 +452,9 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
               {staleContacts.map(contact => {
                 const days = differenceInDays(new Date(), parseISO(contact.lastContacted));
                 const health = calcRelationshipHealth(contact.lastContacted);
-                const hasDraft = !!getDraftForContact(contact.id);
+                const draft = getDraftForContact(contact.id);
                 const isSelected = contact.id === selectedContactId;
+                const channels = getContactChannels(contact);
 
                 return (
                   <button
@@ -393,12 +472,16 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                           <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                             {contact.name}
                           </span>
-                          {hasDraft && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                              style={{ backgroundColor: 'rgba(52,211,153,0.15)', color: '#34d399' }}>
-                              draft
-                            </span>
-                          )}
+                          {draft && (() => {
+                            const cc = channelColor(draft.channel);
+                            return (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1"
+                                style={{ backgroundColor: cc.bg, color: cc.text }}>
+                                {channelIcon(draft.channel)}
+                                draft
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           {contact.company && (
@@ -409,6 +492,14 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                           )}
                           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                             {days}d ago
+                          </span>
+                          {/* Channel indicators */}
+                          <span className="flex items-center gap-1">
+                            {channels.map(ch => (
+                              <span key={ch} className="text-[10px]" style={{ color: 'var(--text-muted)' }} title={channelLabel(ch)}>
+                                {channelIcon(ch)}
+                              </span>
+                            ))}
                           </span>
                         </div>
                       </div>
@@ -445,11 +536,24 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                 {/* Contact header */}
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      {selectedContact.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {selectedContact.name}
+                      </h3>
+                      {/* Channel badge */}
+                      {(() => {
+                        const cc = channelColor(selectedDraft.channel);
+                        return (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1"
+                            style={{ backgroundColor: cc.bg, color: cc.text }}>
+                            {channelIcon(selectedDraft.channel)}
+                            {channelLabel(selectedDraft.channel)}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {selectedContact.email}
+                      {selectedDraft.channel === 'imessage' ? selectedContact.phone : selectedContact.email}
                       {selectedContact.company && ` · ${selectedContact.company}`}
                     </p>
                   </div>
@@ -482,10 +586,10 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                   </div>
                 )}
 
-                {/* Subject */}
+                {/* Subject (shown for both channels — serves as a label for iMessage) */}
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>
-                    Subject
+                    {selectedDraft.channel === 'imessage' ? 'Topic' : 'Subject'}
                   </label>
                   <input
                     type="text"
@@ -503,12 +607,12 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                 {/* Message body */}
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>
-                    Message
+                    {selectedDraft.channel === 'imessage' ? 'Text Message' : 'Message'}
                   </label>
                   <textarea
                     value={getEditedMessage(selectedContact.id, selectedDraft)}
                     onChange={e => setEditedMessages(prev => ({ ...prev, [selectedContact.id]: e.target.value }))}
-                    rows={6}
+                    rows={selectedDraft.channel === 'imessage' ? 3 : 6}
                     className="w-full text-sm rounded-lg px-3 py-2 outline-none resize-y transition-colors"
                     style={{
                       backgroundColor: 'var(--bg)',
@@ -520,7 +624,30 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 pt-1">
-                  {gmailConnected ? (
+                  {selectedDraft.channel === 'imessage' ? (
+                    <>
+                      {/* Copy text for iMessage */}
+                      <button
+                        onClick={() => handleCopyText(selectedContact)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                        style={{ backgroundColor: '#34c759', color: '#fff' }}
+                      >
+                        <Copy size={14} />
+                        Copy & Mark Sent
+                      </button>
+                      {/* Open in Messages (macOS) */}
+                      {selectedContact.phone && (
+                        <a
+                          href={`sms:${selectedContact.phone}`}
+                          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg transition-colors"
+                          style={{ backgroundColor: 'var(--bg)', color: 'var(--text-muted)' }}
+                        >
+                          <MessageSquare size={14} />
+                          Open Messages
+                        </a>
+                      )}
+                    </>
+                  ) : gmailConnected ? (
                     <button
                       onClick={() => handleSend(selectedContact)}
                       disabled={sendingId === selectedContact.id || gmailLoading}
@@ -532,7 +659,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                       ) : (
                         <Send size={14} />
                       )}
-                      {sendingId === selectedContact.id ? 'Sending…' : 'Send via Gmail'}
+                      {sendingId === selectedContact.id ? 'Sending...' : 'Send via Gmail'}
                     </button>
                   ) : (
                     <button
@@ -561,7 +688,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                   No draft yet for {selectedContact.name}
                 </p>
                 <p className="text-xs mt-1 mb-3" style={{ color: 'var(--text-muted)' }}>
-                  Generate drafts to get a personalized re-engagement email.
+                  Generate drafts to get a personalized re-engagement message.
                 </p>
                 <button
                   onClick={() => generateDrafts([selectedContact.id])}
@@ -569,7 +696,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
                   className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
                   style={{ backgroundColor: 'var(--accent, #f59e0b)', color: '#000' }}
                 >
-                  {loading ? 'Generating…' : 'Generate Draft'}
+                  {loading ? 'Generating...' : 'Generate Draft'}
                 </button>
               </div>
             ) : (
@@ -602,9 +729,14 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {history.slice(0, 20).map((entry, i) => {
                 const contact = contacts.find(c => c.id === entry.contactId);
+                const ch = entry.channel ?? 'email';
                 return (
                   <div key={i} className="px-4 py-2.5 flex items-center gap-3">
-                    <Check size={12} style={{ color: '#34d399' }} />
+                    {ch === 'imessage' ? (
+                      <MessageSquare size={12} style={{ color: '#34c759' }} />
+                    ) : (
+                      <Check size={12} style={{ color: '#34d399' }} />
+                    )}
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-medium truncate block" style={{ color: 'var(--text-primary)' }}>
                         {contact?.name ?? 'Unknown'}
