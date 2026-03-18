@@ -1,5 +1,5 @@
-import React, { useState, useRef, KeyboardEvent, useEffect } from 'react';
-import { X, Sparkles, Save, Loader2, Mic, MicOff, Circle } from 'lucide-react';
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import { X, Sparkles, Save, Loader2, Mic, MicOff, Square, Circle } from 'lucide-react';
 import type { Project, MeetingNote, MeetingAISummary } from '../../types';
 
 interface Props {
@@ -12,10 +12,29 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Check for Web Speech API support
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.split(',')[1]); // strip "data:audio/webm;base64," prefix
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function formatSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
 const hasSpeechAPI =
   typeof window !== 'undefined' &&
   (('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window));
+
+type RecordingState = 'idle' | 'recording-groq' | 'transcribing' | 'recording-speech' | 'error';
 
 export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
   const [title, setTitle] = useState('');
@@ -25,45 +44,149 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
   const [rawNotes, setRawNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const attendeeRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const notesRef = useRef<HTMLTextAreaElement>(null);
 
-  // Cleanup on unmount
+  // Recording state
+  const [recordState, setRecordState] = useState<RecordingState>('idle');
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  // Once we know Groq is unavailable (503/429), skip straight to Web Speech next time
+  const groqUnavailableRef = useRef(false);
+
+  const attendeeRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const speechRef = useRef<any>(null);
+
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop();
+      clearInterval(timerRef.current!);
+      mediaRecorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      speechRef.current?.stop();
     };
   }, []);
 
+  // ── Attendees ────────────────────────────────────────────────────────────────
+
   function addAttendee(value: string) {
     const trimmed = value.trim().replace(/,+$/, '').trim();
-    if (trimmed && !attendees.includes(trimmed)) {
-      setAttendees(prev => [...prev, trimmed]);
-    }
+    if (trimmed && !attendees.includes(trimmed)) setAttendees(prev => [...prev, trimmed]);
     setAttendeeInput('');
   }
 
   function handleAttendeeKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      addAttendee(attendeeInput);
-    } else if (e.key === 'Backspace' && attendeeInput === '' && attendees.length > 0) {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addAttendee(attendeeInput); }
+    else if (e.key === 'Backspace' && attendeeInput === '' && attendees.length > 0) {
       setAttendees(prev => prev.slice(0, -1));
     }
   }
 
-  function toggleRecording() {
-    if (isRecording) {
-      recognitionRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
+  // ── Timer ────────────────────────────────────────────────────────────────────
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+  function startTimer() {
+    setRecordSeconds(0);
+    timerRef.current = setInterval(() => setRecordSeconds(s => s + 1), 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerRef.current!);
+    timerRef.current = null;
+  }
+
+  // ── Groq recording (MediaRecorder → /api/transcribe) ─────────────────────────
+
+  async function startGroqRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        stopTimer();
+        await transcribeWithGroq(mimeType);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250); // 250ms chunks
+      setRecordState('recording-groq');
+      setStatusMsg(null);
+      startTimer();
+    } catch {
+      // Mic permission denied — fall back to Web Speech if available
+      if (hasSpeechAPI) startWebSpeech();
+      else setStatusMsg('Microphone access denied.');
+    }
+  }
+
+  function stopGroqRecording() {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+  }
+
+  async function transcribeWithGroq(mimeType: string) {
+    setRecordState('transcribing');
+    setStatusMsg('Transcribing with Groq Whisper…');
+
+    try {
+      const blob = new Blob(audioChunksRef.current, { type: mimeType });
+      const base64 = await blobToBase64(blob);
+
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64, mimeType }),
+      });
+
+      if (res.status === 503 || res.status === 429) {
+        // Groq not configured or rate-limited → switch to Web Speech
+        groqUnavailableRef.current = true;
+        setStatusMsg(
+          res.status === 429
+            ? 'Groq rate limit reached — switching to live transcription. Speak now.'
+            : 'Groq not configured — switching to live transcription. Speak now.'
+        );
+        setRecordState('idle');
+        startWebSpeech();
+        return;
+      }
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      if (data.text) {
+        setRawNotes(prev => (prev ? prev + '\n' + data.text : data.text));
+        setStatusMsg('Transcription complete.');
+      } else {
+        setStatusMsg('No speech detected.');
+      }
+    } catch {
+      setStatusMsg('Transcription failed — check console. Try again or type notes manually.');
+    } finally {
+      setRecordState('idle');
+    }
+  }
+
+  // ── Web Speech API (live, streaming) ─────────────────────────────────────────
+
+  function startWebSpeech() {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SR();
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
@@ -72,25 +195,61 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
           const text = event.results[i][0].transcript.trim();
-          if (text) {
-            setRawNotes(prev => (prev ? prev + ' ' + text : text));
-          }
+          if (text) setRawNotes(prev => (prev ? prev + ' ' + text : text));
         }
       }
     };
 
     recognition.onerror = () => {
-      setIsRecording(false);
+      setRecordState('idle');
+      stopTimer();
+      setStatusMsg('Live transcription stopped.');
     };
 
     recognition.onend = () => {
-      setIsRecording(false);
+      setRecordState('idle');
+      stopTimer();
     };
 
-    recognitionRef.current = recognition;
+    speechRef.current = recognition;
     recognition.start();
-    setIsRecording(true);
+    setRecordState('recording-speech');
+    setStatusMsg('Live transcription active. Speak now.');
+    startTimer();
   }
+
+  function stopWebSpeech() {
+    speechRef.current?.stop();
+    speechRef.current = null;
+    stopTimer();
+    setRecordState('idle');
+  }
+
+  // ── Main toggle ───────────────────────────────────────────────────────────────
+
+  function handleRecordToggle() {
+    if (recordState === 'recording-groq') {
+      stopGroqRecording();
+      return;
+    }
+    if (recordState === 'recording-speech') {
+      stopWebSpeech();
+      return;
+    }
+    // Start: prefer Groq unless we know it's unavailable
+    if (groqUnavailableRef.current || !hasSpeechAPI) {
+      // Groq known unavailable and no Web Speech → nothing to do (shouldn't happen)
+      // Groq known unavailable → use Web Speech
+      if (groqUnavailableRef.current && hasSpeechAPI) { startWebSpeech(); return; }
+    }
+    // Default: try Groq first
+    startGroqRecording();
+  }
+
+  const isRecording = recordState === 'recording-groq' || recordState === 'recording-speech';
+  const isTranscribing = recordState === 'transcribing';
+
+  // ── Save / Summarize ──────────────────────────────────────────────────────────
 
   function buildNote(): MeetingNote {
     return {
@@ -105,8 +264,7 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
 
   async function handleSaveOnly() {
     setSaving(true);
-    const note = buildNote();
-    onSave(note);
+    onSave(buildNote());
     setSaving(false);
     onClose();
   }
@@ -125,7 +283,6 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
           rawNotes: note.rawNotes,
         }),
       });
-
       if (res.ok) {
         const data = await res.json();
         const aiSummary: MeetingAISummary = {
@@ -148,6 +305,18 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
 
   const canSave = rawNotes.trim().length > 0;
   const isLoading = saving || summarizing;
+
+  // ── Recording button label ────────────────────────────────────────────────────
+
+  function recordButtonLabel() {
+    if (recordState === 'recording-groq') return `Stop  ${formatSeconds(recordSeconds)}`;
+    if (recordState === 'recording-speech') return `Stop  ${formatSeconds(recordSeconds)}`;
+    if (recordState === 'transcribing') return 'Transcribing…';
+    if (groqUnavailableRef.current) return 'Record (live)';
+    return 'Record';
+  }
+
+  const showRecordButton = hasSpeechAPI || true; // always show (Groq works even without Web Speech)
 
   return (
     <div
@@ -224,14 +393,11 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
               Attendees{' '}
-              <span style={{ fontWeight: 400 }}>(press Enter or comma to add)</span>
+              <span style={{ fontWeight: 400 }}>(Enter or comma to add)</span>
             </label>
             <div
               className="flex flex-wrap gap-1.5 px-3 py-2 rounded min-h-[38px] cursor-text"
-              style={{
-                backgroundColor: 'var(--bg-card)',
-                border: '1px solid var(--border)',
-              }}
+              style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}
               onClick={() => attendeeRef.current?.focus()}
             >
               {attendees.map(name => (
@@ -242,12 +408,7 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
                 >
                   {name}
                   {!isLoading && (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        setAttendees(prev => prev.filter(a => a !== name));
-                      }}
-                    >
+                    <button onClick={e => { e.stopPropagation(); setAttendees(prev => prev.filter(a => a !== name)); }}>
                       <X size={10} />
                     </button>
                   )}
@@ -268,79 +429,95 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
             </div>
           </div>
 
-          {/* Notes + Voice Recording */}
+          {/* Notes + Record button */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                Notes{' '}
-                <span style={{ fontWeight: 400 }}>(required)</span>
+                Notes <span style={{ fontWeight: 400 }}>(required)</span>
               </label>
-              {hasSpeechAPI && (
-                <button
-                  type="button"
-                  onClick={toggleRecording}
-                  disabled={isLoading}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors duration-200 disabled:opacity-40"
-                  style={
-                    isRecording
-                      ? {
-                          backgroundColor: 'rgba(239,68,68,0.15)',
-                          border: '1px solid rgba(239,68,68,0.4)',
-                          color: '#f87171',
-                        }
-                      : {
-                          backgroundColor: 'var(--bg-card)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text-muted)',
-                        }
-                  }
-                  onMouseEnter={e => {
-                    if (!isRecording && !isLoading)
-                      e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={e => {
-                    if (!isRecording) e.currentTarget.style.color = 'var(--text-muted)';
-                  }}
-                  title={isRecording ? 'Stop recording' : 'Record & transcribe audio'}
-                >
-                  {isRecording ? (
-                    <>
-                      <Circle size={8} className="animate-pulse" style={{ fill: '#f87171' }} />
-                      <MicOff size={12} />
-                      <span>Stop</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic size={12} />
-                      <span>Record</span>
-                    </>
-                  )}
-                </button>
-              )}
+
+              <button
+                type="button"
+                onClick={handleRecordToggle}
+                disabled={isLoading || isTranscribing}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded transition-colors duration-200 disabled:opacity-40"
+                style={
+                  isRecording
+                    ? {
+                        backgroundColor: 'rgba(239,68,68,0.15)',
+                        border: '1px solid rgba(239,68,68,0.4)',
+                        color: '#f87171',
+                      }
+                    : isTranscribing
+                    ? {
+                        backgroundColor: 'rgba(250,204,21,0.1)',
+                        border: '1px solid rgba(250,204,21,0.3)',
+                        color: '#facc15',
+                      }
+                    : {
+                        backgroundColor: 'var(--bg-card)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-muted)',
+                      }
+                }
+                onMouseEnter={e => {
+                  if (!isRecording && !isTranscribing && !isLoading)
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={e => {
+                  if (!isRecording && !isTranscribing)
+                    e.currentTarget.style.color = 'var(--text-muted)';
+                }}
+                title={
+                  groqUnavailableRef.current
+                    ? 'Live transcription (Web Speech API)'
+                    : 'Record audio — transcribed by Groq Whisper, falls back to live transcription'
+                }
+              >
+                {isTranscribing ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : isRecording ? (
+                  <>
+                    <Circle size={7} className="animate-pulse" style={{ fill: '#f87171' }} />
+                    <Square size={11} />
+                  </>
+                ) : (
+                  <Mic size={12} />
+                )}
+                <span>{recordButtonLabel()}</span>
+              </button>
             </div>
 
-            {isRecording && (
+            {/* Status message */}
+            {statusMsg && (
               <div
                 className="flex items-center gap-2 px-3 py-2 rounded mb-2 text-xs"
                 style={{
-                  backgroundColor: 'rgba(239,68,68,0.08)',
-                  border: '1px solid rgba(239,68,68,0.25)',
-                  color: '#f87171',
+                  backgroundColor: isRecording
+                    ? 'rgba(239,68,68,0.08)'
+                    : 'rgba(250,204,21,0.06)',
+                  border: isRecording
+                    ? '1px solid rgba(239,68,68,0.25)'
+                    : '1px solid rgba(250,204,21,0.2)',
+                  color: isRecording ? '#f87171' : '#facc15',
                 }}
               >
-                <Circle size={6} className="animate-pulse" style={{ fill: '#f87171' }} />
-                Listening… speak clearly. Transcription will appear in notes below.
+                {isRecording && (
+                  <Circle size={6} className="animate-pulse shrink-0" style={{ fill: '#f87171' }} />
+                )}
+                {statusMsg}
               </div>
             )}
 
             <textarea
-              ref={notesRef}
               value={rawNotes}
               onChange={e => setRawNotes(e.target.value)}
               placeholder={
                 isRecording
-                  ? 'Transcription will appear here as you speak…'
-                  : 'Paste or type your meeting notes here, or use the Record button to transcribe audio.'
+                  ? recordState === 'recording-speech'
+                    ? 'Transcription appears here as you speak…'
+                    : 'Recording audio — click Stop when done, Whisper will transcribe it.'
+                  : 'Paste or type your meeting notes, or click Record to transcribe audio.'
               }
               disabled={isLoading}
               rows={8}
@@ -355,6 +532,13 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
                 transition: 'border-color 0.2s',
               }}
             />
+
+            {/* Groq vs fallback hint */}
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              {groqUnavailableRef.current
+                ? 'Using live transcription (Web Speech API). Add GROQ_API_KEY for higher accuracy.'
+                : 'Audio transcribed by Groq Whisper. Falls back to live transcription if unavailable.'}
+            </p>
           </div>
         </div>
 
