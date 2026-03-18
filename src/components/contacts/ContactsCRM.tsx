@@ -222,9 +222,12 @@ interface ContactCardProps {
   onSendEmail?: () => void;
   onViewEmails?: () => void;
   onUpdateTags: (tags: ContactTag[]) => void;
+  mergeMode?: boolean;
+  isSelectedForMerge?: boolean;
+  onToggleMerge?: () => void;
 }
 
-function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails, onUpdateTags }: ContactCardProps) {
+function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogInteraction, onSendEmail, onViewEmails, onUpdateTags, mergeMode, isSelectedForMerge, onToggleMerge }: ContactCardProps) {
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const health = calcRelationshipHealth(contact.lastContacted);
   const daysAgo = useMemo(() => {
@@ -244,12 +247,29 @@ function ContactCard({ contact, contactTags, onEdit, onDelete, onDetail, onLogIn
   }, [contact.birthday]);
 
   return (
-    <div className="caesar-card group flex flex-col gap-3 hover:border-blue-500/40 transition-all duration-200">
+    <div
+      className={`caesar-card group flex flex-col gap-3 transition-all duration-200 ${mergeMode ? 'cursor-pointer' : 'hover:border-blue-500/40'} ${isSelectedForMerge ? 'ring-2 ring-violet-500 border-violet-500/60' : ''}`}
+      onClick={mergeMode ? onToggleMerge : undefined}
+    >
+      {/* Merge mode checkbox overlay */}
+      {mergeMode && (
+        <div className="flex items-center gap-2 pb-1 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div
+            className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors ${isSelectedForMerge ? 'bg-violet-500' : 'border'}`}
+            style={isSelectedForMerge ? {} : { borderColor: 'var(--border)' }}
+          >
+            {isSelectedForMerge && <Check size={10} className="text-white" />}
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {isSelectedForMerge ? 'Selected for merge' : 'Click to select'}
+          </span>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <button
-            onClick={onDetail}
+            onClick={mergeMode ? undefined : onDetail}
             className="text-left text-base font-bold leading-tight truncate block w-full transition-colors duration-200"
             style={{ color: 'var(--text-primary)' }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
@@ -772,6 +792,220 @@ function FlashcardView({
         </button>
       </div>
     </div>
+  );
+}
+
+// ─── MERGE CONTACTS MODAL ─────────────────────────────────────────────────────
+
+interface MergeContactsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  contactA: Contact;
+  contactB: Contact;
+  onMerge: (merged: Contact, deleteId: string) => void;
+}
+
+type MergeChoice<T> = 'a' | 'b' | T;
+
+function MergeContactsModal({ isOpen, onClose, contactA, contactB, onMerge }: MergeContactsModalProps) {
+  const fields: Array<{ key: keyof Contact; label: string }> = [
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'phone', label: 'Phone' },
+    { key: 'company', label: 'Company' },
+    { key: 'relationship', label: 'Relationship' },
+    { key: 'linkedin', label: 'LinkedIn' },
+    { key: 'address', label: 'Address' },
+    { key: 'birthday', label: 'Birthday' },
+    { key: 'anniversary', label: 'Anniversary' },
+    { key: 'followUpDate', label: 'Follow-up Date' },
+    { key: 'notes', label: 'Notes' },
+  ];
+
+  // Default: prefer whichever side has a non-empty value (A wins ties)
+  const defaultChoice = (key: keyof Contact): 'a' | 'b' => {
+    const va = contactA[key];
+    const vb = contactB[key];
+    if (!va && vb) return 'b';
+    return 'a';
+  };
+
+  const [choices, setChoices] = useState<Record<string, 'a' | 'b'>>(() =>
+    Object.fromEntries(fields.map(f => [f.key, defaultChoice(f.key)]))
+  );
+  const [primaryId, setPrimaryId] = useState<'a' | 'b'>('a');
+
+  const pick = (side: 'a' | 'b') => (key: keyof Contact) => {
+    const v = side === 'a' ? contactA[key] : contactB[key];
+    return typeof v === 'string' ? v : '';
+  };
+
+  const handleConfirm = () => {
+    const a = contactA;
+    const b = contactB;
+    const get = (key: keyof Contact) => {
+      const side = choices[key as string] ?? 'a';
+      return side === 'a' ? a[key] : b[key];
+    };
+
+    // Merge tags (union, deduplicated)
+    const mergedTags = Array.from(new Set([...a.tags, ...b.tags]));
+    // Combine interactions, sorted newest-first
+    const mergedInteractions = [...a.interactions, ...b.interactions].sort(
+      (x, y) => (x.date < y.date ? 1 : -1)
+    );
+    // Combine linkedProjects (deduped)
+    const mergedProjects = Array.from(new Set([...a.linkedProjects, ...b.linkedProjects]));
+
+    const keepId = primaryId === 'a' ? a.id : b.id;
+    const deleteId = primaryId === 'a' ? b.id : a.id;
+
+    const merged: Contact = {
+      id: keepId,
+      name: (get('name') as string) || a.name,
+      email: get('email') as string | undefined,
+      phone: get('phone') as string | undefined,
+      company: get('company') as string | undefined,
+      address: get('address') as string | undefined,
+      mapLat: primaryId === 'a' ? a.mapLat : b.mapLat,
+      mapLng: primaryId === 'a' ? a.mapLng : b.mapLng,
+      mapLabel: primaryId === 'a' ? a.mapLabel : b.mapLabel,
+      metAt: a.metAt || b.metAt,
+      linkedin: get('linkedin') as string | undefined,
+      googleResourceName: a.googleResourceName || b.googleResourceName,
+      relationship: (get('relationship') as string) || '',
+      tags: mergedTags,
+      lastContacted: a.lastContacted > b.lastContacted ? a.lastContacted : b.lastContacted,
+      followUpDate: (get('followUpDate') as string | undefined) || undefined,
+      followUpNeeded: a.followUpNeeded || b.followUpNeeded,
+      birthday: get('birthday') as string | undefined,
+      anniversary: get('anniversary') as string | undefined,
+      notes: (get('notes') as string) || '',
+      interactions: mergedInteractions,
+      linkedProjects: mergedProjects,
+      aiEnrichment: primaryId === 'a' ? a.aiEnrichment : b.aiEnrichment,
+    };
+
+    onMerge(merged, deleteId);
+  };
+
+  const renderValue = (contact: Contact, key: keyof Contact) => {
+    const v = contact[key];
+    if (v === undefined || v === null || v === '') return <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>empty</span>;
+    if (typeof v === 'boolean') return <span>{v ? 'Yes' : 'No'}</span>;
+    return <span className="truncate">{String(v)}</span>;
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Merge Contacts" size="lg">
+      <div className="flex flex-col gap-5">
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          Choose which value to keep for each field. Tags and interactions are always combined. The primary contact's ID is preserved.
+        </p>
+
+        {/* Primary contact selector */}
+        <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: 'var(--bg-elevated)' }}>
+          <span className="text-xs font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: 'var(--text-muted)' }}>Primary (keeps ID)</span>
+          <div className="flex gap-2 flex-1">
+            {(['a', 'b'] as const).map(side => (
+              <button
+                key={side}
+                type="button"
+                onClick={() => setPrimaryId(side)}
+                className="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all border"
+                style={{
+                  borderColor: primaryId === side ? '#8b5cf6' : 'var(--border)',
+                  backgroundColor: primaryId === side ? 'rgba(139,92,246,0.15)' : 'transparent',
+                  color: primaryId === side ? '#a78bfa' : 'var(--text-secondary)',
+                }}
+              >
+                {side === 'a' ? contactA.name : contactB.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Field-by-field comparison */}
+        <div className="flex flex-col gap-2">
+          {fields.map(({ key, label }) => {
+            const va = contactA[key];
+            const vb = contactB[key];
+            const bothEmpty = (va === undefined || va === null || va === '') && (vb === undefined || vb === null || vb === '');
+            if (bothEmpty) return null;
+            const same = String(va ?? '') === String(vb ?? '');
+            return (
+              <div key={key} className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  {same && <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>identical</span>}
+                </div>
+                {same ? (
+                  <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>{renderValue(contactA, key)}</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['a', 'b'] as const).map(side => {
+                      const contact = side === 'a' ? contactA : contactB;
+                      const selected = choices[key] === side;
+                      return (
+                        <button
+                          key={side}
+                          type="button"
+                          onClick={() => setChoices(c => ({ ...c, [key]: side }))}
+                          className="text-left p-2 rounded-lg border transition-all text-xs"
+                          style={{
+                            borderColor: selected ? '#8b5cf6' : 'var(--border)',
+                            backgroundColor: selected ? 'rgba(139,92,246,0.12)' : 'var(--bg-elevated)',
+                            color: selected ? '#c4b5fd' : 'var(--text-secondary)',
+                          }}
+                        >
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <div
+                              className={`w-3 h-3 rounded-full border flex-shrink-0 transition-colors`}
+                              style={{ borderColor: selected ? '#8b5cf6' : 'var(--text-muted)', backgroundColor: selected ? '#8b5cf6' : 'transparent' }}
+                            />
+                            <span className="font-medium opacity-60">{side === 'a' ? contactA.name : contactB.name}</span>
+                          </div>
+                          <div className="truncate">{renderValue(contact, key)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Tags — always combined, read-only preview */}
+          <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Tags (combined)</span>
+            <div className="flex flex-wrap gap-1">
+              {Array.from(new Set([...contactA.tags, ...contactB.tags])).map(tag => (
+                <span key={tag} className="px-2 py-0.5 rounded-full text-xs" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)' }}>{tag}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Interactions — combined count */}
+          <div className="rounded-xl border p-3 flex items-center justify-between" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Interactions (combined)</span>
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{contactA.interactions.length + contactB.interactions.length} total</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="caesar-btn-ghost">Cancel</button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="caesar-btn-primary flex items-center gap-2"
+            style={{ backgroundColor: '#7c3aed' }}
+          >
+            <Check size={14} />
+            Merge Contacts
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1785,6 +2019,38 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
   const [composeModalOpen, setComposeModalOpen] = useState(false);
   const [threadModalOpen, setThreadModalOpen] = useState(false);
 
+  // Merge mode
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSelectedIds, setMergeSelectedIds] = useState<string[]>([]);
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+
+  const toggleMergeSelect = (id: string) => {
+    setMergeSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= 2) return prev; // cap at 2
+      return [...prev, id];
+    });
+  };
+
+  const exitMergeMode = () => {
+    setMergeMode(false);
+    setMergeSelectedIds([]);
+  };
+
+  const handleMerge = (merged: Contact, deleteId: string) => {
+    setContacts(prev =>
+      prev
+        .filter(c => c.id !== deleteId)
+        .map(c => c.id === merged.id ? merged : c)
+    );
+    setMergeModalOpen(false);
+    exitMergeMode();
+    toast.success('Contacts merged');
+  };
+
+  const mergeContactA = contacts.find(c => c.id === mergeSelectedIds[0]) ?? null;
+  const mergeContactB = contacts.find(c => c.id === mergeSelectedIds[1]) ?? null;
+
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
   // Filtered contacts
@@ -2268,6 +2534,22 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
             Manage Tags
           </button>
           <button
+            onClick={() => {
+              if (mergeMode) {
+                exitMergeMode();
+              } else {
+                setMergeMode(true);
+                setViewMode('grid');
+              }
+            }}
+            className={`caesar-btn flex items-center gap-2 ${mergeMode ? 'ring-2 ring-violet-500' : ''}`}
+            style={mergeMode ? { backgroundColor: 'rgba(139,92,246,0.15)', color: '#a78bfa' } : {}}
+            title="Select two contacts to merge them"
+          >
+            <Shuffle size={15} />
+            {mergeMode ? 'Cancel Merge' : 'Merge'}
+          </button>
+          <button
             onClick={() => setAddModalOpen(true)}
             className="caesar-btn-primary flex items-center gap-2"
           >
@@ -2418,10 +2700,37 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
       </div>
 
       {/* Results count (grid only) */}
-      {viewMode === 'grid' && (search || filterTag || filterFollowUp) && (
+      {viewMode === 'grid' && (search || filterTag || filterFollowUp) && !mergeMode && (
         <p className="text-xs -mt-2" style={{ color: 'var(--text-muted)' }}>
           Showing {filtered.length} of {contacts.length} contacts
         </p>
+      )}
+
+      {/* Merge mode banner */}
+      {mergeMode && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl border" style={{ backgroundColor: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.4)' }}>
+          <div className="flex items-center gap-2">
+            <Shuffle size={15} style={{ color: '#a78bfa' }} />
+            <span className="text-sm font-medium" style={{ color: '#c4b5fd' }}>
+              {mergeSelectedIds.length === 0 && 'Select two contacts to merge'}
+              {mergeSelectedIds.length === 1 && 'Select one more contact'}
+              {mergeSelectedIds.length === 2 && `Ready to merge: ${mergeContactA?.name} + ${mergeContactB?.name}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={exitMergeMode} className="text-xs" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+            {mergeSelectedIds.length === 2 && (
+              <button
+                onClick={() => setMergeModalOpen(true)}
+                className="caesar-btn-primary text-sm flex items-center gap-1.5 px-4 py-2"
+                style={{ backgroundColor: '#7c3aed' }}
+              >
+                <Check size={13} />
+                Merge
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Outreach Coach view */}
@@ -2475,6 +2784,9 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
               onSendEmail={() => openCompose(contact)}
               onViewEmails={() => openThread(contact)}
               onUpdateTags={(tags) => setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, tags } : c))}
+              mergeMode={mergeMode}
+              isSelectedForMerge={mergeSelectedIds.includes(contact.id)}
+              onToggleMerge={() => toggleMergeSelect(contact.id)}
             />
           ))}
         </div>
@@ -2520,6 +2832,9 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
                         onSendEmail={() => openCompose(contact)}
                         onViewEmails={() => openThread(contact)}
                         onUpdateTags={(tags) => setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, tags } : c))}
+                        mergeMode={mergeMode}
+                        isSelectedForMerge={mergeSelectedIds.includes(contact.id)}
+                        onToggleMerge={() => toggleMergeSelect(contact.id)}
                       />
                     ))}
                   </div>
@@ -2598,6 +2913,17 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
           toName={selectedContact.name}
           onSent={() => setComposeModalOpen(false)}
           onClose={() => setComposeModalOpen(false)}
+        />
+      )}
+
+      {/* Merge Contacts Modal */}
+      {mergeModalOpen && mergeContactA && mergeContactB && (
+        <MergeContactsModal
+          isOpen={mergeModalOpen}
+          onClose={() => setMergeModalOpen(false)}
+          contactA={mergeContactA}
+          contactB={mergeContactB}
+          onMerge={handleMerge}
         />
       )}
 

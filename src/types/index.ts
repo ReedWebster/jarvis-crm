@@ -296,6 +296,7 @@ export interface Note {
   linkedProjectId?: string;
   linkedContactId?: string;
   linkedGoalId?: string;
+  linkedCourseId?: string;
   isMeetingNote: boolean;
   meetingAttendees?: string;
   meetingActionItems?: string;

@@ -40,6 +40,7 @@ import { ProjectsTracker } from './components/projects/ProjectsTracker';
 import { Calendar } from './components/time/TimeTracker';
 import ContactsCRM from './components/contacts/ContactsCRM';
 import AcademicTracker from './components/academic/AcademicTracker';
+import { ClassNotes } from './components/academic/ClassNotes';
 import { FinancialSnapshot } from './components/financial/FinancialSnapshot';
 import { GoalHierarchy } from './components/goals/GoalHierarchy';
 import { ReadingPipeline } from './components/reading/ReadingPipeline';
@@ -80,6 +81,7 @@ const SECTION_TITLES: Record<NavSection, string> = {
   time: 'Calendar',
   contacts: 'Contacts CRM',
   academic: 'Academic Tracker',
+  'class-notes': 'Class Notes',
   financial: 'Financial Snapshot',
   goals: 'Goal Hierarchy',
   reading: 'Reading Pipeline',
@@ -387,7 +389,22 @@ function MainApp() {
           />
         );
       case 'academic':
-        return <AcademicTracker courses={courses} setCourses={setCourses} />;
+        return (
+          <AcademicTracker
+            courses={courses}
+            setCourses={setCourses}
+            onNavigateToClassNotes={() => setActiveSection('class-notes')}
+          />
+        );
+      case 'class-notes':
+        return (
+          <ClassNotes
+            notes={notes}
+            setNotes={setNotes}
+            courses={courses}
+            onBack={() => setActiveSection('academic')}
+          />
+        );
       case 'financial':
         return (
           <FinancialSnapshot

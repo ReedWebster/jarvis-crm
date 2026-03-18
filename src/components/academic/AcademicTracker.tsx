@@ -30,6 +30,7 @@ import { Badge, StatusBadge } from '../shared/Badge';
 interface Props {
   courses: Course[];
   setCourses: (v: Course[] | ((p: Course[]) => Course[])) => void;
+  onNavigateToClassNotes?: () => void;
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -949,7 +950,7 @@ function ExamCountdown({ courses }: { courses: Course[] }) {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
-export default function AcademicTracker({ courses, setCourses }: Props) {
+export default function AcademicTracker({ courses, setCourses, onNavigateToClassNotes }: Props) {
   // Course modals
   const [addCourseOpen, setAddCourseOpen] = useState(false);
   const [editCourseOpen, setEditCourseOpen] = useState(false);
@@ -1096,13 +1097,24 @@ export default function AcademicTracker({ courses, setCourses }: Props) {
           <h1 className="section-title">Academic Tracker</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>Courses, assignments, and exam schedule</p>
         </div>
-        <button
-          onClick={() => setAddCourseOpen(true)}
-          className="caesar-btn-primary flex items-center gap-2"
-        >
-          <Plus size={16} />
-          Add Course
-        </button>
+        <div className="flex items-center gap-2">
+          {onNavigateToClassNotes && (
+            <button
+              onClick={onNavigateToClassNotes}
+              className="caesar-btn-ghost flex items-center gap-2"
+            >
+              <BookOpen size={16} />
+              Class Notes
+            </button>
+          )}
+          <button
+            onClick={() => setAddCourseOpen(true)}
+            className="caesar-btn-primary flex items-center gap-2"
+          >
+            <Plus size={16} />
+            Add Course
+          </button>
+        </div>
       </div>
 
       {/* Stats Row */}

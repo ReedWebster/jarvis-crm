@@ -39,7 +39,8 @@ export type NavSection =
   | 'social'
   | 'dochub'
   | 'messaging'
-  | 'abs';
+  | 'abs'
+  | 'class-notes';
 
 interface NavItem {
   id: NavSection;
