@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 // postprocessing removed — its sideEffects:false + circular deps cause
 // TDZ errors in Rollup production builds. Bloom was barely visible (0.20).
 import { WorldDataPanel } from './WorldDataPanel';
@@ -3301,6 +3302,67 @@ export function WorldView({ contactTags, districtTagMap, onDistrictTagMapChange,
       vehicleInstances.instanceMatrix.needsUpdate = true;
     }
     updateTraffic(); // initial placement
+
+    // ── Batch-merge static detail geometry to reduce draw calls ─────────────
+    // Collect non-interactive meshes (not in allBuildingMeshes, not instanced,
+    // not part of tree groups that animate, not interior). Group by material
+    // type and merge into a few big BufferGeometries.
+    {
+      const interactiveSet = new Set<THREE.Object3D>(allBuildingMeshes);
+      const treeSet = new Set<THREE.Object3D>();
+      for (const tg of treeGroups) tg.traverse(c => treeSet.add(c));
+
+      // Buckets: group geometries by material color+type key
+      const buckets = new Map<string, { geos: THREE.BufferGeometry[]; mat: THREE.Material }>();
+      const toRemove: THREE.Object3D[] = [];
+
+      cityGroup.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        if (child instanceof THREE.InstancedMesh) return;
+        if (interactiveSet.has(child)) return;
+        if (treeSet.has(child)) return;
+        if (!child.geometry) return;
+
+        const mat = child.material as THREE.Material;
+        // Create a bucket key from material type + color
+        let key = mat.type;
+        if ('color' in mat && (mat as any).color) key += '_' + (mat as any).color.getHexString();
+        if ('opacity' in mat) key += '_' + ((mat as any).opacity ?? 1).toFixed(2);
+        if ('transparent' in mat) key += '_' + ((mat as any).transparent ? 'T' : 'F');
+
+        const geo = child.geometry.clone();
+        // Apply world transform to geometry so we can merge
+        child.updateWorldMatrix(true, false);
+        geo.applyMatrix4(child.matrixWorld);
+
+        if (!buckets.has(key)) buckets.set(key, { geos: [], mat: mat });
+        buckets.get(key)!.geos.push(geo);
+        toRemove.push(child);
+      });
+
+      // Merge each bucket into a single mesh
+      for (const [, bucket] of buckets) {
+        if (bucket.geos.length < 2) continue; // not worth merging singles
+        try {
+          const merged = mergeGeometries(bucket.geos, false);
+          if (merged) {
+            const mesh = new THREE.Mesh(merged, bucket.mat);
+            mesh.matrixAutoUpdate = false;
+            cityGroup.add(mesh);
+          }
+        } catch {
+          // If merge fails (incompatible attributes), skip this bucket
+        }
+        // Dispose cloned geometries
+        for (const g of bucket.geos) g.dispose();
+      }
+
+      // Remove original individual meshes
+      for (const obj of toRemove) {
+        obj.removeFromParent();
+        if ((obj as THREE.Mesh).geometry) (obj as THREE.Mesh).geometry.dispose();
+      }
+    }
 
     // ── Orbit + Pan + Zoom ────────────────────────────────────────────────────
     let isDragging = false, isPanning = false;
