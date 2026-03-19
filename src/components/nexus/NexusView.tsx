@@ -74,21 +74,21 @@ export function NexusView({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // Much stronger gravity pulls nodes together
+    // Very tight clustering — nodes packed together like a neural network
     const charge = fg.d3Force('charge');
     if (charge && typeof charge.strength === 'function') {
-      charge.strength(-18); // weak repulsion = tight cluster
-      charge.distanceMax(150); // don't repel beyond this
+      charge.strength(-12); // minimal repulsion = very tight
+      charge.distanceMax(80);
     }
-    // Shorter link distances
+    // Ultra-short link distances
     const link = fg.d3Force('link');
     if (link && typeof link.distance === 'function') {
-      link.distance(20); // very short — nodes hug each other
+      link.distance(12); // nodes nearly touching
     }
-    // Stronger center pull
+    // Strong center gravity
     const center = fg.d3Force('center');
     if (center && typeof center.strength === 'function') {
-      center.strength(1.2);
+      center.strength(1.5);
     }
     fg.d3ReheatSimulation();
   }, [nodes.length]);
@@ -151,73 +151,64 @@ export function NexusView({
     const n = node as NexusNode;
     const group = new THREE.Group();
     const color = new THREE.Color(n.color);
-    const r = Math.max(n.size * 0.5, 1.5);
+    const r = Math.max(n.size * 0.35, 0.9); // compact radii
 
     // Core sphere — emissive for self-lit glow
-    const sphereGeo = new THREE.SphereGeometry(r, 24, 18);
+    const sphereGeo = new THREE.SphereGeometry(r, 20, 14);
     const sphereMat = new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.7,
       transparent: true,
-      opacity: 0.92,
-      roughness: 0.2,
+      opacity: 0.95,
+      roughness: 0.15,
       metalness: 0.1,
     });
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     group.add(sphere);
 
-    // Inner glow — slightly larger transparent sphere
-    const innerGlowGeo = new THREE.SphereGeometry(r * 1.25, 16, 12);
+    // Inner glow — tight halo
+    const innerGlowGeo = new THREE.SphereGeometry(r * 1.3, 12, 8);
     const innerGlowMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.2,
       side: THREE.BackSide,
     });
     const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
     group.add(innerGlow);
 
-    // Outer halo — large soft glow
-    const outerGlowGeo = new THREE.SphereGeometry(r * 2.5, 12, 8);
+    // Outer halo — compact
+    const outerGlowGeo = new THREE.SphereGeometry(r * 2, 10, 6);
     const outerGlowMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.06,
+      opacity: 0.05,
       side: THREE.BackSide,
     });
     const outerGlow = new THREE.Mesh(outerGlowGeo, outerGlowMat);
     group.add(outerGlow);
 
-    // Orbiting ring
-    const ringGeo = new THREE.TorusGeometry(r * 1.6, 0.12, 8, 48);
+    // Orbiting ring — tighter
+    const ringGeo = new THREE.TorusGeometry(r * 1.4, 0.08, 6, 36);
     const ringMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.12,
+      opacity: 0.14,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI * 0.5;
     group.add(ring);
 
-    // Label
-    const sprite = new SpriteText(n.label, 1.8, n.color);
+    // Label — smaller, tucked close
+    const sprite = new SpriteText(n.label, 1.3, n.color);
     sprite.fontWeight = '600';
     sprite.fontFace = 'system-ui, -apple-system, sans-serif';
-    sprite.backgroundColor = 'rgba(6,6,11,0.7)';
-    sprite.padding = 1;
-    sprite.borderRadius = 1.5;
-    sprite.position.set(0, -(r + 2.5), 0);
+    sprite.backgroundColor = 'rgba(6,6,11,0.75)';
+    sprite.padding = 0.6;
+    sprite.borderRadius = 1;
+    sprite.position.set(0, -(r + 1.6), 0);
     group.add(sprite as unknown as THREE.Object3D);
-
-    // Sublabel (type indicator)
-    if (n.sublabel) {
-      const sub = new SpriteText(n.sublabel, 1.1, 'rgba(255,255,255,0.35)');
-      sub.fontFace = 'system-ui, -apple-system, sans-serif';
-      sub.backgroundColor = 'transparent';
-      sub.position.set(0, -(r + 4.2), 0);
-      group.add(sub as unknown as THREE.Object3D);
-    }
 
     // Cache refs for animation
     meshCache.set(n.id, {
@@ -244,21 +235,21 @@ export function NexusView({
   }, [hoveredNode]);
 
   const linkWidth = useCallback((link: any) => {
-    if (!hoveredNode) return 0.5;
+    if (!hoveredNode) return 0.6;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2;
+    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2.5;
     return 0.15;
   }, [hoveredNode]);
 
   // Particle speed varies per link for organic feel
-  const particleSpeed = useCallback(() => 0.003 + Math.random() * 0.004, []);
+  const particleSpeed = useCallback(() => 0.004 + Math.random() * 0.006, []);
 
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
     setSelectedNode(prev => prev?.id === n.id ? null : n);
     if (fgRef.current && node.x !== undefined) {
-      const distance = 60; // closer zoom
+      const distance = 40; // tight zoom on click
       const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z || 0);
       fgRef.current.cameraPosition(
         { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio },
@@ -280,7 +271,7 @@ export function NexusView({
   }, []);
 
   const handleCenter = useCallback(() => {
-    fgRef.current?.zoomToFit(600, 30);
+    fgRef.current?.zoomToFit(600, 10);
   }, []);
 
   const handleDoubleClick = useCallback((node: any) => {
@@ -308,7 +299,7 @@ export function NexusView({
   // Zoom-to-fit on first render
   useEffect(() => {
     const timer = setTimeout(() => {
-      fgRef.current?.zoomToFit(800, 30);
+      fgRef.current?.zoomToFit(800, 10);
     }, 1500);
     return () => clearTimeout(timer);
   }, []);
@@ -357,8 +348,8 @@ export function NexusView({
         linkWidth={linkWidth}
         linkOpacity={0.8}
         linkCurvature={0.15}
-        linkDirectionalParticles={3}
-        linkDirectionalParticleWidth={1.2}
+        linkDirectionalParticles={4}
+        linkDirectionalParticleWidth={1.5}
         linkDirectionalParticleSpeed={particleSpeed}
         linkDirectionalParticleColor={linkColor}
 

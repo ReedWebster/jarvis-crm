@@ -6,33 +6,33 @@ import { NODE_COLORS } from './nexusColors';
 // ─── SIZING HELPERS ─────────────────────────────────────────────────────────
 
 function contactSize(c: Contact): number {
-  let s = 4;
-  s += Math.min(c.interactions.length * 0.5, 4);
-  s += c.linkedProjects.length * 1.5;
-  if (c.followUpNeeded) s += 1;
+  let s = 2.5;
+  s += Math.min(c.interactions.length * 0.3, 2);
+  s += Math.min(c.linkedProjects.length * 0.8, 2);
+  if (c.followUpNeeded) s += 0.5;
   return s;
 }
 
 function projectSize(p: Project): number {
-  let s = 6;
-  s += p.keyContacts.length;
-  s += (p.meetingNotes?.length ?? 0) * 0.5;
-  if (p.status === 'active') s += 2;
-  if (p.health === 'red') s += 1;
+  let s = 3.5;
+  s += Math.min(p.keyContacts.length * 0.5, 2);
+  s += Math.min((p.meetingNotes?.length ?? 0) * 0.3, 1.5);
+  if (p.status === 'active') s += 1;
+  if (p.health === 'red') s += 0.5;
   return s;
 }
 
 function clientSize(c: Client): number {
-  let s = 5;
-  if (c.contractValue > 0) s += Math.min(Math.log10(c.contractValue / 100), 4);
-  if (c.status === 'active') s += 2;
+  let s = 3;
+  if (c.contractValue > 0) s += Math.min(Math.log10(c.contractValue / 100), 2.5);
+  if (c.status === 'active') s += 1;
   return s;
 }
 
 function goalSize(g: Goal): number {
-  let s = 3;
-  s += g.progress / 25;
-  if (g.status === 'in-progress') s += 1;
+  let s = 2;
+  s += g.progress / 50;
+  if (g.status === 'in-progress') s += 0.5;
   return s;
 }
 
