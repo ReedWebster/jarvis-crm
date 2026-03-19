@@ -52,6 +52,7 @@ import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
 import { ABSHub, getABSContacts, INITIAL_MEMBERS } from './components/abs/ABSHub';
+import { NexusView } from './components/nexus/NexusView';
 import type { ABSMember } from './components/abs/ABSHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
@@ -76,6 +77,7 @@ import type {
 
 const SECTION_TITLES: Record<NavSection, string> = {
   command: 'Daily Command Brief',
+  nexus: 'Nexus',
   identity: 'Core Identity',
   projects: 'Projects & Ventures',
   time: 'Calendar',
@@ -490,6 +492,19 @@ function MainApp() {
         return <MessagingHub contacts={contacts} />;
       case 'abs':
         return <ABSHub members={absMembers} setMembers={setAbsMembers} />;
+      case 'nexus':
+        return (
+          <NexusView
+            contacts={contacts}
+            projects={projects}
+            clients={clients}
+            candidates={candidates}
+            goals={goals}
+            financialEntries={financialEntries}
+            notes={notes}
+            onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
+          />
+        );
       default:
         return null;
     }
@@ -555,10 +570,10 @@ function MainApp() {
           }}
         >
           <div
-            className={activeSection === 'world'
+            className={activeSection === 'world' || activeSection === 'nexus'
               ? 'animate-fade-in h-full overflow-hidden'
               : 'p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full animate-fade-in'}
-            style={activeSection === 'world'
+            style={activeSection === 'world' || activeSection === 'nexus'
               ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }
               : undefined}
             key={activeSection}

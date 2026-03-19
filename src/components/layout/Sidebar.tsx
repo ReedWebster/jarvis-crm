@@ -3,7 +3,7 @@ import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
   DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
   CheckSquare, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
-  Share2, Inbox, Flame, Globe,
+  Share2, Inbox, Flame, Globe, Atom,
 } from 'lucide-react';
 import type { Theme } from '../../hooks/useTheme';
 import {
@@ -40,7 +40,8 @@ export type NavSection =
   | 'dochub'
   | 'messaging'
   | 'abs'
-  | 'class-notes';
+  | 'class-notes'
+  | 'nexus';
 
 interface NavItem {
   id: NavSection;
@@ -50,6 +51,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'command',     label: 'Command Brief',   icon: <LayoutDashboard size={18} /> },
+  { id: 'nexus',      label: 'Nexus',            icon: <Atom size={18} /> },
   { id: 'identity',   label: 'Core Identity',    icon: <User size={18} /> },
   { id: 'projects',   label: 'Projects',         icon: <Briefcase size={18} /> },
   { id: 'time',       label: 'Calendar',          icon: <Clock size={18} /> },
