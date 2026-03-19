@@ -11,7 +11,7 @@ import { DEFAULT_NEXUS_FILTERS } from '../../types/nexus';
 import { useNexusGraph } from './useNexusGraph';
 import { NexusToolbar } from './NexusToolbar';
 import { NexusDetailPanel } from './NexusDetailPanel';
-import { LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
+import { NODE_COLORS, LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import { defaultMapState } from '../../utils/networkingMap';
 
@@ -26,11 +26,23 @@ interface Props {
   onNavigateToSection: (section: string) => void;
 }
 
+// ─── BREATHING ANIMATION ────────────────────────────────────────────────────
+// Each node stores refs to its meshes so the tick loop can pulse them
+
+interface NodeMeshRefs {
+  sphere: THREE.Mesh;
+  outerGlow: THREE.Mesh;
+  innerGlow: THREE.Mesh;
+  ring: THREE.Mesh;
+  phaseOffset: number; // per-node phase so they don't all breathe in sync
+}
+
+const meshCache = new Map<string, NodeMeshRefs>();
+
 export function NexusView({
   contacts, projects, clients, candidates, goals,
   financialEntries, notes, onNavigateToSection,
 }: Props) {
-  // Read-only access to networking map state for manual connections
   const [mapState] = useSupabaseStorage<NetworkingMapState>('jarvis:networkingMap', defaultMapState());
   const [filters, setFilters] = useState<NexusFilters>(DEFAULT_NEXUS_FILTERS);
   const [selectedNode, setSelectedNode] = useState<NexusNode | null>(null);
@@ -58,7 +70,69 @@ export function NexusView({
     financialEntries, notes, mapState, filters,
   });
 
-  // Build a set of neighbor node IDs for the hovered node
+  // ─── Tighten force simulation for dense clustering ────────────────────────
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    // Much stronger gravity pulls nodes together
+    const charge = fg.d3Force('charge');
+    if (charge && typeof charge.strength === 'function') {
+      charge.strength(-18); // weak repulsion = tight cluster
+      charge.distanceMax(150); // don't repel beyond this
+    }
+    // Shorter link distances
+    const link = fg.d3Force('link');
+    if (link && typeof link.distance === 'function') {
+      link.distance(20); // very short — nodes hug each other
+    }
+    // Stronger center pull
+    const center = fg.d3Force('center');
+    if (center && typeof center.strength === 'function') {
+      center.strength(1.2);
+    }
+    fg.d3ReheatSimulation();
+  }, [nodes.length]);
+
+  // ─── Breathing animation tick ─────────────────────────────────────────────
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    let frame: number;
+    const animate = () => {
+      const t = performance.now() * 0.001; // seconds
+      meshCache.forEach((refs) => {
+        const breath = Math.sin(t * 1.8 + refs.phaseOffset) * 0.5 + 0.5; // 0→1
+        // Pulse sphere scale
+        const s = 1 + breath * 0.08;
+        refs.sphere.scale.setScalar(s);
+        // Breathe outer glow opacity
+        (refs.outerGlow.material as THREE.MeshBasicMaterial).opacity = 0.04 + breath * 0.08;
+        // Inner glow pulse
+        const ig = 1 + breath * 0.15;
+        refs.innerGlow.scale.setScalar(ig);
+        (refs.innerGlow.material as THREE.MeshBasicMaterial).opacity = 0.12 + breath * 0.12;
+        // Ring rotation
+        refs.ring.rotation.z = t * 0.3 + refs.phaseOffset;
+        (refs.ring.material as THREE.MeshBasicMaterial).opacity = 0.08 + breath * 0.1;
+      });
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // ─── Slow auto-rotation for organic feel ──────────────────────────────────
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const controls = fg.controls() as any;
+    if (controls && typeof controls.autoRotate !== 'undefined') {
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.4;
+    }
+  }, []);
+
+  // Build neighbor set for hover highlighting
   const highlightNodes = useMemo(() => {
     const set = new Set<string>();
     if (!hoveredNode) return set;
@@ -72,52 +146,95 @@ export function NexusView({
     return set;
   }, [hoveredNode, links]);
 
-  // Custom node rendering: sphere + text label
+  // ─── Custom node rendering: glowing orb + halo + ring + label ─────────────
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
+    const color = new THREE.Color(n.color);
+    const r = Math.max(n.size * 0.5, 1.5);
 
-    // Sphere
-    const geometry = new THREE.SphereGeometry(n.size * 0.6, 16, 12);
-    const material = new THREE.MeshLambertMaterial({
-      color: n.color,
+    // Core sphere — emissive for self-lit glow
+    const sphereGeo = new THREE.SphereGeometry(r, 24, 18);
+    const sphereMat = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.6,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.92,
+      roughness: 0.2,
+      metalness: 0.1,
     });
-    const sphere = new THREE.Mesh(geometry, material);
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     group.add(sphere);
 
-    // Glow ring
-    const ringGeo = new THREE.RingGeometry(n.size * 0.7, n.size * 0.85, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: n.color,
+    // Inner glow — slightly larger transparent sphere
+    const innerGlowGeo = new THREE.SphereGeometry(r * 1.25, 16, 12);
+    const innerGlowMat = new THREE.MeshBasicMaterial({
+      color,
       transparent: true,
-      opacity: 0.15,
-      side: THREE.DoubleSide,
+      opacity: 0.18,
+      side: THREE.BackSide,
+    });
+    const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
+    group.add(innerGlow);
+
+    // Outer halo — large soft glow
+    const outerGlowGeo = new THREE.SphereGeometry(r * 2.5, 12, 8);
+    const outerGlowMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.06,
+      side: THREE.BackSide,
+    });
+    const outerGlow = new THREE.Mesh(outerGlowGeo, outerGlowMat);
+    group.add(outerGlow);
+
+    // Orbiting ring
+    const ringGeo = new THREE.TorusGeometry(r * 1.6, 0.12, 8, 48);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.12,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.lookAt(0, 0, 1);
+    ring.rotation.x = Math.PI * 0.5;
     group.add(ring);
 
     // Label
-    const sprite = new SpriteText(n.label, 2.2, n.color);
+    const sprite = new SpriteText(n.label, 1.8, n.color);
     sprite.fontWeight = '600';
-    sprite.backgroundColor = 'rgba(0,0,0,0.5)';
-    sprite.padding = 1.2;
-    sprite.borderRadius = 2;
-    sprite.position.set(0, -(n.size * 0.6 + 3), 0);
+    sprite.fontFace = 'system-ui, -apple-system, sans-serif';
+    sprite.backgroundColor = 'rgba(6,6,11,0.7)';
+    sprite.padding = 1;
+    sprite.borderRadius = 1.5;
+    sprite.position.set(0, -(r + 2.5), 0);
     group.add(sprite as unknown as THREE.Object3D);
+
+    // Sublabel (type indicator)
+    if (n.sublabel) {
+      const sub = new SpriteText(n.sublabel, 1.1, 'rgba(255,255,255,0.35)');
+      sub.fontFace = 'system-ui, -apple-system, sans-serif';
+      sub.backgroundColor = 'transparent';
+      sub.position.set(0, -(r + 4.2), 0);
+      group.add(sub as unknown as THREE.Object3D);
+    }
+
+    // Cache refs for animation
+    meshCache.set(n.id, {
+      sphere, outerGlow, innerGlow, ring,
+      phaseOffset: Math.random() * Math.PI * 2,
+    });
 
     return group;
   }, []);
 
-  // Node color: dim non-highlighted nodes on hover
+  // Dim non-highlighted nodes
   const nodeOpacity = useCallback((node: any) => {
-    if (!hoveredNode) return 0.85;
-    return highlightNodes.has(node.id) ? 1 : 0.12;
+    if (!hoveredNode) return 0.92;
+    return highlightNodes.has(node.id) ? 1 : 0.08;
   }, [hoveredNode, highlightNodes]);
 
-  // Link color: highlight connected links
+  // Link color — brighter default, glow on hover
   const linkColor = useCallback((link: any) => {
     if (!hoveredNode) return LINK_COLOR;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
@@ -127,20 +244,21 @@ export function NexusView({
   }, [hoveredNode]);
 
   const linkWidth = useCallback((link: any) => {
-    if (!hoveredNode) return 0.3;
+    if (!hoveredNode) return 0.5;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    if (src === hoveredNode.id || tgt === hoveredNode.id) return 1.2;
-    return 0.1;
+    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2;
+    return 0.15;
   }, [hoveredNode]);
+
+  // Particle speed varies per link for organic feel
+  const particleSpeed = useCallback(() => 0.003 + Math.random() * 0.004, []);
 
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
     setSelectedNode(prev => prev?.id === n.id ? null : n);
-
-    // Animate camera to clicked node
     if (fgRef.current && node.x !== undefined) {
-      const distance = 120;
+      const distance = 60; // closer zoom
       const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z || 0);
       fgRef.current.cameraPosition(
         { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio },
@@ -162,7 +280,7 @@ export function NexusView({
   }, []);
 
   const handleCenter = useCallback(() => {
-    fgRef.current?.zoomToFit(600, 60);
+    fgRef.current?.zoomToFit(600, 30);
   }, []);
 
   const handleDoubleClick = useCallback((node: any) => {
@@ -190,10 +308,18 @@ export function NexusView({
   // Zoom-to-fit on first render
   useEffect(() => {
     const timer = setTimeout(() => {
-      fgRef.current?.zoomToFit(800, 80);
+      fgRef.current?.zoomToFit(800, 30);
     }, 1500);
     return () => clearTimeout(timer);
   }, []);
+
+  // Clean up mesh cache when nodes change
+  useEffect(() => {
+    const currentIds = new Set(nodes.map(n => n.id));
+    meshCache.forEach((_, key) => {
+      if (!currentIds.has(key)) meshCache.delete(key);
+    });
+  }, [nodes]);
 
   return (
     <div
@@ -226,17 +352,23 @@ export function NexusView({
         nodeThreeObjectExtend={false}
         nodeOpacity={nodeOpacity as any}
 
-        // Link rendering
+        // Link rendering — alive with flowing particles
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkOpacity={0.6}
+        linkOpacity={0.8}
+        linkCurvature={0.15}
+        linkDirectionalParticles={3}
+        linkDirectionalParticleWidth={1.2}
+        linkDirectionalParticleSpeed={particleSpeed}
+        linkDirectionalParticleColor={linkColor}
 
-        // Force simulation
+        // Force simulation — tight and dense
         numDimensions={is3D ? 3 : 2}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
-        warmupTicks={50}
-        cooldownTicks={200}
+        d3AlphaDecay={0.015}
+        d3VelocityDecay={0.25}
+        warmupTicks={80}
+        cooldownTicks={300}
+        cooldownTime={8000}
 
         // Interaction
         onNodeClick={handleNodeClick}
