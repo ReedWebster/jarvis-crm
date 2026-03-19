@@ -11,7 +11,7 @@ import { DEFAULT_NEXUS_FILTERS } from '../../types/nexus';
 import { useNexusGraph } from './useNexusGraph';
 import { NexusToolbar } from './NexusToolbar';
 import { NexusDetailPanel } from './NexusDetailPanel';
-import { NODE_COLORS, LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
+import { LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import { defaultMapState } from '../../utils/networkingMap';
 
@@ -26,18 +26,24 @@ interface Props {
   onNavigateToSection: (section: string) => void;
 }
 
-// ─── BREATHING ANIMATION ────────────────────────────────────────────────────
-// Each node stores refs to its meshes so the tick loop can pulse them
+// ─── ANIMATION STATE ────────────────────────────────────────────────────────
 
 interface NodeMeshRefs {
+  group: THREE.Group;
   sphere: THREE.Mesh;
   outerGlow: THREE.Mesh;
   innerGlow: THREE.Mesh;
   ring: THREE.Mesh;
-  phaseOffset: number; // per-node phase so they don't all breathe in sync
+  phaseOffset: number;
+  nodeId: string;
 }
 
 const meshCache = new Map<string, NodeMeshRefs>();
+
+// Track hovered node ID at module level so the animation loop can access it
+// without needing a React ref that re-renders
+let _hoveredId: string | null = null;
+let _highlightSet: Set<string> = new Set();
 
 export function NexusView({
   contacts, projects, clients, candidates, goals,
@@ -70,69 +76,27 @@ export function NexusView({
     financialEntries, notes, mapState, filters,
   });
 
-  // ─── Tighten force simulation for dense clustering ────────────────────────
+  // ─── Tighten force simulation ─────────────────────────────────────────────
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // Very tight clustering — nodes packed together like a neural network
     const charge = fg.d3Force('charge');
     if (charge && typeof charge.strength === 'function') {
-      charge.strength(-12); // minimal repulsion = very tight
-      charge.distanceMax(80);
+      charge.strength(-15);
+      charge.distanceMax(100);
     }
-    // Ultra-short link distances
     const link = fg.d3Force('link');
     if (link && typeof link.distance === 'function') {
-      link.distance(12); // nodes nearly touching
+      link.distance(14);
     }
-    // Strong center gravity
     const center = fg.d3Force('center');
     if (center && typeof center.strength === 'function') {
-      center.strength(1.5);
+      center.strength(1.2);
     }
     fg.d3ReheatSimulation();
   }, [nodes.length]);
 
-  // ─── Breathing animation tick ─────────────────────────────────────────────
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    let frame: number;
-    const animate = () => {
-      const t = performance.now() * 0.001; // seconds
-      meshCache.forEach((refs) => {
-        const breath = Math.sin(t * 1.8 + refs.phaseOffset) * 0.5 + 0.5; // 0→1
-        // Pulse sphere scale
-        const s = 1 + breath * 0.08;
-        refs.sphere.scale.setScalar(s);
-        // Breathe outer glow opacity
-        (refs.outerGlow.material as THREE.MeshBasicMaterial).opacity = 0.04 + breath * 0.08;
-        // Inner glow pulse
-        const ig = 1 + breath * 0.15;
-        refs.innerGlow.scale.setScalar(ig);
-        (refs.innerGlow.material as THREE.MeshBasicMaterial).opacity = 0.12 + breath * 0.12;
-        // Ring rotation
-        refs.ring.rotation.z = t * 0.3 + refs.phaseOffset;
-        (refs.ring.material as THREE.MeshBasicMaterial).opacity = 0.08 + breath * 0.1;
-      });
-      frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  // ─── Slow auto-rotation for organic feel ──────────────────────────────────
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    const controls = fg.controls() as any;
-    if (controls && typeof controls.autoRotate !== 'undefined') {
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.4;
-    }
-  }, []);
-
-  // Build neighbor set for hover highlighting
+  // ─── Sync hover state to module-level for animation loop ──────────────────
   const highlightNodes = useMemo(() => {
     const set = new Set<string>();
     if (!hoveredNode) return set;
@@ -146,14 +110,71 @@ export function NexusView({
     return set;
   }, [hoveredNode, links]);
 
-  // ─── Custom node rendering: glowing orb + halo + ring + label ─────────────
+  // Keep module-level refs in sync
+  useEffect(() => {
+    _hoveredId = hoveredNode?.id ?? null;
+    _highlightSet = highlightNodes;
+  }, [hoveredNode, highlightNodes]);
+
+  // ─── Breathing animation + hover dimming in one rAF loop ──────────────────
+  useEffect(() => {
+    let frame: number;
+    const animate = () => {
+      const t = performance.now() * 0.001;
+      meshCache.forEach((refs) => {
+        const breath = Math.sin(t * 1.8 + refs.phaseOffset) * 0.5 + 0.5;
+
+        // Pulse sphere scale
+        refs.sphere.scale.setScalar(1 + breath * 0.08);
+
+        // Breathe glow opacity
+        (refs.outerGlow.material as THREE.MeshBasicMaterial).opacity = 0.04 + breath * 0.08;
+        refs.innerGlow.scale.setScalar(1 + breath * 0.15);
+        (refs.innerGlow.material as THREE.MeshBasicMaterial).opacity = 0.12 + breath * 0.12;
+
+        // Ring rotation
+        refs.ring.rotation.z = t * 0.3 + refs.phaseOffset;
+        (refs.ring.material as THREE.MeshBasicMaterial).opacity = 0.08 + breath * 0.1;
+
+        // Hover dimming — done here instead of nodeOpacity prop
+        if (_hoveredId) {
+          const highlighted = _highlightSet.has(refs.nodeId);
+          const targetOpacity = highlighted ? 0.95 : 0.1;
+          const currentOpacity = (refs.sphere.material as THREE.MeshStandardMaterial).opacity;
+          // Smooth lerp
+          const newOpacity = currentOpacity + (targetOpacity - currentOpacity) * 0.15;
+          (refs.sphere.material as THREE.MeshStandardMaterial).opacity = newOpacity;
+          refs.group.visible = newOpacity > 0.05;
+        } else {
+          (refs.sphere.material as THREE.MeshStandardMaterial).opacity = 0.95;
+          refs.group.visible = true;
+        }
+      });
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // ─── Slow auto-rotation ───────────────────────────────────────────────────
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const controls = fg.controls() as any;
+    if (controls && typeof controls.autoRotate !== 'undefined') {
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.35;
+    }
+  }, []);
+
+  // ─── Custom node rendering ────────────────────────────────────────────────
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
     const color = new THREE.Color(n.color);
-    const r = Math.max(n.size * 0.35, 0.9); // compact radii
+    const r = Math.max(n.size * 0.4, 1);
 
-    // Core sphere — emissive for self-lit glow
+    // Core sphere
     const sphereGeo = new THREE.SphereGeometry(r, 20, 14);
     const sphereMat = new THREE.MeshStandardMaterial({
       color,
@@ -167,65 +188,52 @@ export function NexusView({
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     group.add(sphere);
 
-    // Inner glow — tight halo
+    // Inner glow
     const innerGlowGeo = new THREE.SphereGeometry(r * 1.3, 12, 8);
     const innerGlowMat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.2,
-      side: THREE.BackSide,
+      color, transparent: true, opacity: 0.2, side: THREE.BackSide,
     });
     const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
     group.add(innerGlow);
 
-    // Outer halo — compact
+    // Outer halo
     const outerGlowGeo = new THREE.SphereGeometry(r * 2, 10, 6);
     const outerGlowMat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.05,
-      side: THREE.BackSide,
+      color, transparent: true, opacity: 0.05, side: THREE.BackSide,
     });
     const outerGlow = new THREE.Mesh(outerGlowGeo, outerGlowMat);
     group.add(outerGlow);
 
-    // Orbiting ring — tighter
+    // Orbiting ring
     const ringGeo = new THREE.TorusGeometry(r * 1.4, 0.08, 6, 36);
     const ringMat = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.14,
+      color, transparent: true, opacity: 0.14,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI * 0.5;
     group.add(ring);
 
-    // Label — smaller, tucked close
-    const sprite = new SpriteText(n.label, 1.3, n.color);
+    // Label
+    const sprite = new SpriteText(n.label, 1.4, n.color);
     sprite.fontWeight = '600';
     sprite.fontFace = 'system-ui, -apple-system, sans-serif';
-    sprite.backgroundColor = 'rgba(6,6,11,0.75)';
-    sprite.padding = 0.6;
+    sprite.backgroundColor = 'rgba(6,6,11,0.7)';
+    sprite.padding = 0.7;
     sprite.borderRadius = 1;
-    sprite.position.set(0, -(r + 1.6), 0);
+    sprite.position.set(0, -(r + 1.8), 0);
     group.add(sprite as unknown as THREE.Object3D);
 
-    // Cache refs for animation
+    // Cache for animation loop
     meshCache.set(n.id, {
-      sphere, outerGlow, innerGlow, ring,
+      group, sphere, outerGlow, innerGlow, ring,
       phaseOffset: Math.random() * Math.PI * 2,
+      nodeId: n.id,
     });
 
     return group;
   }, []);
 
-  // Dim non-highlighted nodes
-  const nodeOpacity = useCallback((node: any) => {
-    if (!hoveredNode) return 0.92;
-    return highlightNodes.has(node.id) ? 1 : 0.08;
-  }, [hoveredNode, highlightNodes]);
-
-  // Link color — brighter default, glow on hover
+  // Link color
   const linkColor = useCallback((link: any) => {
     if (!hoveredNode) return LINK_COLOR;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
@@ -235,21 +243,20 @@ export function NexusView({
   }, [hoveredNode]);
 
   const linkWidth = useCallback((link: any) => {
-    if (!hoveredNode) return 0.6;
+    if (!hoveredNode) return 0.5;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
     if (src === hoveredNode.id || tgt === hoveredNode.id) return 2.5;
     return 0.15;
   }, [hoveredNode]);
 
-  // Particle speed varies per link for organic feel
-  const particleSpeed = useCallback(() => 0.004 + Math.random() * 0.006, []);
+  const particleSpeed = useCallback(() => 0.004 + Math.random() * 0.005, []);
 
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
     setSelectedNode(prev => prev?.id === n.id ? null : n);
     if (fgRef.current && node.x !== undefined) {
-      const distance = 40; // tight zoom on click
+      const distance = 50;
       const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z || 0);
       fgRef.current.cameraPosition(
         { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio },
@@ -271,7 +278,7 @@ export function NexusView({
   }, []);
 
   const handleCenter = useCallback(() => {
-    fgRef.current?.zoomToFit(600, 10);
+    fgRef.current?.zoomToFit(600, 20);
   }, []);
 
   const handleDoubleClick = useCallback((node: any) => {
@@ -299,12 +306,12 @@ export function NexusView({
   // Zoom-to-fit on first render
   useEffect(() => {
     const timer = setTimeout(() => {
-      fgRef.current?.zoomToFit(800, 10);
+      fgRef.current?.zoomToFit(800, 20);
     }, 1500);
     return () => clearTimeout(timer);
   }, []);
 
-  // Clean up mesh cache when nodes change
+  // Clean up mesh cache
   useEffect(() => {
     const currentIds = new Set(nodes.map(n => n.id));
     meshCache.forEach((_, key) => {
@@ -338,28 +345,27 @@ export function NexusView({
         backgroundColor={BG_COLOR}
         showNavInfo={false}
 
-        // Node rendering
+        // Node rendering — NO nodeOpacity (it's a number prop, not a function)
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
-        nodeOpacity={nodeOpacity as any}
 
-        // Link rendering — alive with flowing particles
+        // Links — alive with flowing particles
         linkColor={linkColor}
         linkWidth={linkWidth}
         linkOpacity={0.8}
-        linkCurvature={0.15}
-        linkDirectionalParticles={4}
-        linkDirectionalParticleWidth={1.5}
+        linkCurvature={0.12}
+        linkDirectionalParticles={3}
+        linkDirectionalParticleWidth={1.2}
         linkDirectionalParticleSpeed={particleSpeed}
         linkDirectionalParticleColor={linkColor}
 
-        // Force simulation — tight and dense
+        // Force simulation — dense
         numDimensions={is3D ? 3 : 2}
-        d3AlphaDecay={0.015}
-        d3VelocityDecay={0.25}
-        warmupTicks={80}
-        cooldownTicks={300}
-        cooldownTime={8000}
+        d3AlphaDecay={0.018}
+        d3VelocityDecay={0.28}
+        warmupTicks={60}
+        cooldownTicks={250}
+        cooldownTime={6000}
 
         // Interaction
         onNodeClick={handleNodeClick}

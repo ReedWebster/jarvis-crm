@@ -625,6 +625,7 @@ export function SocialHub({
                   status: 'draft',
                   approvalState: 'draft',
                   createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
                 }]);
                 setBaseContent('');
                 setAiDrafts([]);
