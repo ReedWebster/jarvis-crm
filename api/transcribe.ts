@@ -2,6 +2,14 @@
 // Falls back gracefully when GROQ_API_KEY is not set (returns 503)
 // maxDuration: 30 — well within Vercel hobby plan's 60s limit
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '25mb',
+    },
+  },
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
