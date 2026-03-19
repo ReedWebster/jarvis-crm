@@ -606,7 +606,31 @@ export function SocialHub({
             <button
               type="button"
               className="caesar-btn-primary text-sm"
-              onClick={() => setComposerOpen(false)}
+              disabled={!baseContent.trim()}
+              onClick={() => {
+                const linkedinDraft = aiDrafts.find(d => d.platform === 'linkedin')?.content;
+                const twitterDraft = aiDrafts.find(d => d.platform === 'twitter')?.content;
+                const platforms: SocialPlatform[] = [];
+                if (linkedinDraft) platforms.push('linkedin');
+                if (twitterDraft) platforms.push('twitter');
+                if (platforms.length === 0) platforms.push('linkedin', 'twitter');
+
+                setSocialPosts(prev => [...prev, {
+                  id: crypto.randomUUID(),
+                  creatorUserId: 'reed',
+                  platforms,
+                  baseContent: baseContent.trim(),
+                  linkedinContent: linkedinDraft,
+                  twitterContent: twitterDraft,
+                  status: 'draft',
+                  approvalState: 'draft',
+                  createdAt: new Date().toISOString(),
+                }]);
+                setBaseContent('');
+                setAiDrafts([]);
+                setAiError(null);
+                setComposerOpen(false);
+              }}
             >
               Save Draft
             </button>
