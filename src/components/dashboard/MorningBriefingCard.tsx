@@ -30,7 +30,7 @@ function CollapsibleSection({
   hasContent = true,
   children,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   title: string;
   defaultOpen?: boolean;
   hasContent?: boolean;

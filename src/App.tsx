@@ -47,7 +47,7 @@ import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
-import { WorldView } from './components/world/WorldView';
+import { WorldView } from './components/world/WorldViewNew';
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';

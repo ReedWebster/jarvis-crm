@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, CheckSquare, FileText, User, Calendar } from 'lucide-react';
+import { X, Clock, CheckSquare, FileText, User, Calendar, type LucideIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import type {
   TimeBlock, TimeCategory, TodoItem, Note,
@@ -26,7 +26,7 @@ interface Props {
 
 type Tab = 'time' | 'todo' | 'note' | 'contact' | 'event';
 
-const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
+const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'time',    label: 'Time',    Icon: Clock },
   { id: 'todo',    label: 'Todo',    Icon: CheckSquare },
   { id: 'note',    label: 'Note',    Icon: FileText },
