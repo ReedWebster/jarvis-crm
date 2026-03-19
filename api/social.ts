@@ -98,19 +98,25 @@ async function handleStatus(req: any, res: any, url: URL) {
 
 async function handleAiDm(req: any, res: any) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server.' });
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'ANTHROPIC_API_KEY is not configured on the server.' }));
     return;
   }
 
   const { name, context } = req.body ?? {};
   if (!name || typeof name !== 'string') {
-    res.status(400).json({ error: 'name is required' });
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'name is required' }));
     return;
   }
 
@@ -159,7 +165,9 @@ async function handleAiDm(req: any, res: any) {
 
     if (!r.ok) {
       const text = await r.text();
-      res.status(502).json({ error: 'Claude API error', detail: text });
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Claude API error', detail: text }));
       return;
     }
 
@@ -174,13 +182,19 @@ async function handleAiDm(req: any, res: any) {
     try {
       parsed = JSON.parse(content);
     } catch {
-      res.status(502).json({ error: 'Claude response was not valid JSON', raw: content });
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Claude response was not valid JSON', raw: content }));
       return;
     }
 
-    res.status(200).json(parsed);
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(parsed));
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to generate DM draft', detail: err?.message ?? String(err) });
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Failed to generate DM draft', detail: err?.message ?? String(err) }));
   }
 }
 
@@ -188,19 +202,25 @@ async function handleAiDm(req: any, res: any) {
 
 async function handleAiDrafts(req: any, res: any) {
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    res.statusCode = 405;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server.' });
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'ANTHROPIC_API_KEY is not configured on the server.' }));
     return;
   }
 
   const { topic, audience, goal, tone, callToAction } = req.body ?? {};
   if (!topic || typeof topic !== 'string') {
-    res.status(400).json({ error: 'topic is required' });
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'topic is required' }));
     return;
   }
 
@@ -258,7 +278,9 @@ async function handleAiDrafts(req: any, res: any) {
 
     if (!r.ok) {
       const text = await r.text();
-      res.status(502).json({ error: 'Claude API error', detail: text });
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Claude API error', detail: text }));
       return;
     }
 
@@ -273,13 +295,19 @@ async function handleAiDrafts(req: any, res: any) {
     try {
       parsed = JSON.parse(content);
     } catch {
-      res.status(502).json({ error: 'Claude response was not valid JSON', raw: content });
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Claude response was not valid JSON', raw: content }));
       return;
     }
 
-    res.status(200).json(parsed);
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(parsed));
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to generate drafts', detail: err?.message ?? String(err) });
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Failed to generate drafts', detail: err?.message ?? String(err) }));
   }
 }
 
