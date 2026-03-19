@@ -11,7 +11,7 @@ import { DEFAULT_NEXUS_FILTERS } from '../../types/nexus';
 import { useNexusGraph } from './useNexusGraph';
 import { NexusToolbar } from './NexusToolbar';
 import { NexusDetailPanel } from './NexusDetailPanel';
-import { LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
+import { NODE_COLORS, LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import { defaultMapState } from '../../utils/networkingMap';
 
@@ -26,25 +26,6 @@ interface Props {
   onNavigateToSection: (section: string) => void;
 }
 
-// ─── ANIMATION STATE ────────────────────────────────────────────────────────
-
-interface NodeMeshRefs {
-  group: THREE.Group;
-  sphere: THREE.Mesh;
-  outerGlow: THREE.Mesh;
-  innerGlow: THREE.Mesh;
-  ring: THREE.Mesh;
-  phaseOffset: number;
-  nodeId: string;
-}
-
-const meshCache = new Map<string, NodeMeshRefs>();
-
-// Track hovered node ID at module level so the animation loop can access it
-// without needing a React ref that re-renders
-let _hoveredId: string | null = null;
-let _highlightSet: Set<string> = new Set();
-
 export function NexusView({
   contacts, projects, clients, candidates, goals,
   financialEntries, notes, onNavigateToSection,
@@ -58,14 +39,15 @@ export function NexusView({
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods>();
 
-  // Track container size
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    // Set initial dimensions immediately
+    setDimensions({ width: el.clientWidth, height: el.clientHeight });
     const obs = new ResizeObserver(entries => {
       const { width, height } = entries[0].contentRect;
-      setDimensions({ width, height });
+      if (width > 0 && height > 0) setDimensions({ width, height });
     });
     obs.observe(el);
     return () => obs.disconnect();
@@ -76,27 +58,7 @@ export function NexusView({
     financialEntries, notes, mapState, filters,
   });
 
-  // ─── Tighten force simulation ─────────────────────────────────────────────
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    const charge = fg.d3Force('charge');
-    if (charge && typeof charge.strength === 'function') {
-      charge.strength(-15);
-      charge.distanceMax(100);
-    }
-    const link = fg.d3Force('link');
-    if (link && typeof link.distance === 'function') {
-      link.distance(14);
-    }
-    const center = fg.d3Force('center');
-    if (center && typeof center.strength === 'function') {
-      center.strength(1.2);
-    }
-    fg.d3ReheatSimulation();
-  }, [nodes.length]);
-
-  // ─── Sync hover state to module-level for animation loop ──────────────────
+  // Build neighbor set for hover highlighting
   const highlightNodes = useMemo(() => {
     const set = new Set<string>();
     if (!hoveredNode) return set;
@@ -110,156 +72,64 @@ export function NexusView({
     return set;
   }, [hoveredNode, links]);
 
-  // Keep module-level refs in sync
-  useEffect(() => {
-    _hoveredId = hoveredNode?.id ?? null;
-    _highlightSet = highlightNodes;
-  }, [hoveredNode, highlightNodes]);
-
-  // ─── Breathing animation + hover dimming in one rAF loop ──────────────────
-  useEffect(() => {
-    let frame: number;
-    const animate = () => {
-      const t = performance.now() * 0.001;
-      meshCache.forEach((refs) => {
-        const breath = Math.sin(t * 1.8 + refs.phaseOffset) * 0.5 + 0.5;
-
-        // Pulse sphere scale
-        refs.sphere.scale.setScalar(1 + breath * 0.08);
-
-        // Breathe glow opacity
-        (refs.outerGlow.material as THREE.MeshBasicMaterial).opacity = 0.04 + breath * 0.08;
-        refs.innerGlow.scale.setScalar(1 + breath * 0.15);
-        (refs.innerGlow.material as THREE.MeshBasicMaterial).opacity = 0.12 + breath * 0.12;
-
-        // Ring rotation
-        refs.ring.rotation.z = t * 0.3 + refs.phaseOffset;
-        (refs.ring.material as THREE.MeshBasicMaterial).opacity = 0.08 + breath * 0.1;
-
-        // Hover dimming — done here instead of nodeOpacity prop
-        if (_hoveredId) {
-          const highlighted = _highlightSet.has(refs.nodeId);
-          const targetOpacity = highlighted ? 0.95 : 0.1;
-          const currentOpacity = (refs.sphere.material as THREE.MeshStandardMaterial).opacity;
-          // Smooth lerp
-          const newOpacity = currentOpacity + (targetOpacity - currentOpacity) * 0.15;
-          (refs.sphere.material as THREE.MeshStandardMaterial).opacity = newOpacity;
-          refs.group.visible = newOpacity > 0.05;
-        } else {
-          (refs.sphere.material as THREE.MeshStandardMaterial).opacity = 0.95;
-          refs.group.visible = true;
-        }
-      });
-      frame = requestAnimationFrame(animate);
-    };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  // ─── Slow auto-rotation ───────────────────────────────────────────────────
-  useEffect(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    const controls = fg.controls() as any;
-    if (controls && typeof controls.autoRotate !== 'undefined') {
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.35;
-    }
-  }, []);
-
-  // ─── Custom node rendering ────────────────────────────────────────────────
+  // ─── SIMPLE node rendering: colored sphere + label ────────────────────────
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
-    const color = new THREE.Color(n.color);
-    const r = Math.max(n.size * 0.4, 1);
+    const r = Math.max(n.size * 0.4, 1.2);
 
-    // Core sphere
-    const sphereGeo = new THREE.SphereGeometry(r, 20, 14);
-    const sphereMat = new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.7,
-      transparent: true,
-      opacity: 0.95,
-      roughness: 0.15,
-      metalness: 0.1,
+    // Solid glowing sphere
+    const geo = new THREE.SphereGeometry(r, 16, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: n.color, transparent: true, opacity: 0.9 });
+    group.add(new THREE.Mesh(geo, mat));
+
+    // Soft outer glow
+    const glowGeo = new THREE.SphereGeometry(r * 1.8, 12, 8);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: n.color, transparent: true, opacity: 0.08, side: THREE.BackSide,
     });
-    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-    group.add(sphere);
+    group.add(new THREE.Mesh(glowGeo, glowMat));
 
-    // Inner glow
-    const innerGlowGeo = new THREE.SphereGeometry(r * 1.3, 12, 8);
-    const innerGlowMat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.2, side: THREE.BackSide,
-    });
-    const innerGlow = new THREE.Mesh(innerGlowGeo, innerGlowMat);
-    group.add(innerGlow);
-
-    // Outer halo
-    const outerGlowGeo = new THREE.SphereGeometry(r * 2, 10, 6);
-    const outerGlowMat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.05, side: THREE.BackSide,
-    });
-    const outerGlow = new THREE.Mesh(outerGlowGeo, outerGlowMat);
-    group.add(outerGlow);
-
-    // Orbiting ring
-    const ringGeo = new THREE.TorusGeometry(r * 1.4, 0.08, 6, 36);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.14,
-    });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI * 0.5;
-    group.add(ring);
-
-    // Label
-    const sprite = new SpriteText(n.label, 1.4, n.color);
-    sprite.fontWeight = '600';
-    sprite.fontFace = 'system-ui, -apple-system, sans-serif';
-    sprite.backgroundColor = 'rgba(6,6,11,0.7)';
-    sprite.padding = 0.7;
-    sprite.borderRadius = 1;
-    sprite.position.set(0, -(r + 1.8), 0);
-    group.add(sprite as unknown as THREE.Object3D);
-
-    // Cache for animation loop
-    meshCache.set(n.id, {
-      group, sphere, outerGlow, innerGlow, ring,
-      phaseOffset: Math.random() * Math.PI * 2,
-      nodeId: n.id,
-    });
+    // Name label
+    const label = new SpriteText(n.label, 1.5, n.color);
+    label.fontWeight = '600';
+    label.backgroundColor = 'rgba(6,6,11,0.7)';
+    label.padding = 0.8;
+    label.borderRadius = 1;
+    label.position.set(0, -(r + 2), 0);
+    group.add(label as unknown as THREE.Object3D);
 
     return group;
   }, []);
 
-  // Link color
+  // Link styling
   const linkColor = useCallback((link: any) => {
     if (!hoveredNode) return LINK_COLOR;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
     if (src === hoveredNode.id || tgt === hoveredNode.id) return LINK_HIGHLIGHT_COLOR;
-    return 'rgba(255,255,255,0.02)';
+    return 'rgba(255,255,255,0.03)';
   }, [hoveredNode]);
 
   const linkWidth = useCallback((link: any) => {
     if (!hoveredNode) return 0.5;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2.5;
+    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2;
     return 0.15;
   }, [hoveredNode]);
 
-  const particleSpeed = useCallback(() => 0.004 + Math.random() * 0.005, []);
+  const particleSpeed = useCallback(() => 0.003 + Math.random() * 0.004, []);
 
+  // Interactions
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
     setSelectedNode(prev => prev?.id === n.id ? null : n);
     if (fgRef.current && node.x !== undefined) {
-      const distance = 50;
-      const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z || 0);
+      const dist = 60;
+      const ratio = 1 + dist / Math.hypot(node.x, node.y, node.z || 0);
       fgRef.current.cameraPosition(
-        { x: node.x * distRatio, y: node.y * distRatio, z: (node.z || 0) * distRatio },
+        { x: node.x * ratio, y: node.y * ratio, z: (node.z || 0) * ratio },
         { x: node.x, y: node.y, z: node.z || 0 },
         800,
       );
@@ -268,25 +138,19 @@ export function NexusView({
 
   const handleNodeHover = useCallback((node: any) => {
     setHoveredNode(node ? (node as NexusNode) : null);
-    if (containerRef.current) {
-      containerRef.current.style.cursor = node ? 'pointer' : 'default';
-    }
-  }, []);
-
-  const handleBackgroundClick = useCallback(() => {
-    setSelectedNode(null);
+    if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
   }, []);
 
   const handleCenter = useCallback(() => {
-    fgRef.current?.zoomToFit(600, 20);
+    fgRef.current?.zoomToFit(600, 40);
   }, []);
 
   const handleDoubleClick = useCallback((node: any) => {
-    const sectionMap: Record<string, string> = {
+    const map: Record<string, string> = {
       contact: 'contacts', project: 'projects', client: 'recruitment',
       candidate: 'recruitment', goal: 'goals', financial: 'financial', note: 'notes',
     };
-    const section = sectionMap[(node as NexusNode).type];
+    const section = map[(node as NexusNode).type];
     if (section) onNavigateToSection(section);
   }, [onNavigateToSection]);
 
@@ -303,21 +167,45 @@ export function NexusView({
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Zoom-to-fit on first render
+  // Zoom to fit after simulation settles
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fgRef.current?.zoomToFit(800, 20);
-    }, 1500);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => fgRef.current?.zoomToFit(600, 40), 2000);
+    return () => clearTimeout(t);
   }, []);
 
-  // Clean up mesh cache
+  // Configure forces after graph mounts
   useEffect(() => {
-    const currentIds = new Set(nodes.map(n => n.id));
-    meshCache.forEach((_, key) => {
-      if (!currentIds.has(key)) meshCache.delete(key);
-    });
-  }, [nodes]);
+    const t = setTimeout(() => {
+      const fg = fgRef.current;
+      if (!fg) return;
+      const charge = fg.d3Force('charge');
+      if (charge && typeof charge.strength === 'function') {
+        charge.strength(-20);
+      }
+      const link = fg.d3Force('link');
+      if (link && typeof link.distance === 'function') {
+        link.distance(18);
+      }
+      fg.d3ReheatSimulation();
+    }, 100);
+    return () => clearTimeout(t);
+  }, [nodes.length]);
+
+  // Auto-rotate
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const fg = fgRef.current;
+      if (!fg) return;
+      try {
+        const controls = fg.controls() as any;
+        if (controls) {
+          controls.autoRotate = true;
+          controls.autoRotateSpeed = 0.3;
+        }
+      } catch {}
+    }, 500);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div
@@ -345,33 +233,31 @@ export function NexusView({
         backgroundColor={BG_COLOR}
         showNavInfo={false}
 
-        // Node rendering — NO nodeOpacity (it's a number prop, not a function)
+        // Nodes
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
 
-        // Links — alive with flowing particles
+        // Links with flowing particles
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkOpacity={0.8}
-        linkCurvature={0.12}
+        linkOpacity={0.7}
+        linkCurvature={0.1}
         linkDirectionalParticles={3}
-        linkDirectionalParticleWidth={1.2}
+        linkDirectionalParticleWidth={1}
         linkDirectionalParticleSpeed={particleSpeed}
-        linkDirectionalParticleColor={linkColor}
 
-        // Force simulation — dense
+        // Physics
         numDimensions={is3D ? 3 : 2}
-        d3AlphaDecay={0.018}
-        d3VelocityDecay={0.28}
-        warmupTicks={60}
-        cooldownTicks={250}
-        cooldownTime={6000}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+        warmupTicks={30}
+        cooldownTicks={150}
 
         // Interaction
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
         onNodeRightClick={handleDoubleClick}
-        onBackgroundClick={handleBackgroundClick}
+        onBackgroundClick={() => setSelectedNode(null)}
         enableNodeDrag={true}
         enableNavigationControls={true}
       />
