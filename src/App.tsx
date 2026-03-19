@@ -52,7 +52,7 @@ import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
 import { ABSHub, getABSContacts, INITIAL_MEMBERS } from './components/abs/ABSHub';
-import { NexusView } from './components/nexus/NexusView';
+const NexusView = React.lazy(() => import('./components/nexus/NexusView').then(m => ({ default: m.NexusView })));
 import type { ABSMember } from './components/abs/ABSHub';
 import { VoiceCommandLayer } from './components/voice/VoiceCommandLayer';
 import { JarvisInsightsPanel } from './components/intelligence/JarvisInsightsPanel';
@@ -494,16 +494,18 @@ function MainApp() {
         return <ABSHub members={absMembers} setMembers={setAbsMembers} />;
       case 'nexus':
         return (
-          <NexusView
-            contacts={contacts}
-            projects={projects}
-            clients={clients}
-            candidates={candidates}
-            goals={goals}
-            financialEntries={financialEntries}
-            notes={notes}
-            onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
-          />
+          <React.Suspense fallback={<div className="caesar-card text-sm" style={{ color: 'var(--text-muted)' }}>Loading Nexus…</div>}>
+            <NexusView
+              contacts={contacts}
+              projects={projects}
+              clients={clients}
+              candidates={candidates}
+              goals={goals}
+              financialEntries={financialEntries}
+              notes={notes}
+              onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
+            />
+          </React.Suspense>
         );
       default:
         return null;

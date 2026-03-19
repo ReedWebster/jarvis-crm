@@ -1,13 +1,13 @@
 import type { NexusNodeType } from '../../types/nexus';
 
 export const NODE_COLORS: Record<NexusNodeType, string> = {
-  contact:   '#60A5FA', // ice blue
-  project:   '#34D399', // emerald
-  client:    '#FBBF24', // amber
-  candidate: '#A78BFA', // purple
-  goal:      '#FB7185', // rose
-  financial: '#2DD4BF', // teal
-  note:      '#94A3B8', // slate
+  contact:   '#00D4FF', // electric cyan
+  project:   '#00FF88', // neon green
+  client:    '#FFB800', // bright amber
+  candidate: '#B366FF', // vivid purple
+  goal:      '#FF3366', // hot pink
+  financial: '#00FFCC', // neon teal
+  note:      '#8899AA', // muted steel
 };
 
 export const NODE_LABELS: Record<NexusNodeType, string> = {
