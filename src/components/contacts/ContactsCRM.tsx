@@ -44,6 +44,7 @@ import { EmailThread } from '../email/EmailThread';
 import { PhoneLink } from '../shared/PhoneLink';
 import { useGoogleContacts } from '../../hooks/useGoogleContacts';
 import { deleteContactCalendarEvents } from '../../hooks/useGoogleCalendar';
+import { useAppleContacts, hasAppleCredentials, saveAppleCredentials, clearAppleCredentials } from '../../hooks/useAppleContacts';
 import OutreachCoach from '../outreach/OutreachCoach';
 
 // ─── TAG COLORS ───────────────────────────────────────────────────────────────
@@ -1945,7 +1946,13 @@ function shuffleArray<T>(arr: T[]): T[] {
 export default function ContactsCRM({ contacts, setContacts, contactTags, setContactTags, projects = [], onNavigateToNetworking }: Props) {
   const toast = useToast();
   const { syncContacts, autoSync, deleteContact: deleteGoogleContact } = useGoogleContacts();
+  const { deleteContact: deleteAppleContact, discoverPrincipal } = useAppleContacts();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [appleConnectOpen, setAppleConnectOpen] = useState(false);
+  const [appleEmail, setAppleEmail] = useState('');
+  const [appleAppPassword, setAppleAppPassword] = useState('');
+  const [appleConnecting, setAppleConnecting] = useState(false);
+  const [appleConnected, setAppleConnected] = useState(() => hasAppleCredentials());
   const [manageTagsOpen, setManageTagsOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<{ original: string; value: string; color: string; parent?: string } | null>(null);
   const [newTagValue, setNewTagValue] = useState('');
@@ -2138,6 +2145,10 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
       if (contact.googleResourceName) {
         deleteGoogleContact(contact.googleResourceName).catch(() => {});
       }
+      // Propagate deletion to Apple/iCloud Contacts via CardDAV
+      if (contact.appleContactUid) {
+        deleteAppleContact(contact.appleContactUid).catch(() => {});
+      }
       deleteContactCalendarEvents(contact.name).catch(() => {});
     }
   };
@@ -2295,6 +2306,9 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         }
       }
 
+      // UID from vCard — used for Apple/iCloud CardDAV delete sync
+      const uid = get('UID') || undefined;
+
       parsed.push({
         id: generateId(),
         name,
@@ -2309,6 +2323,7 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
         notes,
         interactions: [],
         linkedProjects: [],
+        ...(uid ? { appleContactUid: uid } : {}),
       });
     }
 
@@ -2506,6 +2521,26 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
             </svg>
             {isSyncing ? 'Syncing…' : 'Sync Google'}
+          </button>
+          <button
+            onClick={() => {
+              if (appleConnected) {
+                if (window.confirm('Disconnect Apple Contacts? Deletion sync will stop working.')) {
+                  clearAppleCredentials();
+                  setAppleConnected(false);
+                  toast.success('Apple Contacts disconnected');
+                }
+              } else {
+                setAppleConnectOpen(true);
+              }
+            }}
+            className="caesar-btn-ghost flex items-center gap-2"
+            title={appleConnected ? 'Apple Contacts connected — click to disconnect' : 'Connect Apple/iCloud Contacts for delete sync'}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" opacity={appleConnected ? 1 : 0.6}>
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+            </svg>
+            {appleConnected ? 'Apple ✓' : 'Apple'}
           </button>
           <button
             onClick={() => csvInputRef.current?.click()}
@@ -2950,6 +2985,63 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
       )}
 
       {/* Manage Tags Modal */}
+      {/* ── Apple Contacts Connect Modal ───────────────────────────────────── */}
+      {appleConnectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="caesar-card w-full max-w-sm flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Connect Apple Contacts</h2>
+              <button onClick={() => { setAppleConnectOpen(false); setAppleEmail(''); setAppleAppPassword(''); }}>
+                <X size={18} style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              To sync deletions to iCloud, enter your Apple ID and an{' '}
+              <a href="https://support.apple.com/en-us/102654" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent)' }}>
+                app-specific password
+              </a>. Credentials are stored locally in your browser.
+            </p>
+            <input
+              type="email"
+              placeholder="Apple ID (email)"
+              value={appleEmail}
+              onChange={e => setAppleEmail(e.target.value)}
+              className="caesar-input w-full"
+              autoFocus
+            />
+            <input
+              type="password"
+              placeholder="App-specific password"
+              value={appleAppPassword}
+              onChange={e => setAppleAppPassword(e.target.value)}
+              className="caesar-input w-full"
+            />
+            <button
+              disabled={!appleEmail || !appleAppPassword || appleConnecting}
+              onClick={async () => {
+                setAppleConnecting(true);
+                try {
+                  const principal = await discoverPrincipal(appleEmail, appleAppPassword);
+                  saveAppleCredentials(appleEmail, appleAppPassword, principal);
+                  setAppleConnected(true);
+                  setAppleConnectOpen(false);
+                  setAppleEmail('');
+                  setAppleAppPassword('');
+                  toast.success('Apple Contacts connected — deletions will sync to iCloud');
+                } catch (err: unknown) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to connect');
+                } finally {
+                  setAppleConnecting(false);
+                }
+              }}
+              className="caesar-btn w-full"
+            >
+              {appleConnecting ? 'Connecting…' : 'Connect'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {manageTagsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
           <div className="caesar-card w-full max-w-md flex flex-col gap-4" style={{ maxHeight: '80vh', overflow: 'auto' }}>

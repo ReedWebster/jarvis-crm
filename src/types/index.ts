@@ -112,6 +112,7 @@ export interface Contact {
   metAt?: string;      // where/how you met this person (e.g. "Harvard", "YC S24", "Conference")
   linkedin?: string;          // LinkedIn profile URL or username
   googleResourceName?: string; // Google People API resource name (e.g. "people/c12345") — set when synced from Google
+  appleContactUid?: string;    // vCard UID from Apple Contacts — used for CardDAV delete sync
   relationship: string;
   tags: ContactTag[];
   lastContacted: string;
