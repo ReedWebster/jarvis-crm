@@ -1,4 +1,4 @@
-import { createLinkedInPost, LinkedInError } from '../src/lib/linkedin';
+import { createLinkedInPost, LinkedInError } from '../lib/_linkedin.js';
 import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
