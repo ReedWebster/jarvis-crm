@@ -177,75 +177,281 @@ export function useNexusGraph({
       }
     }
 
-    // ── Build edges ──
+    // ══════════════════════════════════════════════════════════════════════════
+    // BUILD EDGES — connect everything that's related
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // Contact ↔ Project (via linkedProjects)
+    // ── 1. Contact ↔ Project (explicit linkedProjects) ──
     for (const c of contacts) {
       for (const pid of c.linkedProjects) {
         addLink(c.id, pid, 'contact-project');
       }
     }
 
-    // Contact ↔ Contact (manual connections from map state)
+    // ── 2. Contact ↔ Contact (manual connections from networking map) ──
     for (const conn of mapState.manualConnections) {
       addLink(conn.sourceContactId, conn.targetContactId, 'contact-contact', conn.label);
     }
 
-    // Contact ↔ Contact (shared projects — auto connections)
-    if (mapState.showAutoConnections) {
-      const projectContacts = new Map<string, string[]>();
-      for (const c of contacts) {
-        for (const pid of c.linkedProjects) {
-          if (!projectContacts.has(pid)) projectContacts.set(pid, []);
-          projectContacts.get(pid)!.push(c.id);
-        }
+    // ── 3. Contact ↔ Contact (shared projects) ──
+    const projectContactsMap = new Map<string, string[]>();
+    for (const c of contacts) {
+      for (const pid of c.linkedProjects) {
+        if (!projectContactsMap.has(pid)) projectContactsMap.set(pid, []);
+        projectContactsMap.get(pid)!.push(c.id);
       }
-      for (const members of projectContacts.values()) {
-        for (let i = 0; i < members.length; i++) {
-          for (let j = i + 1; j < members.length; j++) {
-            addLink(members[i], members[j], 'contact-contact');
-          }
+    }
+    for (const members of projectContactsMap.values()) {
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'contact-contact');
         }
       }
     }
 
-    // Client ↔ Contact (company name match)
+    // ── 4. Contact ↔ Contact (same company) ──
+    const companyContacts = new Map<string, string[]>();
+    for (const c of contacts) {
+      if (!c.company) continue;
+      const key = c.company.toLowerCase().trim();
+      if (!key) continue;
+      if (!companyContacts.has(key)) companyContacts.set(key, []);
+      companyContacts.get(key)!.push(c.id);
+    }
+    for (const members of companyContacts.values()) {
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'contact-contact');
+        }
+      }
+    }
+
+    // ── 5. Contact ↔ Contact (shared tags — connects people in same circles) ──
+    const tagContacts = new Map<string, string[]>();
+    for (const c of contacts) {
+      for (const tag of c.tags) {
+        const key = tag.toLowerCase().trim();
+        if (!key) continue;
+        if (!tagContacts.has(key)) tagContacts.set(key, []);
+        tagContacts.get(key)!.push(c.id);
+      }
+    }
+    for (const members of tagContacts.values()) {
+      if (members.length > 15) continue; // skip overly broad tags
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'contact-contact');
+        }
+      }
+    }
+
+    // ── 6. Contact ↔ Contact (met at the same place) ──
+    const metAtContacts = new Map<string, string[]>();
+    for (const c of contacts) {
+      if (!c.metAt) continue;
+      const key = c.metAt.toLowerCase().trim();
+      if (!key) continue;
+      if (!metAtContacts.has(key)) metAtContacts.set(key, []);
+      metAtContacts.get(key)!.push(c.id);
+    }
+    for (const members of metAtContacts.values()) {
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'contact-contact');
+        }
+      }
+    }
+
+    // ── 7. Project ↔ Contact (keyContacts name match) ──
+    const contactNameMap = new Map<string, string>();
+    for (const c of contacts) {
+      contactNameMap.set(c.name.toLowerCase().trim(), c.id);
+    }
+    for (const p of projects) {
+      for (const name of p.keyContacts) {
+        const cid = contactNameMap.get(name.toLowerCase().trim());
+        if (cid) addLink(p.id, cid, 'contact-project');
+      }
+    }
+
+    // ── 8. Project ↔ Project (shared key contacts) ──
+    const contactProjects = new Map<string, string[]>();
+    for (const p of projects) {
+      for (const name of p.keyContacts) {
+        const key = name.toLowerCase().trim();
+        if (!contactProjects.has(key)) contactProjects.set(key, []);
+        contactProjects.get(key)!.push(p.id);
+      }
+    }
+    for (const pids of contactProjects.values()) {
+      for (let i = 0; i < pids.length; i++) {
+        for (let j = i + 1; j < pids.length; j++) {
+          addLink(pids[i], pids[j], 'project-project');
+        }
+      }
+    }
+
+    // ── 9. Client ↔ Contact (company name match) ──
     for (const cl of clients) {
       if (!cl.company) continue;
-      const companyLower = cl.company.toLowerCase();
+      const companyLower = cl.company.toLowerCase().trim();
       for (const c of contacts) {
-        if (c.company?.toLowerCase() === companyLower) {
+        if (c.company?.toLowerCase().trim() === companyLower) {
           addLink(cl.id, c.id, 'client-contact');
         }
       }
     }
 
-    // Client ↔ Project
+    // ── 10. Client ↔ Project (explicit link) ──
     for (const cl of clients) {
       if (cl.linkedProjectId) {
         addLink(cl.id, cl.linkedProjectId, 'client-project');
       }
     }
 
-    // Candidate ↔ Project (via linkedVentureId matching project id)
+    // ── 11. Client ↔ Contact (client name matches a contact name) ──
+    for (const cl of clients) {
+      const cid = contactNameMap.get(cl.name.toLowerCase().trim());
+      if (cid) addLink(cl.id, cid, 'client-contact');
+    }
+
+    // ── 12. Candidate ↔ Project (via linkedVentureId) ──
     for (const ca of candidates) {
       if (ca.linkedVentureId) {
         addLink(ca.id, ca.linkedVentureId, 'candidate-project');
       }
     }
 
-    // Goal ↔ Project
+    // ── 13. Candidate ↔ Contact (same organization as a contact's company) ──
+    for (const ca of candidates) {
+      if (!ca.organization) continue;
+      const orgLower = ca.organization.toLowerCase().trim();
+      for (const c of contacts) {
+        if (c.company?.toLowerCase().trim() === orgLower) {
+          addLink(ca.id, c.id, 'candidate-contact');
+        }
+      }
+    }
+
+    // ── 14. Candidate ↔ Candidate (same organization) ──
+    const orgCandidates = new Map<string, string[]>();
+    for (const ca of candidates) {
+      if (!ca.organization) continue;
+      const key = ca.organization.toLowerCase().trim();
+      if (!orgCandidates.has(key)) orgCandidates.set(key, []);
+      orgCandidates.get(key)!.push(ca.id);
+    }
+    for (const members of orgCandidates.values()) {
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'candidate-contact');
+        }
+      }
+    }
+
+    // ── 15. Goal ↔ Project (explicit link) ──
     for (const g of goals) {
       if (g.linkedProjectId) {
         addLink(g.id, g.linkedProjectId, 'goal-project');
       }
     }
 
-    // Note ↔ Contact / Project / Goal
+    // ── 16. Goal ↔ Goal (same life area — ventures, academic, health, etc.) ──
+    const areaGoals = new Map<string, string[]>();
+    for (const g of goals) {
+      if (!areaGoals.has(g.area)) areaGoals.set(g.area, []);
+      areaGoals.get(g.area)!.push(g.id);
+    }
+    for (const members of areaGoals.values()) {
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'goal-goal');
+        }
+      }
+    }
+
+    // ── 17. Goal ↔ Goal (parent-child hierarchy) ──
+    for (const g of goals) {
+      if (g.parentId) {
+        addLink(g.id, g.parentId, 'goal-goal');
+      }
+    }
+
+    // ── 18. Note ↔ Contact / Project / Goal (explicit links) ──
     for (const n of notes) {
       if (n.linkedContactId) addLink(n.id, n.linkedContactId, 'note-contact');
       if (n.linkedProjectId) addLink(n.id, n.linkedProjectId, 'note-project');
       if (n.linkedGoalId) addLink(n.id, n.linkedGoalId, 'note-goal');
+    }
+
+    // ── 19. Note ↔ Note (shared tags) ──
+    const tagNotes = new Map<string, string[]>();
+    for (const n of notes) {
+      for (const tag of n.tags) {
+        const key = tag.toLowerCase().trim();
+        if (!key) continue;
+        if (!tagNotes.has(key)) tagNotes.set(key, []);
+        tagNotes.get(key)!.push(n.id);
+      }
+    }
+    for (const members of tagNotes.values()) {
+      if (members.length > 10) continue; // skip overly broad
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          addLink(members[i], members[j], 'note-note');
+        }
+      }
+    }
+
+    // ── 20. Note ↔ Contact (meeting attendees match contact names) ──
+    for (const n of notes) {
+      if (!n.isMeetingNote || !n.meetingAttendees) continue;
+      const attendees = n.meetingAttendees.toLowerCase().split(/[,;]+/);
+      for (const a of attendees) {
+        const trimmed = a.trim();
+        if (!trimmed) continue;
+        const cid = contactNameMap.get(trimmed);
+        if (cid) addLink(n.id, cid, 'note-contact');
+      }
+    }
+
+    // ── 21. Financial ↔ Project (ventureId matches a project name) ──
+    const projectNameMap = new Map<string, string>();
+    for (const p of projects) {
+      projectNameMap.set(p.name.toLowerCase().trim(), p.id);
+    }
+    for (const e of financialEntries) {
+      if (!e.ventureId) continue;
+      // Try matching ventureId to project by ID first, then by name
+      if (nodeIds.has(e.ventureId)) {
+        addLink(`fin_${e.ventureId}`, e.ventureId, 'financial-project');
+      }
+      const pid = projectNameMap.get(e.ventureId.toLowerCase().trim());
+      if (pid) addLink(`fin_${e.ventureId}`, pid, 'financial-project');
+    }
+
+    // ── 22. Financial ↔ Client (venture name matches client company) ──
+    for (const cl of clients) {
+      if (!cl.company) continue;
+      const companyLower = cl.company.toLowerCase().trim();
+      for (const e of financialEntries) {
+        if (!e.ventureId) continue;
+        if (e.ventureId.toLowerCase().trim() === companyLower) {
+          addLink(`fin_${e.ventureId}`, cl.id, 'financial-client');
+        }
+      }
+    }
+
+    // ── 23. Contact ↔ Project (contact name mentioned in project notes) ──
+    for (const p of projects) {
+      if (!p.notes) continue;
+      const notesLower = p.notes.toLowerCase();
+      for (const c of contacts) {
+        if (c.name.length < 3) continue; // skip very short names
+        if (notesLower.includes(c.name.toLowerCase())) {
+          addLink(c.id, p.id, 'contact-project');
+        }
+      }
     }
 
     return { nodes, links };

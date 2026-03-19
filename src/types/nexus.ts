@@ -22,10 +22,16 @@ export type NexusLinkType =
   | 'client-contact'
   | 'client-project'
   | 'candidate-project'
+  | 'candidate-contact'
   | 'goal-project'
+  | 'goal-goal'
   | 'note-contact'
   | 'note-project'
-  | 'note-goal';
+  | 'note-goal'
+  | 'note-note'
+  | 'financial-project'
+  | 'financial-client'
+  | 'project-project';
 
 export interface NexusLink {
   source: string;
