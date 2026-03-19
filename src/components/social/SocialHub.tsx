@@ -534,7 +534,7 @@ export function SocialHub({
               setAiError(null);
               setAiDrafts([]);
               try {
-                const res = await fetch('/api/social-ai-drafts', {
+                const res = await fetch('/api/social?action=ai-drafts', {
                   method: 'POST',
                   headers: { 'content-type': 'application/json' },
                   body: JSON.stringify({ topic: baseContent || 'Social post about entrepreneurship, AI, and systems.' }),

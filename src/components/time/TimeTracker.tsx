@@ -202,7 +202,8 @@ function getMinutesAtClientY(
 const GOOGLE_EVENT_COLOR = '#4285f4';
 
 function EventBlock({
-  block, categories, top, height, colPct, widthPct, onClick, onMoveStart, onResizeStart, isDragging,
+  block, categories, top, height, colPct, widthPct, onClick,
+  onMoveStart, onMoveTouchStart, onResizeStart, onResizeTouchStart, isDragging,
 }: {
   block: TimeBlock;
   categories: TimeCategory[];
@@ -212,7 +213,9 @@ function EventBlock({
   widthPct: number;
   onClick: () => void;
   onMoveStart?: (e: React.MouseEvent) => void;
+  onMoveTouchStart?: (e: React.TouchEvent) => void;
   onResizeStart?: (e: React.MouseEvent) => void;
+  onResizeTouchStart?: (e: React.TouchEvent) => void;
   isDragging?: boolean;
 }) {
   const isGoogleEvent = !!block.googleEventId;
@@ -221,6 +224,7 @@ function EventBlock({
   const displayName = block.title?.trim() || catName;
   const isShort = height < 38;
   const [active, setActive] = useState(false);
+  const isDraggable = !isGoogleEvent && (!!onMoveStart || !!onMoveTouchStart);
 
   return (
     <div
@@ -228,7 +232,10 @@ function EventBlock({
         e.stopPropagation();
         if (onMoveStart && !isGoogleEvent) { e.preventDefault(); onMoveStart(e); }
       }}
-      onTouchStart={(e) => e.stopPropagation()}
+      onTouchStart={(e) => {
+        e.stopPropagation();
+        if (onMoveTouchStart && !isGoogleEvent) onMoveTouchStart(e);
+      }}
       onClick={(e) => { e.stopPropagation(); if (!isGoogleEvent && !onMoveStart) onClick(); }}
       title={`${displayName}\n${formatTime(block.startTime)} – ${formatTime(block.endTime)}${isGoogleEvent ? `\n${catName}` : ''}`}
       style={{
@@ -252,6 +259,8 @@ function EventBlock({
         boxSizing: 'border-box',
         transition: 'filter 0.1s, z-index 0s',
         filter: active ? 'brightness(0.92)' : 'none',
+        // On touch devices, own the touch gesture so long-press drag works
+        touchAction: isDraggable ? 'none' : 'auto',
       }}
       onMouseEnter={() => setActive(true)}
       onMouseLeave={() => setActive(false)}
@@ -271,17 +280,19 @@ function EventBlock({
         </span>
       )}
       {/* Resize handle — bottom edge drag to extend event */}
-      {!isGoogleEvent && onResizeStart && (
+      {!isGoogleEvent && (onResizeStart || onResizeTouchStart) && (
         <div
-          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onResizeStart(e); }}
+          onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); onResizeStart?.(e); }}
+          onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); onResizeTouchStart?.(e); }}
           style={{
             position: 'absolute',
             bottom: 0, left: 0, right: 0,
-            height: 10,
+            height: 14,
             cursor: 'ns-resize',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            touchAction: 'none',
           }}
         >
           <div style={{
@@ -555,7 +566,99 @@ function useDragMove(
     document.addEventListener('mouseup', onMouseUp);
   }, [scrollRef, onComplete]);
 
-  return { moveGhost, startMove };
+  // ── Touch version: long-press (250ms) to initiate drag ──
+  const startMoveTouch = useCallback((
+    e: React.TouchEvent,
+    block: TimeBlock,
+    date: string,
+    color: string,
+    onClickFallback: () => void,
+  ) => {
+    e.stopPropagation();
+    const containerEl = (e.currentTarget as HTMLElement).closest('[data-cal-col]') as HTMLElement | null;
+    if (!containerEl) { onClickFallback(); return; }
+
+    const touch = e.touches[0];
+    const startMin = timeToMinutes(block.startTime);
+    const endMin = timeToMinutes(block.endTime);
+    const durationMin = endMin - startMin;
+    const clickMin = getMinutesAtClientY(containerEl, scrollRef.current, touch.clientY);
+    const offsetMin = Math.max(0, Math.min(snapToGrid(clickMin - startMin), durationMin - 15));
+
+    const startX = touch.clientX;
+    const startY = touch.clientY;
+    let dragStarted = false;
+    let cancelled = false;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    moveRef.current = { blockId: block.id, date, durationMin, offsetMin, containerEl };
+
+    const cleanup = () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchCancel);
+    };
+
+    const onTouchMove = (te: TouchEvent) => {
+      const t = te.touches[0];
+      if (!dragStarted) {
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        if (Math.sqrt(dx * dx + dy * dy) > 8) {
+          // Moved too much before long-press: cancel
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+          cancelled = true;
+          cleanup();
+          moveRef.current = null;
+        }
+        return;
+      }
+      te.preventDefault();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (!moveRef.current) return;
+        const rawStart = getMinutesAtClientY(moveRef.current.containerEl, scrollRef.current, t.clientY) - moveRef.current.offsetMin;
+        const newStart = snapToGrid(Math.min(Math.max(rawStart, 0), 24 * 60 - moveRef.current.durationMin));
+        setMoveGhost(prev => prev ? { ...prev, startMin: newStart, endMin: newStart + moveRef.current!.durationMin } : null);
+      });
+    };
+
+    const onTouchEnd = () => {
+      cleanup();
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      if (!dragStarted) {
+        moveRef.current = null;
+        if (!cancelled) onClickFallback();
+        return;
+      }
+      setMoveGhost(prev => {
+        if (prev && moveRef.current) {
+          onComplete(moveRef.current.blockId, moveRef.current.date, minutesToTimeStr(prev.startMin), minutesToTimeStr(prev.endMin));
+        }
+        moveRef.current = null;
+        return null;
+      });
+    };
+
+    const onTouchCancel = () => {
+      cleanup();
+      setMoveGhost(null);
+      moveRef.current = null;
+    };
+
+    longPressTimer = setTimeout(() => {
+      if (cancelled) return;
+      dragStarted = true;
+      setMoveGhost({ blockId: block.id, date, startMin, endMin, color });
+      try { navigator.vibrate?.(40); } catch { /* ignore */ }
+    }, 250);
+
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    document.addEventListener('touchcancel', onTouchCancel);
+  }, [scrollRef, onComplete]);
+
+  return { moveGhost, startMove, startMoveTouch };
 }
 
 // ─── RESIZE EVENT ─────────────────────────────────────────────────────────────
@@ -632,7 +735,54 @@ function useResizeEvent(
     document.addEventListener('mouseup', onMouseUp);
   }, [scrollRef, onComplete]);
 
-  return { resizeGhost, startResize };
+  // ── Touch version: immediately start resize on touchstart ──
+  const startResizeTouch = useCallback((
+    e: React.TouchEvent,
+    block: TimeBlock,
+    color: string,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const containerEl = (e.currentTarget as HTMLElement).closest('[data-cal-col]') as HTMLElement | null;
+    if (!containerEl) return;
+
+    const startMin = timeToMinutes(block.startTime);
+    const endMin   = timeToMinutes(block.endTime);
+    resizeRef.current = { blockId: block.id, startMin, containerEl };
+    setResizeGhost({ blockId: block.id, startMin, endMin, color });
+
+    const onTouchMove = (te: TouchEvent) => {
+      if (!resizeRef.current) return;
+      te.preventDefault();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (!resizeRef.current) return;
+        const rawEnd = getMinutesAtClientY(resizeRef.current.containerEl, scrollRef.current, te.touches[0].clientY);
+        const newEnd = Math.min(snapToGrid(Math.max(rawEnd, resizeRef.current.startMin + 15)), 24 * 60);
+        setResizeGhost(prev => prev ? { ...prev, endMin: newEnd } : null);
+      });
+    };
+
+    const onTouchEnd = () => {
+      document.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('touchcancel', onTouchEnd);
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      setResizeGhost(prev => {
+        if (prev && resizeRef.current) {
+          onComplete(resizeRef.current.blockId, minutesToTimeStr(prev.endMin));
+        }
+        resizeRef.current = null;
+        return null;
+      });
+    };
+
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+    document.addEventListener('touchcancel', onTouchEnd);
+  }, [scrollRef, onComplete]);
+
+  return { resizeGhost, startResize, startResizeTouch };
 }
 
 // ─── DAY VIEW ─────────────────────────────────────────────────────────────────
@@ -655,8 +805,8 @@ function AppleDayView({
   const layout = useMemo(() => buildOverlapLayout(blocks), [blocks]);
   const total = getTotalHours(blocks);
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
-  const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
-  const { resizeGhost, startResize } = useResizeEvent(scrollRef, onResizeBlock);
+  const { moveGhost, startMove, startMoveTouch } = useDragMove(scrollRef, onMoveBlock);
+  const { resizeGhost, startResize, startResizeTouch } = useResizeEvent(scrollRef, onResizeBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -716,7 +866,9 @@ function AppleDayView({
                   widthPct={100 / info.totalCols}
                   onClick={() => onClickBlock(block)}
                   onMoveStart={(e) => startMove(e, block, date, color, () => onClickBlock(block))}
+                  onMoveTouchStart={(e) => startMoveTouch(e, block, date, color, () => onClickBlock(block))}
                   onResizeStart={(e) => startResize(e, block, color)}
+                  onResizeTouchStart={(e) => startResizeTouch(e, block, color)}
                   isDragging={moveGhost?.blockId === block.id}
                 />
               );
@@ -756,8 +908,8 @@ function AppleWeekView({
   scrollRef: React.RefObject<HTMLDivElement>;
 }) {
   const { ghost, startDrag } = useDragCreate(scrollRef, onCreateBlock);
-  const { moveGhost, startMove } = useDragMove(scrollRef, onMoveBlock);
-  const { resizeGhost, startResize } = useResizeEvent(scrollRef, onResizeBlock);
+  const { moveGhost, startMove, startMoveTouch } = useDragMove(scrollRef, onMoveBlock);
+  const { resizeGhost, startResize, startResizeTouch } = useResizeEvent(scrollRef, onResizeBlock);
 
   return (
     <div className="flex-1 rounded-xl overflow-hidden border flex flex-col"
@@ -823,7 +975,9 @@ function AppleWeekView({
                       widthPct={100 / info.totalCols}
                       onClick={() => onClickBlock(block)}
                       onMoveStart={(e) => startMove(e, block, dayStr, color, () => onClickBlock(block))}
+                      onMoveTouchStart={(e) => startMoveTouch(e, block, dayStr, color, () => onClickBlock(block))}
                       onResizeStart={(e) => startResize(e, block, color)}
+                      onResizeTouchStart={(e) => startResizeTouch(e, block, color)}
                       isDragging={moveGhost?.blockId === block.id}
                     />
                   );
@@ -1040,10 +1194,10 @@ function CalendarSidebar({
 
 function EnergyPicker({ value, onChange }: { value: number; onChange: (v: 1 | 2 | 3 | 4 | 5) => void }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       {([1, 2, 3, 4, 5] as const).map((n) => (
         <button key={n} type="button" onClick={() => onChange(n)}
-          className="flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg border transition-all text-xs"
+          className="flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg border transition-all text-xs flex-1 min-w-[54px]"
           style={{
             borderColor: value === n ? 'var(--border-strong)' : 'var(--border)',
             backgroundColor: value === n ? 'var(--bg-elevated)' : 'transparent',
@@ -1132,7 +1286,7 @@ function ScreenTimeSection({ screenTime, setScreenTime }: ScreenTimeSectionProps
       {expanded && (
         <div className="mt-4 flex flex-col gap-3">
           {/* Form */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
               <label className="caesar-label">Date</label>
               <input
@@ -1170,9 +1324,9 @@ function ScreenTimeSection({ screenTime, setScreenTime }: ScreenTimeSectionProps
           {/* Category input */}
           <div>
             <label className="caesar-label">Categories</label>
-            <div className="flex gap-2 mt-1">
+            <div className="flex flex-wrap gap-2 mt-1">
               <input
-                className="caesar-input flex-1"
+                className="caesar-input flex-1 min-w-[120px]"
                 placeholder="App / category"
                 value={catName}
                 onChange={e => setCatName(e.target.value)}
@@ -1488,7 +1642,7 @@ export function Calendar({
   return (
     <div className="flex flex-col gap-3 animate-fade-in">
       {/* Navigation Bar — single row, doesn't wrap on mobile */}
-      <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+      <div className="flex items-center gap-1 sm:gap-2 overflow-hidden" style={{ minWidth: 0 }}>
         {/* Prev / Next / Today */}
         <div className="flex items-center gap-1 flex-shrink-0">
           {[handleNavPrev, handleNavNext].map((fn, i) => {
@@ -1512,7 +1666,7 @@ export function Calendar({
         </div>
 
         {/* Date title — truncates instead of wrapping */}
-        <span className="text-sm font-semibold flex-1 truncate hidden sm:block" style={{ color: 'var(--text-primary)' }}>
+        <span className="text-sm font-semibold flex-1 truncate" style={{ color: 'var(--text-primary)', minWidth: 0 }}>
           {navTitle}
         </span>
 
@@ -1521,7 +1675,7 @@ export function Calendar({
           <div className="flex rounded-full p-0.5" style={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
             {(['day', 'week', 'month'] as CalView[]).map((v) => (
               <button key={v} onClick={() => setCalView(v)}
-                className="px-2.5 py-1 text-xs font-medium rounded-full transition-all capitalize"
+                className="px-2 sm:px-2.5 py-1 text-xs font-medium rounded-full transition-all capitalize"
                 style={{
                   backgroundColor: calView === v ? 'var(--bg-card)' : 'transparent',
                   color: calView === v ? 'var(--text-primary)' : 'var(--text-muted)',
