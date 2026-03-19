@@ -47,7 +47,7 @@ import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
 import { NotesHub } from './components/notes/NotesHub';
 import { TodoList } from './components/todos/TodoList';
-import { WorldView } from './components/world/WorldViewNew';
+const WorldView = React.lazy(() => import('./components/world/WorldViewNew').then(m => ({ default: m.WorldView })));
 import { DocHub } from './components/dochub/DocHub';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
@@ -459,13 +459,15 @@ function MainApp() {
         );
       case 'world':
         return (
-          <WorldView
-            contactTags={contactTags}
-            districtTagMap={districtTagMap}
-            onDistrictTagMapChange={setDistrictTagMap}
-            appData={worldAppData}
-            onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
-          />
+          <React.Suspense fallback={<div className="caesar-card text-sm" style={{ color: 'var(--text-muted)' }}>Loading World…</div>}>
+            <WorldView
+              contactTags={contactTags}
+              districtTagMap={districtTagMap}
+              onDistrictTagMapChange={setDistrictTagMap}
+              appData={worldAppData}
+              onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
+            />
+          </React.Suspense>
         );
       case 'social':
         return (
