@@ -55,6 +55,7 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
   const attendeeRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const headerChunkRef = useRef<Blob | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechRef = useRef<any>(null);
@@ -110,9 +111,16 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
 
       const recorder = new MediaRecorder(stream, { mimeType });
       audioChunksRef.current = [];
+      headerChunkRef.current = null;
 
       recorder.ondataavailable = e => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          if (audioChunksRef.current.length === 0) {
+            // First chunk contains the WebM EBML header — save separately
+            headerChunkRef.current = e.data;
+          }
+          audioChunksRef.current.push(e.data);
+        }
       };
 
       recorder.onstop = async () => {
@@ -141,42 +149,80 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
 
   async function transcribeWithGroq(mimeType: string) {
     setRecordState('transcribing');
-    setStatusMsg('Transcribing with Groq Whisper…');
+
+    // Split into ~3-minute segments to stay under Vercel's 4.5MB body limit.
+    // At 250ms chunks, 3 min = 720 chunks → ~1.9MB base64 at 64kbps.
+    const CHUNKS_PER_SEGMENT = 720;
+    const chunks = audioChunksRef.current;
+    const header = headerChunkRef.current;
+
+    const segments: Blob[] = [];
+    for (let i = 0; i < chunks.length; i += CHUNKS_PER_SEGMENT) {
+      const slice = chunks.slice(i, i + CHUNKS_PER_SEGMENT);
+      // Segments after the first need the EBML header prepended to be valid WebM
+      const blobParts = (i === 0 || !header) ? slice : [header, ...slice];
+      segments.push(new Blob(blobParts, { type: mimeType }));
+    }
+
+    if (segments.length === 0) {
+      setStatusMsg('No audio recorded.');
+      setRecordState('idle');
+      return;
+    }
+
+    const transcriptions: string[] = [];
 
     try {
-      const blob = new Blob(audioChunksRef.current, { type: mimeType });
-      const base64 = await blobToBase64(blob);
-
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64, mimeType }),
-      });
-
-      if (res.status === 503 || res.status === 429) {
-        // Groq not configured or rate-limited → switch to Web Speech
-        groqUnavailableRef.current = true;
+      for (let i = 0; i < segments.length; i++) {
         setStatusMsg(
-          res.status === 429
-            ? 'Groq rate limit reached — switching to live transcription. Speak now.'
-            : 'Groq not configured — switching to live transcription. Speak now.'
+          segments.length === 1
+            ? 'Transcribing with Groq Whisper…'
+            : `Transcribing part ${i + 1} of ${segments.length}…`
         );
-        setRecordState('idle');
-        startWebSpeech();
-        return;
+
+        const base64 = await blobToBase64(segments[i]);
+
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: base64, mimeType }),
+        });
+
+        if (res.status === 503 || res.status === 429) {
+          // Groq not configured or rate-limited → switch to Web Speech
+          groqUnavailableRef.current = true;
+          setStatusMsg(
+            res.status === 429
+              ? 'Groq rate limit reached — switching to live transcription. Speak now.'
+              : 'Groq not configured — switching to live transcription. Speak now.'
+          );
+          setRecordState('idle');
+          startWebSpeech();
+          return;
+        }
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (data.text) transcriptions.push(data.text);
       }
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      if (data.text) {
-        setRawNotes(prev => (prev ? prev + '\n' + data.text : data.text));
+      const fullText = transcriptions.join(' ').trim();
+      if (fullText) {
+        setRawNotes(prev => (prev ? prev + '\n' + fullText : fullText));
         setStatusMsg('Transcription complete.');
       } else {
         setStatusMsg('No speech detected.');
       }
     } catch {
-      setStatusMsg('Transcription failed — check console. Try again or type notes manually.');
+      // Save any partial transcription we got
+      const partial = transcriptions.join(' ').trim();
+      if (partial) {
+        setRawNotes(prev => (prev ? prev + '\n' + partial : partial));
+        setStatusMsg('Transcription partially complete — some audio may be missing.');
+      } else {
+        setStatusMsg('Transcription failed — check console. Try again or type notes manually.');
+      }
     } finally {
       setRecordState('idle');
     }
