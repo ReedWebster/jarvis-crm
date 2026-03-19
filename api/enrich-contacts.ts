@@ -96,12 +96,12 @@ export default async function handler(req: any, res: any) {
       output: Output.object({ schema: enrichmentSchema }),
     });
 
-    if (!result.object) {
+    if (!result.output) {
       res.status(502).json({ error: 'Model returned empty response' });
       return;
     }
 
-    res.status(200).json({ enrichments: result.object.enrichments });
+    res.status(200).json({ enrichments: result.output.enrichments });
   } catch (err: any) {
     console.error('[EnrichContacts] Error:', err?.message ?? String(err));
     res.status(500).json({ error: 'Failed to enrich contacts', detail: err?.message ?? String(err) });
