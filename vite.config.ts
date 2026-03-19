@@ -3,8 +3,23 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  resolve: {
+    dedupe: ['three'],
+  },
   optimizeDeps: {
     include: ['three', '@react-three/fiber', 'three-spritetext', 'react-force-graph-3d'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Keep three + R3F together to avoid cross-chunk initialization issues
+          if (id.includes('node_modules/three/') || id.includes('node_modules/@react-three/')) {
+            return 'three-vendor';
+          }
+        },
+      },
+    },
   },
   plugins: [
     react(),
