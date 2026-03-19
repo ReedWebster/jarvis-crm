@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, BarChart2, Inbox, Settings, Plus, RefreshCw, CheckCircle2, XCircle, Clock, Hash, Linkedin, Twitter, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, BarChart2, Inbox, Settings, Plus, RefreshCw, CheckCircle2, XCircle, Clock, Hash, Linkedin, Twitter, Sparkles, Trash2, Edit3, Send, Image, X, Loader2 } from 'lucide-react';
 import type { Contact, SocialAccount, SocialApprovalItem, SocialPlatform, SocialPost } from '../../types';
 import { Modal } from '../shared/Modal';
 
@@ -51,10 +51,17 @@ export function SocialHub({
 }: SocialHubProps) {
   const [activeTab, setActiveTab] = useState<TabId>('calendar');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [baseContent, setBaseContent] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiDrafts, setAiDrafts] = useState<{ platform: string; content: string }[]>([]);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishSuccess, setPublishSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [linkedinStatus, setLinkedinStatus] = useState<'unknown' | 'disconnected' | 'connected' | 'needs-reauth'>('unknown');
   const [linkedinProfile, setLinkedinProfile] = useState<{ name?: string; email?: string; picture?: string } | null>(null);
   const [linkedinLoading, setLinkedinLoading] = useState(false);
@@ -91,6 +98,121 @@ export function SocialHub({
   }, [socialPosts]);
 
   const pendingApprovals = approvals.filter(a => a.status === 'pending');
+
+  const openNewComposer = () => {
+    setEditingPostId(null);
+    setBaseContent('');
+    setAiDrafts([]);
+    setAiError(null);
+    setImageDataUrl(null);
+    setScheduledAt('');
+    setPublishError(null);
+    setPublishSuccess(null);
+    setComposerOpen(true);
+  };
+
+  const openEditComposer = (post: SocialPost) => {
+    setEditingPostId(post.id);
+    setBaseContent(post.linkedinContent || post.twitterContent || post.baseContent);
+    setAiDrafts([]);
+    setAiError(null);
+    setImageDataUrl(post.mediaUrls?.[0] ?? null);
+    setScheduledAt(post.scheduledAt ?? '');
+    setPublishError(null);
+    setPublishSuccess(null);
+    setComposerOpen(true);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setAiError('Image must be under 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setImageDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleSaveDraft = () => {
+    const linkedinDraft = aiDrafts.find(d => d.platform === 'linkedin')?.content;
+    const twitterDraft = aiDrafts.find(d => d.platform === 'twitter')?.content;
+    const platforms: SocialPlatform[] = [];
+    if (linkedinDraft) platforms.push('linkedin');
+    if (twitterDraft) platforms.push('twitter');
+    if (platforms.length === 0) platforms.push('linkedin', 'twitter');
+    const now = new Date().toISOString();
+
+    if (editingPostId) {
+      setSocialPosts(prev => prev.map(p => p.id === editingPostId ? {
+        ...p,
+        baseContent: baseContent.trim(),
+        linkedinContent: linkedinDraft || p.linkedinContent,
+        twitterContent: twitterDraft || p.twitterContent,
+        mediaUrls: imageDataUrl ? [imageDataUrl] : p.mediaUrls,
+        scheduledAt: scheduledAt || undefined,
+        status: scheduledAt ? 'scheduled' as const : p.status,
+        updatedAt: now,
+      } : p));
+    } else {
+      setSocialPosts(prev => [...prev, {
+        id: crypto.randomUUID(),
+        creatorUserId: 'reed',
+        platforms,
+        baseContent: baseContent.trim(),
+        linkedinContent: linkedinDraft,
+        twitterContent: twitterDraft,
+        mediaUrls: imageDataUrl ? [imageDataUrl] : undefined,
+        status: scheduledAt ? 'scheduled' as const : 'draft' as const,
+        scheduledAt: scheduledAt || undefined,
+        approvalState: 'draft' as const,
+        createdAt: now,
+        updatedAt: now,
+      }]);
+    }
+    setComposerOpen(false);
+  };
+
+  const handleDeletePost = (id: string) => {
+    setSocialPosts(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handlePublishLinkedIn = async (post: SocialPost) => {
+    setPublishLoading(true);
+    setPublishError(null);
+    setPublishSuccess(null);
+    const content = post.linkedinContent || post.baseContent;
+    try {
+      const body: any = { text: content };
+      if (post.mediaUrls?.[0]?.startsWith('data:image/')) {
+        body.imageDataUrl = post.mediaUrls[0];
+      }
+      const res = await fetch('/api/linkedin-post', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPublishError(json?.error || 'Failed to publish');
+      } else {
+        setPublishSuccess('Published to LinkedIn!');
+        setSocialPosts(prev => prev.map(p => p.id === post.id ? {
+          ...p,
+          status: 'published' as const,
+          publishedAt: new Date().toISOString(),
+          externalPostIds: { ...p.externalPostIds, linkedin: json.id },
+          updatedAt: new Date().toISOString(),
+        } : p));
+      }
+    } catch (err: any) {
+      setPublishError(err?.message ?? 'Failed to publish');
+    } finally {
+      setPublishLoading(false);
+    }
+  };
 
   // Load LinkedIn connection status from server (workspace_data) on mount
   useEffect(() => {
@@ -166,7 +288,7 @@ export function SocialHub({
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => setComposerOpen(true)}
+            onClick={openNewComposer}
             className="caesar-btn-primary flex items-center gap-2"
           >
             <Plus size={16} />
@@ -249,49 +371,90 @@ export function SocialHub({
                     <hr className="flex-1 caesar-divider" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {posts.map(post => (
-                      <div key={post.id} className="caesar-card flex flex-col gap-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {post.platforms.map(p => (
-                              <span key={p} className="tag" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-                                {PLATFORM_META[p]?.icon}
-                                <span className="ml-1 text-[10px] uppercase tracking-wide">
-                                  {PLATFORM_META[p]?.label}
+                    {posts.map(post => {
+                      const statusColor =
+                        post.status === 'published' ? '#22c55e' :
+                        post.status === 'scheduled' ? '#3b82f6' :
+                        post.status === 'failed' ? '#ef4444' :
+                        'var(--text-secondary)';
+                      return (
+                        <div key={post.id} className="caesar-card flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {post.platforms.map(p => (
+                                <span key={p} className="tag" style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+                                  {PLATFORM_META[p]?.icon}
+                                  <span className="ml-1 text-[10px] uppercase tracking-wide">
+                                    {PLATFORM_META[p]?.label}
+                                  </span>
                                 </span>
-                              </span>
-                            ))}
-                          </div>
-                          <span
-                            className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide"
-                            style={{
-                              backgroundColor: 'var(--bg-elevated)',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            {post.status.replace('-', ' ')}
-                          </span>
-                        </div>
-                        <p className="text-sm line-clamp-3" style={{ color: 'var(--text-secondary)' }}>
-                          {post.baseContent}
-                        </p>
-                        <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-                          <div className="flex items-center gap-1">
-                            <Clock size={12} />
-                            <span>
-                              {formatDateLabel(post.scheduledAt ?? post.createdAt)} {formatTimeLabel(post.scheduledAt)}
+                              ))}
+                            </div>
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide"
+                              style={{ backgroundColor: 'var(--bg-elevated)', color: statusColor }}
+                            >
+                              {post.status.replace('-', ' ')}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            className="caesar-btn-ghost px-2 py-1 text-[11px]"
-                            onClick={() => setComposerOpen(true)}
-                          >
-                            Edit
-                          </button>
+                          {post.mediaUrls?.[0] && (
+                            <img
+                              src={post.mediaUrls[0]}
+                              alt="Post attachment"
+                              className="rounded-lg w-full max-h-32 object-cover"
+                              style={{ border: '1px solid var(--border)' }}
+                            />
+                          )}
+                          <p className="text-sm line-clamp-3" style={{ color: 'var(--text-secondary)' }}>
+                            {post.linkedinContent || post.twitterContent || post.baseContent}
+                          </p>
+                          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
+                            <div className="flex items-center gap-1">
+                              <Clock size={12} />
+                              <span>
+                                {formatDateLabel(post.scheduledAt ?? post.createdAt)} {formatTimeLabel(post.scheduledAt)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {post.status !== 'published' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="caesar-btn-ghost px-2 py-1 text-[11px] flex items-center gap-1"
+                                    onClick={() => openEditComposer(post)}
+                                  >
+                                    <Edit3 size={10} /> Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="caesar-btn-ghost px-2 py-1 text-[11px] flex items-center gap-1"
+                                    onClick={() => handleDeletePost(post.id)}
+                                    style={{ color: '#ef4444' }}
+                                  >
+                                    <Trash2 size={10} /> Delete
+                                  </button>
+                                  {post.platforms.includes('linkedin') && linkedinStatus === 'connected' && (
+                                    <button
+                                      type="button"
+                                      className="caesar-btn-ghost px-2 py-1 text-[11px] flex items-center gap-1"
+                                      onClick={() => handlePublishLinkedIn(post)}
+                                      style={{ color: '#0a66c2' }}
+                                    >
+                                      <Send size={10} /> Publish
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {post.status === 'published' && (
+                                <span className="text-[10px]" style={{ color: '#22c55e' }}>
+                                  Published {formatDateLabel(post.publishedAt)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -514,17 +677,46 @@ export function SocialHub({
         </div>
       )}
 
-      {/* Composer modal shell (content implemented incrementally) */}
+      {/* Publish status banner */}
+      {(publishSuccess || publishError) && (
+        <div
+          className="fixed top-4 right-4 z-[60] rounded-xl px-4 py-3 text-sm flex items-center gap-3 shadow-lg animate-fade-in"
+          style={{
+            backgroundColor: publishSuccess ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+            color: publishSuccess ? '#22c55e' : '#ef4444',
+            border: `1px solid ${publishSuccess ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          }}
+        >
+          <span>{publishSuccess || publishError}</span>
+          <button type="button" onClick={() => { setPublishSuccess(null); setPublishError(null); }} style={{ opacity: 0.7 }}>✕</button>
+        </div>
+      )}
+
+      {/* Publishing overlay */}
+      {publishLoading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ backgroundColor: 'rgba(5,8,15,0.6)' }}>
+          <div className="caesar-card flex items-center gap-3 px-6 py-4">
+            <Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>Publishing to LinkedIn…</span>
+          </div>
+        </div>
+      )}
+
+      {/* Composer modal */}
       <Modal
         isOpen={composerOpen}
         onClose={() => setComposerOpen(false)}
-        title="New Social Post"
+        title={editingPostId ? 'Edit Post' : 'New Social Post'}
         size="lg"
       >
         <div className="flex flex-col gap-3">
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Start with a base idea, then refine per platform. Use AI assist to generate sharp, on-brand drafts.
+            {editingPostId
+              ? 'Edit your draft, attach an image, schedule, or publish directly.'
+              : 'Start with a base idea, then refine per platform. Use AI assist to generate sharp, on-brand drafts.'}
           </p>
+
+          {/* AI Generate */}
           <button
             type="button"
             className="caesar-btn-ghost flex items-center gap-2 text-sm"
@@ -555,11 +747,12 @@ export function SocialHub({
             <Sparkles size={14} />
             {aiLoading ? 'Generating…' : 'Generate AI Draft'}
           </button>
+
           {aiError && (
-            <p className="text-xs" style={{ color: '#ef4444' }}>
-              {aiError}
-            </p>
+            <p className="text-xs" style={{ color: '#ef4444' }}>{aiError}</p>
           )}
+
+          {/* AI Draft suggestions */}
           {aiDrafts.length > 0 && (
             <div className="caesar-card flex flex-col gap-2">
               <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -580,14 +773,14 @@ export function SocialHub({
                         Use
                       </button>
                     </div>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {d.content}
-                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{d.content}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Text area */}
           <textarea
             className="caesar-textarea mt-1"
             rows={5}
@@ -595,46 +788,110 @@ export function SocialHub({
             value={baseContent}
             onChange={e => setBaseContent(e.target.value)}
           />
-          <div className="flex items-center justify-end gap-2 mt-2">
-            <button
-              type="button"
-              className="caesar-btn-ghost text-sm"
-              onClick={() => setComposerOpen(false)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="caesar-btn-primary text-sm"
-              disabled={!baseContent.trim()}
-              onClick={() => {
-                const linkedinDraft = aiDrafts.find(d => d.platform === 'linkedin')?.content;
-                const twitterDraft = aiDrafts.find(d => d.platform === 'twitter')?.content;
-                const platforms: SocialPlatform[] = [];
-                if (linkedinDraft) platforms.push('linkedin');
-                if (twitterDraft) platforms.push('twitter');
-                if (platforms.length === 0) platforms.push('linkedin', 'twitter');
 
-                setSocialPosts(prev => [...prev, {
-                  id: crypto.randomUUID(),
-                  creatorUserId: 'reed',
-                  platforms,
-                  baseContent: baseContent.trim(),
-                  linkedinContent: linkedinDraft,
-                  twitterContent: twitterDraft,
-                  status: 'draft',
-                  approvalState: 'draft',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                }]);
-                setBaseContent('');
-                setAiDrafts([]);
-                setAiError(null);
-                setComposerOpen(false);
-              }}
+          {/* Image attachment */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          {imageDataUrl ? (
+            <div className="relative inline-block">
+              <img
+                src={imageDataUrl}
+                alt="Attachment preview"
+                className="rounded-lg max-h-40 object-cover"
+                style={{ border: '1px solid var(--border)' }}
+              />
+              <button
+                type="button"
+                onClick={() => setImageDataUrl(null)}
+                className="absolute top-1 right-1 p-1 rounded-full"
+                style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: '#fff' }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="caesar-btn-ghost flex items-center gap-2 text-sm"
+              onClick={() => fileInputRef.current?.click()}
             >
-              Save Draft
+              <Image size={14} />
+              Attach Image
             </button>
+          )}
+
+          {/* Schedule */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Schedule:</label>
+            <input
+              type="datetime-local"
+              className="caesar-input text-xs flex-1"
+              value={scheduledAt ? scheduledAt.slice(0, 16) : ''}
+              onChange={e => setScheduledAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
+            />
+            {scheduledAt && (
+              <button
+                type="button"
+                className="text-xs"
+                style={{ color: 'var(--text-muted)' }}
+                onClick={() => setScheduledAt('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <div className="flex items-center gap-2">
+              {/* Publish directly from composer if editing and LinkedIn connected */}
+              {editingPostId && linkedinStatus === 'connected' && (
+                <button
+                  type="button"
+                  className="caesar-btn-ghost text-sm flex items-center gap-1"
+                  style={{ color: '#0a66c2' }}
+                  disabled={!baseContent.trim() || publishLoading}
+                  onClick={() => {
+                    handleSaveDraft();
+                    const post = socialPosts.find(p => p.id === editingPostId);
+                    if (post) {
+                      const updated = {
+                        ...post,
+                        baseContent: baseContent.trim(),
+                        linkedinContent: baseContent.trim(),
+                        mediaUrls: imageDataUrl ? [imageDataUrl] : post.mediaUrls,
+                      };
+                      handlePublishLinkedIn(updated);
+                    }
+                  }}
+                >
+                  <Send size={14} />
+                  Publish to LinkedIn
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="caesar-btn-ghost text-sm"
+                onClick={() => setComposerOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="caesar-btn-primary text-sm"
+                disabled={!baseContent.trim()}
+                onClick={handleSaveDraft}
+              >
+                {editingPostId ? 'Update Draft' : 'Save Draft'}
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

@@ -351,7 +351,7 @@ async function handleLinkedinPost(req: any, res: any) {
     return;
   }
 
-  const { text, dryRun } = req.body ?? {};
+  const { text, dryRun, imageDataUrl } = req.body ?? {};
 
   if (typeof text !== 'string' || !text.trim()) {
     res.statusCode = 400;
@@ -371,8 +371,15 @@ async function handleLinkedinPost(req: any, res: any) {
     return;
   }
 
+  // Decode base64 image if provided
+  let imageBuffer: Buffer | undefined;
+  if (typeof imageDataUrl === 'string' && imageDataUrl.startsWith('data:image/')) {
+    const base64 = imageDataUrl.split(',')[1];
+    if (base64) imageBuffer = Buffer.from(base64, 'base64');
+  }
+
   try {
-    const result = await createLinkedInPost(accessToken, { authorUrn, text });
+    const result = await createLinkedInPost(accessToken, { authorUrn, text }, imageBuffer);
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, id: result.id }));
