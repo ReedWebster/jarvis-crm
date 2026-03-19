@@ -125,9 +125,9 @@ export function WorldView({
         gl={{
           antialias: false,
           powerPreference: 'high-performance',
-          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMapping: 6, // THREE.ACESFilmicToneMapping
           toneMappingExposure: 1.0,
-          outputColorSpace: THREE.SRGBColorSpace,
+          outputColorSpace: 'srgb', // THREE.SRGBColorSpace
         }}
         dpr={Math.min(window.devicePixelRatio, 1.5)}
         style={{ width: '100%', height: '100%' }}
