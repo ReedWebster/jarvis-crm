@@ -216,6 +216,7 @@ function MainApp() {
   const [socialPosts, setSocialPosts] = useSupabaseStorage<SocialPost[]>('jarvis:socialPosts', []);
   const [socialApprovals, setSocialApprovals] = useSupabaseStorage<SocialApprovalItem[]>('jarvis:socialApprovals', []);
   const [reflections, setReflections] = useSupabaseStorage<DailyReflection[]>('jarvis:reflections', []);
+  const [dismissedInsightIds, setDismissedInsightIds] = useSupabaseStorage<string[]>('jarvis:dismissedInsightIds', []);
   const [newsConfig] = useSupabaseStorage<NewsConfig>('jarvis:news_config', { queries: ['AI startups', 'tech'], enabled: true });
   const [screenTime, setScreenTime] = useSupabaseStorage<ScreenTimeEntry[]>('jarvis:screen_time', []);
   const [emailDrafts, setEmailDrafts] = useSupabaseStorage<EmailDraft[]>('jarvis:email_drafts', []);
@@ -635,6 +636,9 @@ function MainApp() {
           onRequestNotificationPermission={requestPermission}
           externalOpen={insightsPanelOpen}
           onExternalOpenChange={setInsightsPanelOpen}
+          dismissedInsightIds={dismissedInsightIds}
+          onDismissInsight={(id) => setDismissedInsightIds(prev => [...prev, id])}
+          onRestoreDismissed={() => setDismissedInsightIds([])}
         />
 
         {/* Mobile Quick Capture FAB — safe-area aware */}

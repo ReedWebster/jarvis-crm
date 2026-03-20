@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import {
   Sparkles, X, ChevronRight, Clock, Users, Target,
   DollarSign, BookOpen, CheckSquare, Activity, Zap,
-  ChevronDown, ChevronUp, Bell,
+  ChevronDown, ChevronUp, Bell, Filter,
 } from 'lucide-react';
 import type { Insight, InsightCategory, InsightPriority, AppDataSnapshot } from '../../utils/intelligence';
 import { computeInsights } from '../../utils/intelligence';
@@ -16,22 +16,23 @@ interface Props {
   onRequestNotificationPermission?: () => void;
   externalOpen?: boolean;
   onExternalOpenChange?: (v: boolean) => void;
+  dismissedInsightIds: string[];
+  onDismissInsight: (id: string) => void;
+  onRestoreDismissed: () => void;
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-function categoryIcon(cat: InsightCategory) {
-  switch (cat) {
-    case 'time':       return <Clock className="w-4 h-4" />;
-    case 'contact':    return <Users className="w-4 h-4" />;
-    case 'goal':       return <Target className="w-4 h-4" />;
-    case 'financial':  return <DollarSign className="w-4 h-4" />;
-    case 'todo':       return <CheckSquare className="w-4 h-4" />;
-    case 'reading':    return <BookOpen className="w-4 h-4" />;
-    case 'habit':      return <Activity className="w-4 h-4" />;
-    case 'wellness':   return <Zap className="w-4 h-4" />;
-  }
-}
+const CATEGORY_META: Record<InsightCategory, { label: string; icon: React.ReactNode; color: string }> = {
+  time:      { label: 'Time',      icon: <Clock className="w-4 h-4" />,       color: '#3b82f6' },
+  contact:   { label: 'Contacts',  icon: <Users className="w-4 h-4" />,       color: '#8b5cf6' },
+  goal:      { label: 'Goals',     icon: <Target className="w-4 h-4" />,      color: '#f97316' },
+  financial: { label: 'Financial', icon: <DollarSign className="w-4 h-4" />,  color: '#22c55e' },
+  todo:      { label: 'Tasks',     icon: <CheckSquare className="w-4 h-4" />, color: '#ef4444' },
+  reading:   { label: 'Reading',   icon: <BookOpen className="w-4 h-4" />,    color: '#06b6d4' },
+  habit:     { label: 'Habits',    icon: <Activity className="w-4 h-4" />,    color: '#eab308' },
+  wellness:  { label: 'Wellness',  icon: <Zap className="w-4 h-4" />,        color: '#ec4899' },
+};
 
 function priorityColor(priority: InsightPriority): string {
   switch (priority) {
@@ -63,6 +64,7 @@ function InsightCard({
   onDismiss: (id: string) => void;
 }) {
   const color = priorityColor(insight.priority);
+  const catMeta = CATEGORY_META[insight.category];
 
   return (
     <div
@@ -76,9 +78,9 @@ function InsightCard({
       {/* Icon */}
       <div
         className="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center mt-0.5"
-        style={{ backgroundColor: `${color}20`, color }}
+        style={{ backgroundColor: `${catMeta.color}20`, color: catMeta.color }}
       >
-        {categoryIcon(insight.category)}
+        {catMeta.icon}
       </div>
 
       {/* Content */}
@@ -121,34 +123,71 @@ function InsightCard({
 
 // ─── MAIN PANEL ──────────────────────────────────────────────────────────────
 
-export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPermission, externalOpen, onExternalOpenChange }: Props) {
+export function JarvisInsightsPanel({
+  data,
+  onNavigate,
+  onRequestNotificationPermission,
+  externalOpen,
+  onExternalOpenChange,
+  dismissedInsightIds,
+  onDismissInsight,
+  onRestoreDismissed,
+}: Props) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = externalOpen !== undefined ? externalOpen : internalOpen;
   const setOpen = (v: boolean) => {
     setInternalOpen(v);
     onExternalOpenChange?.(v);
   };
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [groupByCategory, setGroupByCategory] = useState(false);
+  const [filterCategory, setFilterCategory] = useState<InsightCategory | null>(null);
 
   const allInsights = useMemo(() => computeInsights(data), [data]);
 
+  const dismissedSet = useMemo(() => new Set(dismissedInsightIds), [dismissedInsightIds]);
+
   const visible = useMemo(
-    () => allInsights.filter(i => !dismissed.has(i.id)),
-    [allInsights, dismissed],
+    () => allInsights.filter(i => !dismissedSet.has(i.id)),
+    [allInsights, dismissedSet],
   );
 
-  const displayed = showAll ? visible : visible.slice(0, 5);
+  const filtered = useMemo(
+    () => filterCategory ? visible.filter(i => i.category === filterCategory) : visible,
+    [visible, filterCategory],
+  );
+
+  const displayed = showAll ? filtered : filtered.slice(0, 5);
   const urgentCount = visible.filter(i => i.priority === 'urgent' || i.priority === 'high').length;
 
+  // Group insights by category
+  const grouped = useMemo(() => {
+    if (!groupByCategory) return null;
+    const groups: Partial<Record<InsightCategory, Insight[]>> = {};
+    for (const i of filtered) {
+      if (!groups[i.category]) groups[i.category] = [];
+      groups[i.category]!.push(i);
+    }
+    return groups;
+  }, [filtered, groupByCategory]);
+
   const handleDismiss = useCallback((id: string) => {
-    setDismissed(prev => new Set([...prev, id]));
-  }, []);
+    onDismissInsight(id);
+  }, [onDismissInsight]);
 
   const handleNavigate = useCallback((section: NavSection) => {
     onNavigate(section);
     setOpen(false);
   }, [onNavigate]);
+
+  // Category counts for filter bar
+  const categoryCounts = useMemo(() => {
+    const counts: Partial<Record<InsightCategory, number>> = {};
+    for (const i of visible) {
+      counts[i.category] = (counts[i.category] ?? 0) + 1;
+    }
+    return counts;
+  }, [visible]);
 
   return (
     <>
@@ -176,11 +215,11 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
       {/* Panel */}
       {open && (
         <div
-          className="fixed bottom-20 right-6 z-40 w-80 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+          className="fixed bottom-20 right-6 z-40 w-96 rounded-xl shadow-2xl flex flex-col overflow-hidden"
           style={{
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border)',
-            maxHeight: '70vh',
+            maxHeight: '75vh',
           }}
         >
           {/* Header */}
@@ -202,12 +241,21 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="p-1 rounded hover:bg-[var(--border)] transition-colors"
-            >
-              <X className="w-4 h-4 text-[var(--text-muted)]" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setGroupByCategory(!groupByCategory)}
+                className={`p-1 rounded transition-colors ${groupByCategory ? 'bg-[var(--border)]' : 'hover:bg-[var(--border)]'}`}
+                title={groupByCategory ? 'Show flat list' : 'Group by category'}
+              >
+                <Filter className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                className="p-1 rounded hover:bg-[var(--border)] transition-colors"
+              >
+                <X className="w-4 h-4 text-[var(--text-muted)]" />
+              </button>
+            </div>
           </div>
 
           {/* Enable notifications banner */}
@@ -233,6 +281,38 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
             </div>
           )}
 
+          {/* Category filter chips */}
+          {visible.length > 0 && (
+            <div
+              className="flex gap-1.5 px-4 py-2 overflow-x-auto flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <button
+                onClick={() => setFilterCategory(null)}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap transition-colors ${
+                  !filterCategory ? 'bg-[var(--border)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--border)]'
+                }`}
+              >
+                All ({visible.length})
+              </button>
+              {(Object.entries(categoryCounts) as [InsightCategory, number][]).map(([cat, count]) => {
+                const meta = CATEGORY_META[cat];
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setFilterCategory(filterCategory === cat ? null : cat)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap transition-colors ${
+                      filterCategory === cat ? 'text-white' : 'text-[var(--text-muted)] hover:bg-[var(--border)]'
+                    }`}
+                    style={filterCategory === cat ? { backgroundColor: `${meta.color}40`, color: meta.color } : undefined}
+                  >
+                    {meta.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Insights list */}
           <div className="overflow-y-auto flex-1 p-3 space-y-2">
             {visible.length === 0 ? (
@@ -245,7 +325,41 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
                   No outstanding insights right now.
                 </p>
               </div>
+            ) : groupByCategory && grouped ? (
+              // Grouped view
+              <>
+                {(Object.entries(grouped) as [InsightCategory, Insight[]][]).map(([cat, catInsights]) => {
+                  const meta = CATEGORY_META[cat];
+                  return (
+                    <div key={cat}>
+                      <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                        <div
+                          className="w-4 h-4 rounded flex items-center justify-center"
+                          style={{ color: meta.color }}
+                        >
+                          {meta.icon}
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: meta.color }}>
+                          {meta.label}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">({catInsights.length})</span>
+                      </div>
+                      <div className="space-y-1.5 mb-3">
+                        {catInsights.map(insight => (
+                          <InsightCard
+                            key={insight.id}
+                            insight={insight}
+                            onNavigate={handleNavigate}
+                            onDismiss={handleDismiss}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
             ) : (
+              // Flat view
               <>
                 {displayed.map(insight => (
                   <InsightCard
@@ -255,7 +369,7 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
                     onDismiss={handleDismiss}
                   />
                 ))}
-                {visible.length > 5 && (
+                {filtered.length > 5 && (
                   <button
                     onClick={() => setShowAll(v => !v)}
                     className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded-lg transition-colors hover:bg-[var(--border)]"
@@ -264,7 +378,7 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
                     {showAll ? (
                       <><ChevronUp className="w-3 h-3" /> Show less</>
                     ) : (
-                      <><ChevronDown className="w-3 h-3" /> {visible.length - 5} more insights</>
+                      <><ChevronDown className="w-3 h-3" /> {filtered.length - 5} more insights</>
                     )}
                   </button>
                 )}
@@ -273,17 +387,17 @@ export function JarvisInsightsPanel({ data, onNavigate, onRequestNotificationPer
           </div>
 
           {/* Footer */}
-          {dismissed.size > 0 && (
+          {dismissedInsightIds.length > 0 && (
             <div
               className="px-4 py-2 flex-shrink-0 flex items-center justify-end"
               style={{ borderTop: '1px solid var(--border)' }}
             >
               <button
-                onClick={() => setDismissed(new Set())}
+                onClick={onRestoreDismissed}
                 className="text-xs"
                 style={{ color: 'var(--text-muted)' }}
               >
-                Restore {dismissed.size} dismissed
+                Restore {dismissedInsightIds.length} dismissed
               </button>
             </div>
           )}

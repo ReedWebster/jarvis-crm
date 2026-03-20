@@ -37,32 +37,32 @@
   --sb-thumb-hover:   #999999;
 }
 
-/* ─── CSS Variables — Beacon (deep navy + amber) ───────────────────────────── */
+/* ─── CSS Variables — Beacon (warm light + amber) ──────────────────────────── */
 .beacon {
-  --bg:               #060c18;
-  --bg-card:          #091528;
-  --bg-sidebar:       #07101f;
-  --bg-elevated:      #0e1e34;
-  --bg-input:         #091528;
-  --bg-hover:         #132340;
-  --border:           #1a2e4a;
+  --bg:               #fdf8f0;
+  --bg-card:          #faf3e8;
+  --bg-sidebar:       #f5eddf;
+  --bg-elevated:      #f0e6d6;
+  --bg-input:         #ffffff;
+  --bg-hover:         #ece2d0;
+  --border:           #ddd0bb;
   --border-strong:    #d97706;
-  --text-primary:     #f5f0e8;
-  --text-secondary:   #a89a8a;
-  --text-muted:       #3d5872;
-  --text-placeholder: #243650;
-  --shadow-card:      0 2px 16px rgba(0,0,0,0.75);
-  --priority-high:    #ef4444;
+  --text-primary:     #1a1008;
+  --text-secondary:   #4a3c2a;
+  --text-muted:       #8a7a66;
+  --text-placeholder: #bba888;
+  --shadow-card:      0 1px 6px rgba(140,100,40,0.1);
+  --priority-high:    #dc2626;
   --priority-medium:  #d97706;
   --priority-low:     #6b7280;
-  --status-active:    #22c55e;
+  --status-active:    #16a34a;
   --status-on-hold:   #d97706;
   --status-done:      #6b7280;
-  --health-green:     #22c55e;
+  --health-green:     #16a34a;
   --health-yellow:    #d97706;
-  --health-red:       #ef4444;
-  --sb-track:         #07101f;
-  --sb-thumb:         #1a2e4a;
+  --health-red:       #dc2626;
+  --sb-track:         #f0e6d6;
+  --sb-thumb:         #d4c4aa;
   --sb-thumb-hover:   #d97706;
 }
 
@@ -313,7 +313,7 @@
   box-shadow: 0 6px 24px rgba(0,0,0,0.12);
 }
 .dark .caesar-card:hover   { box-shadow: 0 6px 24px rgba(0,0,0,0.45); }
-.beacon .caesar-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.55), 0 0 0 1px rgba(217,119,6,0.14); }
+.beacon .caesar-card:hover { box-shadow: 0 6px 24px rgba(140,100,40,0.15), 0 0 0 1px rgba(217,119,6,0.2); }
 
 /* ─── Stagger-in list items ─────────────────────────────────────────────────── */
 @keyframes staggerIn {

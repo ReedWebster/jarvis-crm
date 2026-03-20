@@ -310,6 +310,10 @@ export interface Client {
 
 // ─── NOTES ───────────────────────────────────────────────────────────────────
 
+export type NoteTemplate = 'blank' | 'meeting' | '1on1' | 'weekly-review' | 'project-kickoff' | 'decision-log';
+
+export type NoteColor = 'none' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink';
+
 export interface Note {
   id: string;
   title: string;
@@ -322,6 +326,9 @@ export interface Note {
   linkedContactId?: string;
   linkedGoalId?: string;
   linkedCourseId?: string;
+  linkedNoteIds?: string[];
+  notebook?: string;
+  color?: NoteColor;
   isMeetingNote: boolean;
   meetingAttendees?: string;
   meetingActionItems?: string;

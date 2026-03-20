@@ -506,6 +506,197 @@ export function computeInsights(data: AppDataSnapshot): Insight[] {
     });
   }
 
+  // ── Cross-domain correlations ──────────────────────────────────────────
+
+  // Goal-time alignment: goals with deadlines but no time logged toward them
+  const alignment = checkGoalCalendarAlignment(data.goals, data.timeBlocks, data.timeCategories);
+  const misaligned = alignment.filter(a => a.alignment === 'none' && a.goalTitle);
+  if (misaligned.length > 0) {
+    const first = misaligned[0];
+    insights.push({
+      id: id(), category: 'goal', priority: 'high',
+      title: `No time logged for "${first.goalTitle}"`,
+      description: `${misaligned.length} active goal${misaligned.length > 1 ? 's have' : ' has'} zero hours logged this week. Consider scheduling focused time.`,
+      navTarget: 'goals',
+    });
+  }
+
+  // Contact-todo: contacts with meetings but no follow-up todos
+  const contactsWithRecentInteractions = data.contacts.filter(c => {
+    if (!c.lastContacted) return false;
+    return daysAgo(c.lastContacted) <= 3;
+  });
+  const contactTodos = data.todos.filter(t => t.linkedType === 'contact' && t.status !== 'done');
+  const contactsWithoutTodos = contactsWithRecentInteractions.filter(c =>
+    !contactTodos.some(t => t.linkedId === c.id) && !c.followUpNeeded
+  );
+  if (contactsWithoutTodos.length > 0) {
+    insights.push({
+      id: id(), category: 'contact', priority: 'low',
+      title: `Recent meeting with ${contactsWithoutTodos[0].name} — no follow-up`,
+      description: `You interacted with ${contactsWithoutTodos.length} contact${contactsWithoutTodos.length > 1 ? 's' : ''} recently but have no open follow-up tasks.`,
+      navTarget: 'contacts',
+    });
+  }
+
+  // Mood-meeting correlation: check if mood drops on heavy meeting days
+  if (data.dailyMoodLogs.length >= 7 && data.timeBlocks.length > 0) {
+    const last14Logs = data.dailyMoodLogs
+      .filter(l => daysAgo(l.date) <= 14)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (last14Logs.length >= 5) {
+      const meetingCats = data.timeCategories
+        .filter(c => c.name.toLowerCase().includes('meet'))
+        .map(c => c.id);
+
+      let heavyMeetingMoodSum = 0;
+      let heavyMeetingDays = 0;
+      let lightMoodSum = 0;
+      let lightDays = 0;
+
+      for (const log of last14Logs) {
+        const dayBlocks = data.timeBlocks.filter(b => b.date === log.date);
+        const meetingHours = dayBlocks
+          .filter(b => meetingCats.includes(b.categoryId))
+          .reduce((s, b) => {
+            const [sh, sm] = b.startTime.split(':').map(Number);
+            const [eh, em] = b.endTime.split(':').map(Number);
+            return s + Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+          }, 0);
+
+        if (meetingHours >= 3) {
+          heavyMeetingMoodSum += log.mood;
+          heavyMeetingDays++;
+        } else {
+          lightMoodSum += log.mood;
+          lightDays++;
+        }
+      }
+
+      if (heavyMeetingDays >= 2 && lightDays >= 2) {
+        const heavyAvg = heavyMeetingMoodSum / heavyMeetingDays;
+        const lightAvg = lightMoodSum / lightDays;
+        if (lightAvg - heavyAvg >= 0.8) {
+          insights.push({
+            id: id(), category: 'wellness', priority: 'medium',
+            title: 'Mood drops on heavy meeting days',
+            description: `Your mood averages ${heavyAvg.toFixed(1)}/5 on 3+ hour meeting days vs ${lightAvg.toFixed(1)}/5 otherwise. Consider protecting focus time.`,
+            navTarget: 'time',
+          });
+        }
+      }
+    }
+  }
+
+  // ── Trend detection (rolling window) ──────────────────────────────────
+
+  // Habit trend: compare this week vs last week
+  if (data.habits.length > 0 && data.habitTracker.length > 0) {
+    const thisWeekDates: string[] = [];
+    const lastWeekDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d1 = new Date(); d1.setDate(d1.getDate() - i);
+      thisWeekDates.push(format(d1, 'yyyy-MM-dd'));
+      const d2 = new Date(); d2.setDate(d2.getDate() - 7 - i);
+      lastWeekDates.push(format(d2, 'yyyy-MM-dd'));
+    }
+
+    function weekRate(dates: string[]): number {
+      const total = data.habits.length * 7;
+      if (total === 0) return 100;
+      let done = 0;
+      for (const day of dates) {
+        const entry = data.habitTracker.find(h => h.date === day);
+        if (!entry) continue;
+        done += data.habits.filter(h => entry.habits[h.id]).length;
+      }
+      return Math.round((done / total) * 100);
+    }
+
+    const thisRate = weekRate(thisWeekDates);
+    const lastRate = weekRate(lastWeekDates);
+    const delta = thisRate - lastRate;
+
+    if (delta <= -20 && lastRate > 0) {
+      insights.push({
+        id: id(), category: 'habit', priority: 'high',
+        title: `Habit completion dropped ${Math.abs(delta)}%`,
+        description: `This week: ${thisRate}% vs last week: ${lastRate}%. Getting back on track early is easier.`,
+        navTarget: 'command',
+      });
+    }
+  }
+
+  // Spending trend: compare this month vs last month
+  if (data.financialEntries.length > 0) {
+    const now = new Date();
+    const thisMonthStr = format(now, 'yyyy-MM');
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthStr = format(lastMonth, 'yyyy-MM');
+
+    const thisMonthSpend = data.financialEntries
+      .filter(e => e.date.startsWith(thisMonthStr) && e.type === 'expense')
+      .reduce((s, e) => s + e.amount, 0);
+    const lastMonthSpend = data.financialEntries
+      .filter(e => e.date.startsWith(lastMonthStr) && e.type === 'expense')
+      .reduce((s, e) => s + e.amount, 0);
+
+    // Prorate this month to estimate full-month spend
+    const dayOfMonth = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const projectedSpend = dayOfMonth > 3 ? (thisMonthSpend / dayOfMonth) * daysInMonth : 0;
+
+    if (lastMonthSpend > 0 && projectedSpend > lastMonthSpend * 1.3 && projectedSpend > 100) {
+      const pctOver = Math.round(((projectedSpend - lastMonthSpend) / lastMonthSpend) * 100);
+      insights.push({
+        id: id(), category: 'financial', priority: 'medium',
+        title: `Spending trending ${pctOver}% above last month`,
+        description: `Projected $${Math.round(projectedSpend)} vs $${Math.round(lastMonthSpend)} last month. Review recent expenses?`,
+        navTarget: 'financial',
+      });
+    }
+  }
+
+  // ── Smart note suggestions ────────────────────────────────────────────
+
+  // Suggest meeting note if recent interactions without notes
+  const recentContactsWithMeetings = data.contacts.filter(c => {
+    if (!c.lastContacted) return false;
+    if (daysAgo(c.lastContacted) > 1) return false;
+    const recentMeetings = c.interactions.filter(i =>
+      i.type === 'meeting' && daysAgo(i.date) <= 1
+    );
+    return recentMeetings.length > 0;
+  });
+
+  const todayNotes = data.notes.filter(n => n.isMeetingNote && daysAgo(n.createdAt) <= 1);
+  if (recentContactsWithMeetings.length > 0 && todayNotes.length === 0) {
+    const names = recentContactsWithMeetings.slice(0, 2).map(c => c.name).join(', ');
+    insights.push({
+      id: id(), category: 'contact', priority: 'medium',
+      title: 'Create a meeting note?',
+      description: `You met with ${names} recently. Capture your notes while they're fresh.`,
+      navTarget: 'notes',
+    });
+  }
+
+  // Suggest status update for near-deadline goals
+  const goalsNearDeadline = data.goals.filter(g =>
+    g.status !== 'completed' && g.dueDate && daysUntil(g.dueDate) <= 3 && daysUntil(g.dueDate) >= 0
+  );
+  const recentGoalNotes = data.notes.filter(n =>
+    n.tags.some(t => t.includes('goal') || t.includes('status')) && daysAgo(n.createdAt) <= 3
+  );
+  if (goalsNearDeadline.length > 0 && recentGoalNotes.length === 0) {
+    insights.push({
+      id: id(), category: 'goal', priority: 'medium',
+      title: `Goal deadline tomorrow — capture status?`,
+      description: `"${goalsNearDeadline[0].title}" is due soon. Write a quick status update note.`,
+      navTarget: 'notes',
+    });
+  }
+
   // Sort: urgent first, then high, medium, low
   const order: Record<InsightPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
   return insights.sort((a, b) => order[a.priority] - order[b.priority]);

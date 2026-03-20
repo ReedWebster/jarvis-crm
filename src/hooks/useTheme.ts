@@ -19,12 +19,12 @@ export interface ThemeContextValue {
 }
 
 const BEACON_CHART: ChartColors = {
-  text:         '#a89a8a',
-  grid:         '#1a2e4a',
-  tooltipBg:    '#091528',
-  tooltipText:  '#f5f0e8',
+  text:         '#4a3c2a',
+  grid:         '#ddd0bb',
+  tooltipBg:    '#faf3e8',
+  tooltipText:  '#1a1008',
   tooltipBorder:'#d97706',
-  axisLine:     '#1a2e4a',
+  axisLine:     '#ddd0bb',
 };
 
 const DARK_CHART: ChartColors = {
@@ -85,7 +85,7 @@ export function buildThemeValue(
     LIGHT_CHART;
   return {
     theme,
-    isDark: theme !== 'light',
+    isDark: theme === 'dark',
     toggle,
     chartColors,
   };
