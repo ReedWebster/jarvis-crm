@@ -268,7 +268,7 @@ export function EmailThread({ email, contactName, onClose, onCompose }: Props) {
                         {msg.htmlBody ? (
                           <iframe
                             srcDoc={buildEmailHtml(msg.htmlBody, msg.inlineImages ?? {})}
-                            sandbox="allow-same-origin"
+                            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                             className="w-full border-0"
                             style={{ minHeight: '120px', display: 'block' }}
                             onLoad={e => {

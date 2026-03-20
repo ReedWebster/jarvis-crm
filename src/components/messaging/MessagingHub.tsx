@@ -572,7 +572,7 @@ export function MessagingHub({ contacts = [] }: MessagingHubProps) {
                 {selected.htmlBody ? (
                   <iframe
                     srcDoc={buildEmailHtml(selected.htmlBody, selected.inlineImages ?? {})}
-                    sandbox="allow-same-origin"
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     className="w-full border-0"
                     style={{ minHeight: '300px', display: 'block' }}
                     onLoad={e => {

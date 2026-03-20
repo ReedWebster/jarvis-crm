@@ -1,10 +1,11 @@
 /**
- * Roads — grid road network with sidewalks, curbs, lane markings, lamp posts.
- * Also includes diagonal Broadway avenue and crosswalks.
+ * Roads — segment-based road network that follows jittered block positions.
+ * Roads curve between blocks instead of running in perfectly straight lines.
  */
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { GRID_N, COL_CENTERS, ROW_CENTERS, GRID_EXTENT } from '../types';
+import { GRID_N, HALF, COL_CENTERS, ROW_CENTERS, GRID_EXTENT, getJitteredBlockCenter, seededRandom } from '../types';
+import { getZone } from './districts';
 
 // ─── Road texture ────────────────────────────────────────────────────────────
 
@@ -28,109 +29,185 @@ function makeRoadTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface RoadSegment {
+  mx: number; mz: number; // midpoint
+  len: number;
+  angle: number; // rotation around Y
+  width: number;
+}
+
+interface DashData { x: number; z: number; angle: number }
+interface LampData { x: number; z: number; angle: number }
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function Roads() {
   const roadData = useMemo(() => {
-    // Compute road positions from midpoints
-    const roadXs: { pos: number; w: number }[] = [];
-    for (let i = 0; i < GRID_N - 1; i++) {
-      const gap = COL_CENTERS[i + 1] - COL_CENTERS[i];
-      roadXs.push({ pos: (COL_CENTERS[i] + COL_CENTERS[i + 1]) / 2, w: gap > 60 ? 6 : 4 });
-    }
-    roadXs.unshift({ pos: COL_CENTERS[0] - 27, w: 4 });
-    roadXs.push({ pos: COL_CENTERS[GRID_N - 1] + 27, w: 4 });
+    const segments: RoadSegment[] = [];
+    const intersections: { x: number; z: number; size: number }[] = [];
+    const dashes: DashData[] = [];
+    const lamps: LampData[] = [];
+    const rng = seededRandom('roads-v2');
 
-    const roadZs: { pos: number; w: number }[] = [];
-    for (let i = 0; i < GRID_N - 1; i++) {
-      const gap = ROW_CENTERS[i + 1] - ROW_CENTERS[i];
-      roadZs.push({ pos: (ROW_CENTERS[i] + ROW_CENTERS[i + 1]) / 2, w: gap > 60 ? 6 : 4 });
-    }
-    roadZs.unshift({ pos: ROW_CENTERS[0] - 27, w: 4 });
-    roadZs.push({ pos: ROW_CENTERS[GRID_N - 1] + 27, w: 4 });
+    // Build a lookup of jittered block centers
+    const blockAt = (col: number, row: number) => {
+      if (col < -HALF || col > HALF || row < -HALF || row > HALF) return null;
+      const zone = getZone(col, row);
+      return getJitteredBlockCenter(col, row, zone);
+    };
 
-    // Generate dash positions (center lane markings)
-    const roadXposArr = roadXs.map(r => r.pos);
-    const roadZposArr = roadZs.map(r => r.pos);
+    // --- Vertical roads (between adjacent column pairs) ---
+    for (let ci = 0; ci < GRID_N - 1; ci++) {
+      const colL = ci - HALF;
+      const colR = colL + 1;
+      const baseGap = COL_CENTERS[ci + 1] - COL_CENTERS[ci];
+      const roadW = baseGap > 60 ? 5.5 + rng() * 1 : 3.5 + rng() * 1;
 
-    const vDashes: { x: number; z: number }[] = [];
-    for (const { pos: xPos } of roadXs) {
-      for (let dz = -GRID_EXTENT + 3; dz < GRID_EXTENT; dz += 6) {
-        if (roadZposArr.some(rz => Math.abs(dz - rz) < 4)) continue;
-        vDashes.push({ x: xPos, z: dz });
+      // Control points: one per row
+      const points: { x: number; z: number }[] = [];
+
+      // Add a point above the grid
+      const topL = blockAt(colL, -HALF);
+      const topR = blockAt(colR, -HALF);
+      if (topL && topR) {
+        points.push({ x: (topL.cx + topR.cx) / 2, z: Math.min(topL.cz, topR.cz) - 30 });
       }
-    }
 
-    const hDashes: { x: number; z: number }[] = [];
-    for (const { pos: zPos } of roadZs) {
-      for (let dx = -GRID_EXTENT + 3; dx < GRID_EXTENT; dx += 6) {
-        if (roadXposArr.some(rx => Math.abs(dx - rx) < 4)) continue;
-        hDashes.push({ x: dx, z: zPos });
+      for (let ri = -HALF; ri <= HALF; ri++) {
+        const bL = blockAt(colL, ri);
+        const bR = blockAt(colR, ri);
+        if (bL && bR) {
+          points.push({ x: (bL.cx + bR.cx) / 2, z: (bL.cz + bR.cz) / 2 });
+        }
       }
-    }
 
-    // Lamp posts
-    const lamps: { x: number; z: number }[] = [];
-    for (const { pos: xPos, w: rw } of roadXs) {
-      if (Math.abs(xPos) > 200) continue;
-      for (let s = 0; s < roadZs.length - 1; s++) {
-        const zStart = roadZs[s].pos + roadZs[s].w / 2 + 0.15;
-        const zEnd = roadZs[s + 1].pos - roadZs[s + 1].w / 2 - 0.15;
-        for (let lz = zStart + 4; lz <= zEnd - 4; lz += 12) {
-          lamps.push({ x: xPos + (rw / 2 + 1.5), z: lz });
-          lamps.push({ x: xPos - (rw / 2 + 1.5), z: lz });
+      // Add a point below the grid
+      const botL = blockAt(colL, HALF);
+      const botR = blockAt(colR, HALF);
+      if (botL && botR) {
+        points.push({ x: (botL.cx + botR.cx) / 2, z: Math.max(botL.cz, botR.cz) + 30 });
+      }
+
+      // Create segments between consecutive points
+      for (let pi = 0; pi < points.length - 1; pi++) {
+        const p0 = points[pi], p1 = points[pi + 1];
+        const dx = p1.x - p0.x, dz = p1.z - p0.z;
+        const len = Math.sqrt(dx * dx + dz * dz);
+        const angle = Math.atan2(dx, dz);
+        segments.push({ mx: (p0.x + p1.x) / 2, mz: (p0.z + p1.z) / 2, len, angle, width: roadW });
+
+        // Lane dashes along this segment
+        const dashSpacing = 6;
+        const numDashes = Math.floor(len / dashSpacing);
+        for (let di = 1; di < numDashes; di++) {
+          const t = di / numDashes;
+          dashes.push({
+            x: p0.x + dx * t,
+            z: p0.z + dz * t,
+            angle,
+          });
+        }
+      }
+
+      // Lamp posts along the road (skip outermost columns)
+      if (ci > 1 && ci < GRID_N - 3) {
+        for (let pi = 1; pi < points.length - 1; pi++) {
+          const p = points[pi];
+          const prevAngle = pi > 0 ? Math.atan2(points[pi].x - points[pi - 1].x, points[pi].z - points[pi - 1].z) : 0;
+          const perpX = Math.cos(prevAngle);
+          const perpZ = -Math.sin(prevAngle);
+          lamps.push({ x: p.x + perpX * (roadW / 2 + 1.5), z: p.z + perpZ * (roadW / 2 + 1.5), angle: prevAngle });
+          lamps.push({ x: p.x - perpX * (roadW / 2 + 1.5), z: p.z - perpZ * (roadW / 2 + 1.5), angle: prevAngle });
         }
       }
     }
 
-    return { roadXs, roadZs, vDashes, hDashes, lamps };
+    // --- Horizontal roads (between adjacent row pairs) ---
+    for (let ri = 0; ri < GRID_N - 1; ri++) {
+      const rowT = ri - HALF;
+      const rowB = rowT + 1;
+      const baseGap = ROW_CENTERS[ri + 1] - ROW_CENTERS[ri];
+      const roadW = baseGap > 60 ? 5.5 + rng() * 1 : 3.5 + rng() * 1;
+
+      const points: { x: number; z: number }[] = [];
+
+      // Left extension
+      const leftT = blockAt(-HALF, rowT);
+      const leftB = blockAt(-HALF, rowB);
+      if (leftT && leftB) {
+        points.push({ x: Math.min(leftT.cx, leftB.cx) - 30, z: (leftT.cz + leftB.cz) / 2 });
+      }
+
+      for (let ci = -HALF; ci <= HALF; ci++) {
+        const bT = blockAt(ci, rowT);
+        const bB = blockAt(ci, rowB);
+        if (bT && bB) {
+          points.push({ x: (bT.cx + bB.cx) / 2, z: (bT.cz + bB.cz) / 2 });
+        }
+      }
+
+      // Right extension
+      const rightT = blockAt(HALF, rowT);
+      const rightB = blockAt(HALF, rowB);
+      if (rightT && rightB) {
+        points.push({ x: Math.max(rightT.cx, rightB.cx) + 30, z: (rightT.cz + rightB.cz) / 2 });
+      }
+
+      for (let pi = 0; pi < points.length - 1; pi++) {
+        const p0 = points[pi], p1 = points[pi + 1];
+        const dx = p1.x - p0.x, dz = p1.z - p0.z;
+        const len = Math.sqrt(dx * dx + dz * dz);
+        const angle = Math.atan2(dx, dz);
+        segments.push({ mx: (p0.x + p1.x) / 2, mz: (p0.z + p1.z) / 2, len, angle, width: roadW });
+
+        const dashSpacing = 6;
+        const numDashes = Math.floor(len / dashSpacing);
+        for (let di = 1; di < numDashes; di++) {
+          const t = di / numDashes;
+          dashes.push({
+            x: p0.x + dx * t,
+            z: p0.z + dz * t,
+            angle,
+          });
+        }
+      }
+    }
+
+    // Perimeter roads (simple straight lines at grid edges)
+    const perimW = 4;
+    // Top & bottom
+    segments.push({ mx: 0, mz: -(GRID_EXTENT - 2), len: GRID_EXTENT * 2, angle: 0, width: perimW });
+    segments.push({ mx: 0, mz: GRID_EXTENT - 2, len: GRID_EXTENT * 2, angle: 0, width: perimW });
+    // Left & right
+    segments.push({ mx: -(GRID_EXTENT - 2), mz: 0, len: GRID_EXTENT * 2, angle: Math.PI / 2, width: perimW });
+    segments.push({ mx: GRID_EXTENT - 2, mz: 0, len: GRID_EXTENT * 2, angle: Math.PI / 2, width: perimW });
+
+    return { segments, dashes, lamps };
   }, []);
 
   const roadTex = useMemo(() => makeRoadTexture(), []);
 
   return (
     <group>
-      {/* Vertical roads */}
-      {roadData.roadXs.map((r, i) => (
-        <mesh key={`vr-${i}`} position={[r.pos, 0.04, 0]} rotation-x={-Math.PI / 2} receiveShadow>
-          <planeGeometry args={[r.w, GRID_EXTENT * 2]} />
+      {/* Road segments */}
+      {roadData.segments.map((seg, i) => (
+        <mesh
+          key={`rs-${i}`}
+          position={[seg.mx, 0.04, seg.mz]}
+          rotation={[-Math.PI / 2, 0, -seg.angle]}
+          receiveShadow
+        >
+          <planeGeometry args={[seg.width, seg.len]} />
           <meshStandardMaterial map={roadTex} color="#1C1C1E" roughness={0.97} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
         </mesh>
       ))}
 
-      {/* Horizontal roads */}
-      {roadData.roadZs.map((r, i) => (
-        <mesh key={`hr-${i}`} position={[0, 0.04, r.pos]} rotation-x={-Math.PI / 2} receiveShadow>
-          <planeGeometry args={[GRID_EXTENT * 2, r.w]} />
-          <meshStandardMaterial map={roadTex} color="#1C1C1E" roughness={0.97} polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1} />
-        </mesh>
-      ))}
-
-      {/* Intersection fills */}
-      {roadData.roadXs.flatMap((rx, i) =>
-        roadData.roadZs.map((rz, j) => {
-          const iw = Math.max(rx.w, rz.w) + 0.5;
-          return (
-            <mesh key={`int-${i}-${j}`} position={[rx.pos, 0.045, rz.pos]} rotation-x={-Math.PI / 2}>
-              <planeGeometry args={[iw, iw]} />
-              <meshStandardMaterial map={roadTex} color="#1C1C1E" roughness={0.97} />
-            </mesh>
-          );
-        })
-      )}
-
-      {/* Vertical lane dashes */}
-      {roadData.vDashes.map((d, i) => (
-        <mesh key={`vd-${i}`} position={[d.x, 0.07, d.z]} rotation-x={-Math.PI / 2}>
+      {/* Lane dashes */}
+      {roadData.dashes.map((d, i) => (
+        <mesh key={`d-${i}`} position={[d.x, 0.07, d.z]} rotation={[-Math.PI / 2, 0, -d.angle]}>
           <planeGeometry args={[0.18, 2.2]} />
-          <meshStandardMaterial color="#F5E642" roughness={0.60} polygonOffset polygonOffsetFactor={-3} polygonOffsetUnits={-3} />
-        </mesh>
-      ))}
-
-      {/* Horizontal lane dashes */}
-      {roadData.hDashes.map((d, i) => (
-        <mesh key={`hd-${i}`} position={[d.x, 0.07, d.z]} rotation-x={-Math.PI / 2}>
-          <planeGeometry args={[2.2, 0.18]} />
           <meshStandardMaterial color="#F5E642" roughness={0.60} polygonOffset polygonOffsetFactor={-3} polygonOffsetUnits={-3} />
         </mesh>
       ))}

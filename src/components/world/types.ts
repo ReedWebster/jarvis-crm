@@ -120,3 +120,37 @@ export function seededRandom(seed: string): () => number {
     return (h >>> 0) / 0xffffffff;
   };
 }
+
+// ─── Jittered Grid ──────────────────────────────────────────────────────────
+
+/** Cache jittered positions so every call returns the same result */
+const _jitterCache = new Map<string, { cx: number; cz: number }>();
+
+export function getJitteredBlockCenter(col: number, row: number, zone?: ZoneType): { cx: number; cz: number } {
+  const key = `${col},${row}`;
+  if (_jitterCache.has(key)) return _jitterCache.get(key)!;
+
+  const baseCx = COL_CENTERS[col + HALF];
+  const baseCz = ROW_CENTERS[row + HALF];
+
+  // No jitter for water/park blocks
+  const z = zone;
+  if (z === 'water' || z === 'park') {
+    const result = { cx: baseCx, cz: baseCz };
+    _jitterCache.set(key, result);
+    return result;
+  }
+
+  const rng = seededRandom(`jitter-${col}-${row}`);
+  const dist = Math.sqrt(col * col + row * row);
+  // Downtown: tight jitter; outer blocks: full jitter
+  const scale = dist <= 2 ? 0.3 : dist <= 3.5 ? 0.6 : 1.0;
+  const maxJitter = 6 * scale;
+
+  const result = {
+    cx: baseCx + (rng() - 0.5) * 2 * maxJitter,
+    cz: baseCz + (rng() - 0.5) * 2 * maxJitter,
+  };
+  _jitterCache.set(key, result);
+  return result;
+}

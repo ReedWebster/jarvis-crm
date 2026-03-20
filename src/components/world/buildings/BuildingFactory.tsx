@@ -320,12 +320,13 @@ interface BuildingProps {
   archetype: BuildingArchetype;
   height: number;
   position: [number, number, number];
+  rotation?: [number, number, number];
   palette?: { main: string; alt: string; trim: string };
   healthGlow?: string | null;
   emissiveIntensity?: number;
 }
 
-export function Building({ archetype, height, position, palette, healthGlow, emissiveIntensity = 0 }: BuildingProps) {
+export function Building({ archetype, height, position, rotation, palette, healthGlow, emissiveIntensity = 0 }: BuildingProps) {
   const groupRef = useRef<THREE.Group>(null!);
 
   const ArchComponent = useMemo(() => {
@@ -342,7 +343,7 @@ export function Building({ archetype, height, position, palette, healthGlow, emi
   }, [archetype]);
 
   return (
-    <group ref={groupRef} position={position}>
+    <group ref={groupRef} position={position} rotation={rotation}>
       <ArchComponent height={height} palette={palette} />
       {/* Health glow indicator — a subtle emissive ring at building base */}
       {healthGlow && (
