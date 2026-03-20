@@ -317,10 +317,11 @@ export function ProjectDetailView({ project, contacts, onBack, onUpdate }: Props
 
     setSummarizingId(meetingId);
     try {
-      const res = await fetch('/api/summarize-meeting', {
+      const res = await fetch('/api/notes-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'summarize-meeting',
           title: meeting.title,
           date: meeting.date,
           attendees: meeting.attendees,

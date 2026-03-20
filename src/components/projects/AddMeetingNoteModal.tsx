@@ -319,10 +319,11 @@ export function AddMeetingNoteModal({ project, onClose, onSave }: Props) {
     setSummarizing(true);
     const note = buildNote();
     try {
-      const res = await fetch('/api/summarize-meeting', {
+      const res = await fetch('/api/notes-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'summarize-meeting',
           title: note.title,
           date: note.date,
           attendees: note.attendees,

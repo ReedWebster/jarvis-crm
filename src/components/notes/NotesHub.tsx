@@ -602,10 +602,11 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
     if (!form.content.trim() || aiLoading) return;
     setAiLoading(true);
     try {
-      const res = await fetch('/api/auto-tag', {
+      const res = await fetch('/api/notes-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'auto-tag',
           title: form.title,
           content: form.content.slice(0, 3000),
           existingTags: allTagsList,
@@ -628,10 +629,11 @@ export function NotesHub({ notes, setNotes, scratchpad, setScratchpad }: Props) 
     if (!form.content.trim() || aiLoading) return;
     setAiLoading(true);
     try {
-      const res = await fetch('/api/summarize-note', {
+      const res = await fetch('/api/notes-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'summarize',
           title: form.title,
           content: form.content.slice(0, 6000),
         }),
