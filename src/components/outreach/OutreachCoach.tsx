@@ -138,7 +138,7 @@ export default function OutreachCoach({ contacts, setContacts, projects }: Outre
     }));
 
     try {
-      const res = await fetch('/api/outreach-coach', {
+      const res = await fetch('/api/contacts-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts: payload, tone }),

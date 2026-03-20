@@ -2170,10 +2170,11 @@ export default function ContactsCRM({ contacts, setContacts, contactTags, setCon
     setEnriching(prev => new Set([...prev, ...ids]));
 
     try {
-      const res = await fetch('/api/enrich-contacts', {
+      const res = await fetch('/api/contacts-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'enrich',
           contacts: batch,
           existingTags: contactTags.map(t => t.name),
         }),
