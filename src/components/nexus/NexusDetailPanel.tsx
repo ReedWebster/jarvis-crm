@@ -1,13 +1,19 @@
-import React from 'react';
-import { X, User, Briefcase, Building2, UserSearch, Target, DollarSign, StickyNote, ExternalLink } from 'lucide-react';
-import type { NexusNode } from '../../types/nexus';
+import React, { useState, useMemo } from 'react';
+import { X, User, Briefcase, Building2, UserSearch, Target, DollarSign, StickyNote, ExternalLink, GitBranch, Lightbulb, Network, ChevronRight } from 'lucide-react';
+import type { NexusNode, NexusLinkType, NexusPath } from '../../types/nexus';
 import type { Contact, Project, Client, Candidate, Goal, Note } from '../../types';
 import { NODE_COLORS } from './nexusColors';
 
 interface Props {
   node: NexusNode;
+  nodes: NexusNode[];
+  adjacency: Map<string, { neighbor: string; linkType: NexusLinkType }[]>;
+  activePath: NexusPath | null;
+  pathFrom: string | null;
   onClose: () => void;
   onNavigateToSection: (section: string) => void;
+  onStartPath: (fromId: string) => void;
+  onSetPathTarget: (toId: string) => void;
 }
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -21,13 +27,8 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
 };
 
 const TYPE_SECTIONS: Record<string, string> = {
-  contact: 'contacts',
-  project: 'projects',
-  client: 'recruitment',
-  candidate: 'recruitment',
-  goal: 'goals',
-  financial: 'financial',
-  note: 'notes',
+  contact: 'contacts', project: 'projects', client: 'recruitment',
+  candidate: 'recruitment', goal: 'goals', financial: 'financial', note: 'notes',
 };
 
 function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
@@ -40,6 +41,123 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
+// ─── AI Insights (computed from node data, no API call) ─────────────────────
+
+function computeInsights(node: NexusNode, neighbors: { neighbor: string; linkType: NexusLinkType }[]): string[] {
+  const insights: string[] = [];
+  const connectionCount = neighbors.length;
+
+  if (node.type === 'contact') {
+    const c = node.rawData as Contact;
+    if (connectionCount === 0) insights.push('This contact is isolated — consider linking them to a project or introducing them to your network.');
+    if (connectionCount >= 5) insights.push(`Hub node: connected to ${connectionCount} entities. This is a key relationship in your network.`);
+    if (c.followUpNeeded && c.followUpDate) {
+      const daysSince = Math.floor((Date.now() - new Date(c.followUpDate).getTime()) / 86400000);
+      if (daysSince > 7) insights.push(`Follow-up overdue by ${daysSince} days.`);
+    }
+    if (c.lastContacted) {
+      const daysSince = Math.floor((Date.now() - new Date(c.lastContacted).getTime()) / 86400000);
+      if (daysSince > 30) insights.push(`Last contacted ${daysSince} days ago — consider reaching out.`);
+    }
+    if (!c.company && !c.email) insights.push('Missing company and email — enrich this contact for better graph connections.');
+  }
+
+  if (node.type === 'project') {
+    const p = node.rawData as Project;
+    if (p.health === 'red') insights.push('Project health is red — needs immediate attention.');
+    if (p.status === 'active' && connectionCount < 2) insights.push('Active project with few connections — consider linking key contacts or goals.');
+    if (p.keyContacts.length === 0) insights.push('No key contacts assigned — who is responsible?');
+  }
+
+  if (node.type === 'goal') {
+    const g = node.rawData as Goal;
+    if (g.progress < 25 && g.status === 'in-progress') insights.push(`Only ${g.progress}% complete — may need more resources or attention.`);
+    if (!g.linkedProjectId) insights.push('Goal not linked to any project — consider creating or linking one.');
+  }
+
+  if (node.type === 'client') {
+    const cl = node.rawData as Client;
+    if (cl.status === 'active' && connectionCount < 2) insights.push('Active client with sparse connections — link related contacts and projects.');
+    const overdue = cl.payments.filter(p => p.status === 'overdue');
+    if (overdue.length > 0) insights.push(`${overdue.length} overdue payment(s) totaling $${overdue.reduce((s, p) => s + p.amount, 0).toLocaleString()}.`);
+  }
+
+  if (insights.length === 0) insights.push('Well-connected entity — no immediate actions suggested.');
+
+  return insights;
+}
+
+// ─── Connection list ────────────────────────────────────────────────────────
+
+function ConnectionsList({ neighbors, nodes, onSetPathTarget, pathFrom }: {
+  neighbors: { neighbor: string; linkType: NexusLinkType }[];
+  nodes: NexusNode[];
+  onSetPathTarget: (id: string) => void;
+  pathFrom: string | null;
+}) {
+  const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
+  if (neighbors.length === 0) return <div className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>No connections</div>;
+
+  return (
+    <div className="space-y-1 max-h-32 overflow-y-auto">
+      {neighbors.slice(0, 15).map(({ neighbor, linkType }) => {
+        const n = nodeMap.get(neighbor);
+        if (!n) return null;
+        return (
+          <div key={`${neighbor}-${linkType}`} className="flex items-center gap-2 py-0.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: n.color }} />
+            <span className="text-[11px] flex-1 truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{n.label}</span>
+            <span className="text-[9px] flex-shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }}>{linkType}</span>
+            {pathFrom && (
+              <button
+                onClick={() => onSetPathTarget(neighbor)}
+                className="text-[9px] px-1 rounded"
+                style={{ color: '#FFD700', backgroundColor: 'rgba(255,215,0,0.1)' }}
+                title="Find path to this node"
+              >
+                path
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {neighbors.length > 15 && (
+        <div className="text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
+          +{neighbors.length - 15} more
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Path display ───────────────────────────────────────────────────────────
+
+function PathDisplay({ path, nodes }: { path: NexusPath; nodes: NexusNode[] }) {
+  const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
+  return (
+    <div className="space-y-1">
+      <div className="text-[11px] font-medium mb-1" style={{ color: 'rgba(255,215,0,0.7)' }}>
+        Shortest path ({path.distance} hop{path.distance !== 1 ? 's' : ''})
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {path.nodeIds.map((id, i) => {
+          const n = nodeMap.get(id);
+          return (
+            <React.Fragment key={id}>
+              {i > 0 && <ChevronRight size={10} style={{ color: 'rgba(255,215,0,0.4)' }} />}
+              <span className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ backgroundColor: (n?.color ?? '#888') + '22', color: n?.color ?? '#888' }}>
+                {n?.label ?? id}
+              </span>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Detail sections (unchanged logic, tighter) ────────────────────────────
+
 function ContactDetail({ data }: { data: Contact }) {
   return (
     <>
@@ -51,9 +169,7 @@ function ContactDetail({ data }: { data: Contact }) {
       {data.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
           {data.tags.map(t => (
-            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60A5FA' }}>
-              {t}
-            </span>
+            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60A5FA' }}>{t}</span>
           ))}
         </div>
       )}
@@ -165,9 +281,7 @@ function NoteDetail({ data }: { data: Note }) {
       {data.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {data.tags.map(t => (
-            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(148,163,184,0.15)', color: '#94A3B8' }}>
-              {t}
-            </span>
+            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(148,163,184,0.15)', color: '#94A3B8' }}>{t}</span>
           ))}
         </div>
       )}
@@ -183,8 +297,20 @@ function NoteDetail({ data }: { data: Note }) {
   );
 }
 
-export function NexusDetailPanel({ node, onClose, onNavigateToSection }: Props) {
+// ─── MAIN PANEL ─────────────────────────────────────────────────────────────
+
+export function NexusDetailPanel({ node, nodes, adjacency, activePath, pathFrom, onClose, onNavigateToSection, onStartPath, onSetPathTarget }: Props) {
   const section = TYPE_SECTIONS[node.type];
+  const [tab, setTab] = useState<'details' | 'connections' | 'insights'>('details');
+
+  const neighbors = useMemo(() => adjacency.get(node.id) ?? [], [adjacency, node.id]);
+  const insights = useMemo(() => computeInsights(node, neighbors), [node, neighbors]);
+
+  const tabs = [
+    { key: 'details' as const, label: 'Details' },
+    { key: 'connections' as const, label: `Connections (${neighbors.length})` },
+    { key: 'insights' as const, label: 'Insights' },
+  ];
 
   return (
     <div
@@ -205,25 +331,100 @@ export function NexusDetailPanel({ node, onClose, onNavigateToSection }: Props) 
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex px-4 gap-1 pt-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className="px-2 py-1.5 text-[11px] font-medium rounded-t-lg transition-colors"
+            style={{
+              color: tab === t.key ? NODE_COLORS[node.type] : 'rgba(255,255,255,0.3)',
+              backgroundColor: tab === t.key ? NODE_COLORS[node.type] + '10' : 'transparent',
+              borderBottom: tab === t.key ? `2px solid ${NODE_COLORS[node.type]}` : '2px solid transparent',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {node.type === 'contact' && <ContactDetail data={node.rawData as Contact} />}
-        {node.type === 'project' && <ProjectDetail data={node.rawData as Project} />}
-        {node.type === 'client' && <ClientDetail data={node.rawData as Client} />}
-        {node.type === 'candidate' && <CandidateDetail data={node.rawData as Candidate} />}
-        {node.type === 'goal' && <GoalDetail data={node.rawData as Goal} />}
-        {node.type === 'note' && <NoteDetail data={node.rawData as Note} />}
-        {node.type === 'financial' && (
+        {tab === 'details' && (
           <>
-            <DetailRow label="Type" value="Financial Summary" />
-            <DetailRow label="Amount" value={node.sublabel} />
+            {node.type === 'contact' && <ContactDetail data={node.rawData as Contact} />}
+            {node.type === 'project' && <ProjectDetail data={node.rawData as Project} />}
+            {node.type === 'client' && <ClientDetail data={node.rawData as Client} />}
+            {node.type === 'candidate' && <CandidateDetail data={node.rawData as Candidate} />}
+            {node.type === 'goal' && <GoalDetail data={node.rawData as Goal} />}
+            {node.type === 'note' && <NoteDetail data={node.rawData as Note} />}
+            {node.type === 'financial' && (
+              <>
+                <DetailRow label="Type" value="Financial Summary" />
+                <DetailRow label="Amount" value={node.sublabel} />
+              </>
+            )}
           </>
+        )}
+
+        {tab === 'connections' && (
+          <div className="space-y-3">
+            <ConnectionsList neighbors={neighbors} nodes={nodes} onSetPathTarget={onSetPathTarget} pathFrom={pathFrom} />
+            {activePath && <PathDisplay path={activePath} nodes={nodes} />}
+          </div>
+        )}
+
+        {tab === 'insights' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Lightbulb size={13} style={{ color: '#FFD700' }} />
+              <span className="text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.5)' }}>Smart Insights</span>
+            </div>
+            {insights.map((insight, i) => (
+              <div
+                key={i}
+                className="text-xs px-3 py-2 rounded-lg"
+                style={{ backgroundColor: 'rgba(255,215,0,0.05)', color: 'rgba(255,255,255,0.7)', borderLeft: '2px solid rgba(255,215,0,0.3)' }}
+              >
+                {insight}
+              </div>
+            ))}
+
+            {/* Connection stats */}
+            <div className="mt-4">
+              <div className="text-[11px] font-medium mb-2" style={{ color: 'rgba(255,255,255,0.4)' }}>Connection Breakdown</div>
+              {(() => {
+                const typeCounts: Record<string, number> = {};
+                for (const n of neighbors) {
+                  typeCounts[n.linkType] = (typeCounts[n.linkType] || 0) + 1;
+                }
+                return Object.entries(typeCounts).map(([type, count]) => (
+                  <div key={type} className="flex justify-between py-0.5">
+                    <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{type}</span>
+                    <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.6)' }}>{count}</span>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
         )}
       </div>
 
       {/* Footer */}
-      {section && (
-        <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-4 py-3 flex flex-col gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* Path finder button */}
+        <button
+          onClick={() => onStartPath(node.id)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
+          style={{ backgroundColor: 'rgba(255,215,0,0.08)', color: '#FFD700', border: '1px solid rgba(255,215,0,0.15)' }}
+        >
+          <GitBranch size={12} />
+          Find path from this node
+        </button>
+
+        {/* Navigate button */}
+        {section && (
           <button
             onClick={() => onNavigateToSection(section)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
@@ -232,8 +433,8 @@ export function NexusDetailPanel({ node, onClose, onNavigateToSection }: Props) 
             <ExternalLink size={12} />
             Open in {section.charAt(0).toUpperCase() + section.slice(1)}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
