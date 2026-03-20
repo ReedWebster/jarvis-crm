@@ -27,7 +27,7 @@
     "api/sync.ts": {
       "maxDuration": 30
     },
-    "api/summarize-meeting.ts": {
+    "api/notes-ai.ts": {
       "maxDuration": 30
     },
     "api/transcribe.ts": {
