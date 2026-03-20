@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../lib/_supabaseAdmin.js';
 
 const ALLOWED_METHODS = new Set([
   'conversations.list', 'conversations.history', 'conversations.info',
-  'conversations.members', 'conversations.mark',
+  'conversations.members', 'conversations.mark', 'conversations.open',
   'users.info', 'users.list',
   'chat.postMessage', 'team.info',
 ]);

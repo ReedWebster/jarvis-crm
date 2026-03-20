@@ -35,6 +35,9 @@
     },
     "api/social.ts": {
       "maxDuration": 30
+    },
+    "api/notifications.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -45,6 +48,10 @@
     {
       "path": "/api/auto-complete-todos",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/notifications",
+      "schedule": "0 * * * *"
     }
   ]
 }
