@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   BarChart3, TrendingUp, Target, Users, Clock,
   BookOpen, CheckSquare, DollarSign, Heart,
@@ -76,24 +76,35 @@ export function AnalyticsInsights({
     return { total, done, rate: total > 0 ? Math.round((done / total) * 100) : 0, overdue };
   }, [todos, today]);
 
-  // Time allocation (last 30 days)
+  // Time allocation with configurable range and measurement
+  const [timeRange, setTimeRange] = useState<7 | 14 | 30 | 90>(30);
+  const [timeMeasure, setTimeMeasure] = useState<'hours' | 'percent'>('hours');
+
+  const timeRangeCutoff = useMemo(() => subDays(today, timeRange), [today, timeRange]);
+
   const timeData = useMemo(() => {
     const recent = timeBlocks.filter(b => {
-      try { return parseISO(b.date) >= thirtyDaysAgo; } catch { return false; }
+      try { return parseISO(b.date) >= timeRangeCutoff; } catch { return false; }
     });
     const catMap: Record<string, number> = {};
+    let totalHrs = 0;
     for (const b of recent) {
       const [sh, sm] = b.startTime.split(':').map(Number);
       const [eh, em] = b.endTime.split(':').map(Number);
       const hrs = Math.max(0, ((eh * 60 + em) - (sh * 60 + sm)) / 60);
+      totalHrs += hrs;
       const cat = timeCategories.find(c => c.id === b.categoryId)?.name ?? 'Other';
       catMap[cat] = (catMap[cat] ?? 0) + hrs;
     }
     return Object.entries(catMap)
-      .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 }))
+      .map(([name, hours]) => ({
+        name,
+        hours: Math.round(hours * 10) / 10,
+        percent: totalHrs > 0 ? Math.round((hours / totalHrs) * 1000) / 10 : 0,
+      }))
       .sort((a, b) => b.hours - a.hours)
       .slice(0, 8);
-  }, [timeBlocks, timeCategories, thirtyDaysAgo]);
+  }, [timeBlocks, timeCategories, timeRangeCutoff]);
 
   // Financial summary (last 30 days)
   const finStats = useMemo(() => {
@@ -205,20 +216,61 @@ export function AnalyticsInsights({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Time allocation */}
         <div className="caesar-card p-4">
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            <Clock size={14} /> Time Allocation (30d)
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-primary)' }}>
+            <Clock size={14} /> Time Allocation
+            {/* Range toggle */}
+            <div className="flex gap-0.5 ml-2 rounded-md overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              {([7, 14, 30, 90] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setTimeRange(d)}
+                  className="px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: timeRange === d ? '#6366f1' : 'transparent',
+                    color: timeRange === d ? '#fff' : 'var(--text-muted)',
+                  }}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+            {/* Measure toggle */}
+            <div className="flex gap-0.5 ml-auto rounded-md overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              <button
+                onClick={() => setTimeMeasure('hours')}
+                className="px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                style={{ backgroundColor: timeMeasure === 'hours' ? '#6366f1' : 'transparent', color: timeMeasure === 'hours' ? '#fff' : 'var(--text-muted)' }}
+              >
+                Hrs
+              </button>
+              <button
+                onClick={() => setTimeMeasure('percent')}
+                className="px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                style={{ backgroundColor: timeMeasure === 'percent' ? '#6366f1' : 'transparent', color: timeMeasure === 'percent' ? '#fff' : 'var(--text-muted)' }}
+              >
+                %
+              </button>
+            </div>
           </h3>
           {timeData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={timeData} layout="vertical">
-                <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                  domain={timeMeasure === 'percent' ? [0, 100] : undefined}
+                  tickFormatter={v => `${v}${timeMeasure === 'hours' ? 'h' : '%'}`}
+                />
                 <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="hours" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                  formatter={(value: number) => [`${value}${timeMeasure === 'hours' ? 'h' : '%'}`, timeMeasure === 'hours' ? 'Hours' : 'Share']}
+                />
+                <Bar dataKey={timeMeasure === 'hours' ? 'hours' : 'percent'} fill="#6366f1" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>No time blocks in the last 30 days</p>
+            <p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>No time blocks in the last {timeRange} days</p>
           )}
         </div>
 
