@@ -20,6 +20,6 @@ export const NODE_LABELS: Record<NexusNodeType, string> = {
   note:      'Notes',
 };
 
-export const LINK_COLOR = 'rgba(255,255,255,0.12)';
-export const LINK_HIGHLIGHT_COLOR = 'rgba(255,255,255,0.55)';
+export const LINK_COLOR = 'rgba(255,255,255,0.1)';
+export const LINK_HIGHLIGHT_COLOR = 'rgba(255,255,255,0.6)';
 export const BG_COLOR = '#06060b';

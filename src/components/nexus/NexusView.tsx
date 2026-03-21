@@ -33,27 +33,34 @@ interface Props {
 const SHARED_CORE_GEO = new THREE.SphereGeometry(1, 20, 14);
 const SHARED_SHELL_GEO = new THREE.SphereGeometry(1, 16, 10);
 
-const materialCache = new Map<string, THREE.MeshStandardMaterial>();
-function getCoreMaterial(color: string): THREE.MeshStandardMaterial {
-  if (materialCache.has(color)) return materialCache.get(color)!.clone();
-  const c = new THREE.Color(color);
-  const mat = new THREE.MeshStandardMaterial({
-    color: c, emissive: c, emissiveIntensity: 2.0,
-    roughness: 0.2, metalness: 0.6,
-  });
-  materialCache.set(color, mat);
-  return mat.clone();
+// Material caches — store templates, clone on use.
+// Clones are disposed when their parent Group is removed by the graph library.
+const coreMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+function getCoreMaterial(color: string, emissiveIntensity = 2.0): THREE.MeshStandardMaterial {
+  const key = color;
+  if (!coreMaterialCache.has(key)) {
+    const c = new THREE.Color(color);
+    coreMaterialCache.set(key, new THREE.MeshStandardMaterial({
+      color: c, emissive: c, emissiveIntensity,
+      roughness: 0.2, metalness: 0.6,
+    }));
+  }
+  const clone = coreMaterialCache.get(key)!.clone();
+  clone.emissiveIntensity = emissiveIntensity;
+  return clone;
 }
 
-const shellMatCache = new Map<string, THREE.MeshPhongMaterial>();
-function getShellMaterial(color: string): THREE.MeshPhongMaterial {
-  if (shellMatCache.has(color)) return shellMatCache.get(color)!.clone();
-  const mat = new THREE.MeshPhongMaterial({
-    color: new THREE.Color(color), transparent: true, opacity: 0.12,
-    side: THREE.DoubleSide, shininess: 80,
-  });
-  shellMatCache.set(color, mat);
-  return mat.clone();
+const shellMaterialCache = new Map<string, THREE.MeshPhongMaterial>();
+function getShellMaterial(color: string, opacity = 0.12): THREE.MeshPhongMaterial {
+  if (!shellMaterialCache.has(color)) {
+    shellMaterialCache.set(color, new THREE.MeshPhongMaterial({
+      color: new THREE.Color(color), transparent: true, opacity,
+      side: THREE.DoubleSide, shininess: 80,
+    }));
+  }
+  const clone = shellMaterialCache.get(color)!.clone();
+  clone.opacity = opacity;
+  return clone;
 }
 
 // ─── GLOW TEXTURE CACHE ─────────────────────────────────────────────────────
@@ -129,7 +136,7 @@ export function NexusView({
     return new Set(activePath.nodeIds);
   }, [activePath]);
 
-  // ─── BLOOM POST-PROCESSING (reduced settings for perf) ──────────────────
+  // ─── BLOOM POST-PROCESSING (soft glow, added once) ──────────────────────
   useEffect(() => {
     const t = setTimeout(() => {
       const fg = fgRef.current;
@@ -137,9 +144,9 @@ export function NexusView({
       try {
         const bloom = new UnrealBloomPass(
           new THREE.Vector2(dimensions.width, dimensions.height),
-          1.2,   // strength (was 1.8)
-          0.4,   // radius (was 0.6)
-          0.2,   // threshold (was 0.15)
+          0.8,   // strength — subtle glow, not overwhelming
+          0.3,   // radius — tighter bloom spread
+          0.35,  // threshold — only brightest elements bloom
         );
         fg.postProcessingComposer().addPass(bloom);
         bloomAdded.current = true;
@@ -148,7 +155,8 @@ export function NexusView({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [dimensions.width, dimensions.height]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── FORCE CONFIGURATION ──────────────────────────────────────────────────
   useEffect(() => {
@@ -156,9 +164,9 @@ export function NexusView({
       const fg = fgRef.current;
       if (!fg) return;
       const charge = fg.d3Force('charge');
-      if (charge && typeof charge.strength === 'function') charge.strength(-30);
+      if (charge && typeof charge.strength === 'function') charge.strength(-40);
       const link = fg.d3Force('link');
-      if (link && typeof link.distance === 'function') link.distance(22);
+      if (link && typeof link.distance === 'function') link.distance(28);
       fg.d3ReheatSimulation();
     }, 100);
     return () => clearTimeout(t);
@@ -196,6 +204,9 @@ export function NexusView({
   }, [hoveredNode, links]);
 
   // ─── NODE RENDERING: shared geo + LOD labels ────────────────────────────
+  // NOTE: Do NOT add highlightNodes to deps — it changes on every hover and
+  // would rebuild ALL 3D objects, causing massive stutter. Labels use size-based
+  // LOD + path membership only. Hover highlighting is handled via link styling.
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
@@ -206,40 +217,41 @@ export function NexusView({
     const dimFactor = onPath ? 1.0 : 0.2;
 
     // Layer 1: Core (shared geometry, scaled)
-    const core = new THREE.Mesh(SHARED_CORE_GEO, getCoreMaterial(n.color));
-    core.scale.set(r * 0.5, r * 0.5, r * 0.5);
-    if (!onPath) (core.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.3;
-    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2 };
+    const coreEmissive = onPath ? 1.8 : 0.3;
+    const core = new THREE.Mesh(SHARED_CORE_GEO, getCoreMaterial(n.color, coreEmissive));
+    const baseScale = r * 0.5;
+    core.scale.set(baseScale, baseScale, baseScale);
+    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2, baseScale };
     group.add(core);
     pulsingCores.current.push(core);
 
     // Layer 2: Shell (shared geometry, scaled)
-    const shell = new THREE.Mesh(SHARED_SHELL_GEO, getShellMaterial(n.color));
+    const shellOpacity = onPath ? 0.1 : 0.03;
+    const shell = new THREE.Mesh(SHARED_SHELL_GEO, getShellMaterial(n.color, shellOpacity));
     shell.scale.set(r, r, r);
-    if (!onPath) (shell.material as THREE.MeshPhongMaterial).opacity = 0.04;
     shell.userData = { isRotatingShell: true };
     group.add(shell);
     rotatingShells.current.push(shell);
 
-    // Layer 3: Sprite glow
+    // Layer 3: Sprite glow (tighter radius for cleaner look)
     const spriteMat = new THREE.SpriteMaterial({
       map: getGlowTexture(n.color),
       blending: THREE.AdditiveBlending,
       transparent: true,
-      opacity: 0.5 * dimFactor,
+      opacity: 0.35 * dimFactor,
       depthWrite: false,
     });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(r * 5, r * 5, 1);
+    sprite.scale.set(r * 3.5, r * 3.5, 1);
     group.add(sprite);
 
-    // Label (LOD: only show for nodes with size >= 3 or hovered/selected)
-    const showLabel = n.size >= 3 || highlightNodes.has(n.id) || pathNodeSet.has(n.id);
+    // Label (LOD: show for nodes with size >= 3 or on active path)
+    const showLabel = n.size >= 3 || pathNodeSet.has(n.id);
     if (showLabel) {
       const label = new SpriteText(n.label, 1.8, n.color);
       label.fontWeight = '600';
       label.fontFace = 'system-ui, -apple-system, sans-serif';
-      label.backgroundColor = 'rgba(6,6,11,0.65)';
+      label.backgroundColor = 'rgba(6,6,11,0.7)';
       label.padding = 0.8;
       label.borderRadius = 1.5;
       label.position.set(0, -(r + 3), 0);
@@ -248,7 +260,7 @@ export function NexusView({
 
       // Sublabel only for larger nodes
       if (n.sublabel && n.size >= 5) {
-        const sub = new SpriteText(n.sublabel, 1.1, 'rgba(255,255,255,0.35)');
+        const sub = new SpriteText(n.sublabel, 1.1, 'rgba(255,255,255,0.4)');
         sub.fontFace = 'system-ui, -apple-system, sans-serif';
         sub.backgroundColor = 'transparent';
         sub.position.set(0, -(r + 5), 0);
@@ -258,24 +270,29 @@ export function NexusView({
     }
 
     return group;
-  }, [pathNodeSet, highlightNodes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathNodeSet]);
 
   // ─── ANIMATION TICK: direct array iteration (no scene.traverse!) ──────
   const onEngineTick = useCallback(() => {
     const time = performance.now() * 0.001;
+    // Filter out disposed meshes lazily (avoids building new arrays each frame)
+    let needsCleanup = false;
     for (const obj of pulsingCores.current) {
-      if (!obj.parent) continue; // disposed
-      const s = 1 + 0.12 * Math.sin(time * 2.2 + obj.userData.phase);
-      obj.scale.set(
-        obj.scale.x > 0 ? s * (obj.scale.x / Math.abs(obj.scale.x)) : s,
-        obj.scale.y > 0 ? s * (obj.scale.y / Math.abs(obj.scale.y)) : s,
-        obj.scale.z > 0 ? s * (obj.scale.z / Math.abs(obj.scale.z)) : s,
-      );
+      if (!obj.parent) { needsCleanup = true; continue; }
+      const base = obj.userData.baseScale as number;
+      const s = base * (1 + 0.08 * Math.sin(time * 1.8 + obj.userData.phase));
+      obj.scale.set(s, s, s);
     }
     for (const obj of rotatingShells.current) {
-      if (!obj.parent) continue;
-      obj.rotation.y += 0.003;
-      obj.rotation.x += 0.001;
+      if (!obj.parent) { needsCleanup = true; continue; }
+      obj.rotation.y += 0.002;
+      obj.rotation.x += 0.0007;
+    }
+    // Periodically clean up disposed refs
+    if (needsCleanup) {
+      pulsingCores.current = pulsingCores.current.filter(o => o.parent);
+      rotatingShells.current = rotatingShells.current.filter(o => o.parent);
     }
   }, []);
 
@@ -293,7 +310,7 @@ export function NexusView({
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
     if (src === hoveredNode.id || tgt === hoveredNode.id) return LINK_HIGHLIGHT_COLOR;
-    return 'rgba(255,255,255,0.02)';
+    return 'rgba(255,255,255,0.04)';
   }, [hoveredNode, activePath]);
 
   const linkWidth = useCallback((link: any) => {
@@ -318,7 +335,7 @@ export function NexusView({
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
     const activeId = hoveredNode?.id || selectedNode?.id;
-    if (src === activeId || tgt === activeId) return 4;
+    if (src === activeId || tgt === activeId) return 3;
     // Path links get particles too
     if (activePath) {
       const srcIdx = activePath.nodeIds.indexOf(src);
@@ -478,19 +495,19 @@ export function NexusView({
         // Links — conditional particles
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkOpacity={0.7}
-        linkCurvature={0.12}
+        linkOpacity={0.6}
+        linkCurvature={0.08}
         linkDirectionalParticles={linkParticles}
         linkDirectionalParticleWidth={1.5}
         linkDirectionalParticleSpeed={particleSpeed}
         linkDirectionalParticleColor={() => '#ffffff'}
 
-        // Physics
+        // Physics — higher decay = faster settling = less jitter
         numDimensions={is3D ? 3 : 2}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
-        warmupTicks={30}
-        cooldownTicks={150}
+        d3AlphaDecay={0.028}
+        d3VelocityDecay={0.4}
+        warmupTicks={40}
+        cooldownTicks={200}
 
         // Animation
         onEngineTick={onEngineTick}
