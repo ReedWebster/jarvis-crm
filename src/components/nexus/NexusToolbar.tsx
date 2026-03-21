@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Maximize2, Minimize2, RotateCcw, Box, Grid3x3, Download, Camera, GitBranch, ChevronDown, Calendar } from 'lucide-react';
+import { Search, Maximize2, Minimize2, RotateCcw, Box, Grid3x3, Download, Camera, GitBranch, ChevronDown, Calendar, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
 import type { NexusNodeType, NexusFilters, NexusLinkType } from '../../types/nexus';
 import { ALL_LINK_TYPES, LINK_TYPE_LABELS } from '../../types/nexus';
 import { NODE_COLORS, NODE_LABELS } from './nexusColors';
@@ -20,6 +20,8 @@ interface Props {
   onExportData: () => void;
   pathMode: boolean;
   onTogglePathMode: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
 }
 
 const NODE_TYPES: NexusNodeType[] = ['contact', 'project', 'client', 'candidate', 'goal', 'financial', 'note'];
@@ -28,10 +30,12 @@ export function NexusToolbar({
   filters, onFiltersChange, is3D, onToggle3D, onCenter,
   fullscreen, onToggleFullscreen, nodeCount, linkCount, clusterCount,
   dateRange, onExportScreenshot, onExportData, pathMode, onTogglePathMode,
+  onZoomIn, onZoomOut,
 }: Props) {
   const [showEdgeFilters, setShowEdgeFilters] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const toggleType = (t: NexusNodeType) => {
     onFiltersChange({
@@ -140,16 +144,22 @@ export function NexusToolbar({
 
         {/* Controls */}
         <div className="flex items-center gap-1">
+          <button onClick={onZoomIn} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title="Zoom in (+)">
+            <ZoomIn size={14} />
+          </button>
+          <button onClick={onZoomOut} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title="Zoom out (-)">
+            <ZoomOut size={14} />
+          </button>
           <button onClick={onToggle3D} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title={is3D ? 'Switch to 2D' : 'Switch to 3D'}>
             {is3D ? <Grid3x3 size={14} /> : <Box size={14} />}
           </button>
-          <button onClick={onCenter} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title="Re-center">
+          <button onClick={onCenter} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title="Re-center (C)">
             <RotateCcw size={14} />
           </button>
           {/* Export dropdown */}
           <div className="relative">
             <button
-              onClick={() => { setShowExportMenu(v => !v); setShowEdgeFilters(false); setShowTimeline(false); }}
+              onClick={() => { setShowExportMenu(v => !v); setShowEdgeFilters(false); setShowTimeline(false); setShowHelp(false); }}
               className="p-1.5 rounded-lg transition-colors"
               style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }}
               title="Export"
@@ -178,13 +188,21 @@ export function NexusToolbar({
               </div>
             )}
           </div>
-          <button onClick={onToggleFullscreen} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+          <button
+            onClick={() => { setShowHelp(v => !v); setShowEdgeFilters(false); setShowTimeline(false); setShowExportMenu(false); }}
+            className="p-1.5 rounded-lg transition-colors"
+            style={{ color: showHelp ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.5)', backgroundColor: showHelp ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)' }}
+            title="Help & shortcuts"
+          >
+            <HelpCircle size={14} />
+          </button>
+          <button onClick={onToggleFullscreen} className="p-1.5 rounded-lg transition-colors" style={{ color: fullscreen ? '#00D4FF' : 'rgba(255,255,255,0.5)', backgroundColor: fullscreen ? 'rgba(0,212,255,0.12)' : 'rgba(255,255,255,0.04)' }} title={fullscreen ? 'Exit fullscreen (F / Esc)' : 'Fullscreen (F)'}>
             {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
 
         {/* Stats */}
-        <div className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
+        <div className="text-[10px] font-mono hidden sm:block" style={{ color: 'rgba(255,255,255,0.25)' }}>
           {nodeCount} nodes · {linkCount} edges · {clusterCount} clusters
         </div>
       </div>
@@ -268,6 +286,37 @@ export function NexusToolbar({
           </div>
           <div className="mt-1.5 text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.2)' }}>
             Data range: {dateRange.min} — {dateRange.max}
+          </div>
+        </div>
+      )}
+
+      {/* Help / Legend */}
+      {showHelp && (
+        <div
+          className="rounded-xl px-4 py-3 backdrop-blur-md animate-fade-in max-w-md"
+          style={{ backgroundColor: 'rgba(10,10,15,0.92)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <div className="text-[11px] font-medium mb-2" style={{ color: 'rgba(255,255,255,0.5)' }}>Controls & Shortcuts</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[10px] mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>F</kbd> Toggle fullscreen</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>Esc</kbd> Deselect / exit</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>C</kbd> Re-center view</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>/</kbd> Focus search</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>+/-</kbd> Zoom in/out</span>
+            <span>Scroll to zoom</span>
+            <span>Click node to select</span>
+            <span>Right-click to navigate</span>
+            <span>Drag node to reposition</span>
+            <span>Drag background to rotate</span>
+          </div>
+          <div className="text-[11px] font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Legend</div>
+          <div className="flex flex-wrap gap-2">
+            {NODE_TYPES.map(t => (
+              <span key={t} className="flex items-center gap-1 text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: NODE_COLORS[t] }} />
+                {NODE_LABELS[t]}
+              </span>
+            ))}
           </div>
         </div>
       )}

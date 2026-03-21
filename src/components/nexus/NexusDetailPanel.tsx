@@ -314,7 +314,9 @@ export function NexusDetailPanel({ node, nodes, adjacency, activePath, pathFrom,
 
   return (
     <div
-      className="absolute top-3 right-3 bottom-3 w-80 z-20 rounded-xl overflow-hidden flex flex-col animate-fade-in"
+      className="absolute z-20 rounded-xl overflow-hidden flex flex-col animate-fade-in
+        bottom-3 left-3 right-3 max-h-[45vh]
+        sm:bottom-3 sm:left-auto sm:right-3 sm:top-3 sm:max-h-none sm:w-80"
       style={{ backgroundColor: 'rgba(10,10,15,0.92)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)' }}
     >
       {/* Header */}

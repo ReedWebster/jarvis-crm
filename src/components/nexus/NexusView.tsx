@@ -107,6 +107,19 @@ export function NexusView({
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   useEffect(() => {
+    if (fullscreen) {
+      // In fullscreen, use window dimensions and listen for resize
+      setDimensions({ width: window.innerWidth, height: window.innerHeight });
+      const onResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
+      window.addEventListener('resize', onResize);
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+      return () => {
+        window.removeEventListener('resize', onResize);
+        document.body.style.overflow = '';
+      };
+    }
+    // Normal mode: use container dimensions
     const el = containerRef.current;
     if (!el) return;
     setDimensions({ width: el.clientWidth, height: el.clientHeight });
@@ -116,7 +129,7 @@ export function NexusView({
     });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
+  }, [fullscreen]);
 
   const { nodes, links, clusters, adjacency, dateRange } = useNexusGraph({
     contacts, projects, clients, candidates, goals,
@@ -350,7 +363,15 @@ export function NexusView({
   // ─── CLICK: zoom + path mode support ──────────────────────────────────
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
-    setSelectedNode(prev => prev?.id === n.id ? null : n);
+
+    // If in path mode and we have a from but no to, set this as destination
+    if (pathFrom && !pathTo && n.id !== pathFrom) {
+      setPathTo(n.id);
+      setSelectedNode(n);
+    } else {
+      setSelectedNode(prev => prev?.id === n.id ? null : n);
+    }
+
     const fg = fgRef.current;
     if (fg && node.x !== undefined) {
       const dist = 40 + (n.size * 3);
@@ -361,7 +382,8 @@ export function NexusView({
         1000,
       );
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathFrom, pathTo]);
 
   const handleNodeHover = useCallback((node: any) => {
     setHoveredNode(node ? (node as NexusNode) : null);
@@ -430,22 +452,61 @@ export function NexusView({
     URL.revokeObjectURL(a.href);
   }, [nodes, links, clusters]);
 
+  // ─── ZOOM CONTROLS ──────────────────────────────────────────────────────
+  const handleZoomIn = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const cam = fg.camera();
+    const pos = cam.position;
+    fg.cameraPosition(
+      { x: pos.x * 0.7, y: pos.y * 0.7, z: pos.z * 0.7 },
+      undefined, 400,
+    );
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const cam = fg.camera();
+    const pos = cam.position;
+    fg.cameraPosition(
+      { x: pos.x * 1.4, y: pos.y * 1.4, z: pos.z * 1.4 },
+      undefined, 400,
+    );
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Don't capture when typing in inputs
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+        if (e.key === 'Escape') (e.target as HTMLElement).blur();
+        return;
+      }
+
       if (e.key === 'Escape') {
+        if (fullscreen) { setFullscreen(false); return; }
         setSelectedNode(null);
         setPathFrom(null);
         setPathTo(null);
+      }
+      if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
+        setFullscreen(v => !v);
       }
       if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         containerRef.current?.querySelector('input')?.focus();
       }
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+        handleCenter();
+      }
+      if (e.key === '+' || e.key === '=') handleZoomIn();
+      if (e.key === '-') handleZoomOut();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [fullscreen, handleCenter, handleZoomIn, handleZoomOut]);
 
   // Zoom to fit on load
   useEffect(() => {
@@ -478,13 +539,15 @@ export function NexusView({
           if (pathFrom !== null) { setPathFrom(null); setPathTo(null); }
           else setPathFrom(selectedNode?.id ?? null);
         }}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
       />
 
       <ForceGraph3D
         ref={fgRef}
         graphData={{ nodes: nodes as any[], links: links as any[] }}
-        width={fullscreen ? window.innerWidth : dimensions.width}
-        height={fullscreen ? window.innerHeight : dimensions.height}
+        width={dimensions.width}
+        height={dimensions.height}
         backgroundColor={BG_COLOR}
         showNavInfo={false}
 
@@ -522,6 +585,30 @@ export function NexusView({
         enableNodeDrag={true}
         enableNavigationControls={true}
       />
+
+      {/* Hover tooltip */}
+      {hoveredNode && (
+        <div
+          className="absolute z-30 pointer-events-none px-2.5 py-1.5 rounded-lg"
+          style={{
+            left: 12, bottom: 160,
+            backgroundColor: 'rgba(10,10,15,0.9)',
+            border: `1px solid ${hoveredNode.color}44`,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: hoveredNode.color }} />
+            <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.9)' }}>{hoveredNode.label}</span>
+          </div>
+          {hoveredNode.sublabel && (
+            <p className="text-[10px] mt-0.5 ml-4" style={{ color: 'rgba(255,255,255,0.4)' }}>{hoveredNode.sublabel}</p>
+          )}
+          <p className="text-[9px] mt-0.5 ml-4 font-mono" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            {hoveredNode.type} · {highlightNodes.size - 1} connections
+          </p>
+        </div>
+      )}
 
       {/* Minimap */}
       <NexusMinimap nodes={nodes} links={links} clusters={clusters} selectedNodeId={selectedNode?.id ?? null} />
