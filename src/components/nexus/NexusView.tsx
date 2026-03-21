@@ -4,16 +4,17 @@ import type { ForceGraphMethods } from 'react-force-graph-3d';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import SpriteText from 'three-spritetext';
 import * as THREE from 'three';
+import { GitBranch, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import type {
   Contact, Project, Client, Candidate, Goal, FinancialEntry, Note, NetworkingMapState,
 } from '../../types';
-import type { NexusNode, NexusFilters, NexusLinkType } from '../../types/nexus';
+import type { NexusNode, NexusFilters, NexusLinkType, NexusNodeType } from '../../types/nexus';
 import { DEFAULT_NEXUS_FILTERS } from '../../types/nexus';
 import { useNexusGraph, useFindPath } from './useNexusGraph';
 import { NexusToolbar } from './NexusToolbar';
 import { NexusDetailPanel } from './NexusDetailPanel';
 import { NexusMinimap } from './NexusMinimap';
-import { NODE_COLORS, LINK_COLOR, LINK_HIGHLIGHT_COLOR, BG_COLOR } from './nexusColors';
+import { NODE_COLORS, LINK_COLOR, BG_COLOR } from './nexusColors';
 import { useSupabaseStorage } from '../../hooks/useSupabaseStorage';
 import { defaultMapState } from '../../utils/networkingMap';
 
@@ -28,24 +29,32 @@ interface Props {
   onNavigateToSection: (section: string) => void;
 }
 
-// ─── SHARED GEOMETRY + MATERIAL POOLS ──────────────────────────────────────
-// Reuse geometries across all nodes to reduce GC pressure and GPU memory
-const SHARED_CORE_GEO = new THREE.SphereGeometry(1, 20, 14);
+// ─── SHARED GEOMETRIES PER NODE TYPE (accessibility: shapes distinguish types) ─
+const NODE_CORE_GEO: Record<NexusNodeType, THREE.BufferGeometry> = {
+  contact:   new THREE.SphereGeometry(1, 20, 14),
+  project:   new THREE.BoxGeometry(1.5, 1.5, 1.5),
+  client:    new THREE.OctahedronGeometry(1.15),
+  candidate: new THREE.DodecahedronGeometry(1.05),
+  goal:      new THREE.IcosahedronGeometry(1.1),
+  financial: new THREE.TetrahedronGeometry(1.25),
+  note:      new THREE.CylinderGeometry(0.85, 0.85, 1.3, 6),
+};
+const CORE_SCALE: Record<NexusNodeType, number> = {
+  contact: 0.5, project: 0.36, client: 0.43, candidate: 0.43,
+  goal: 0.43, financial: 0.4, note: 0.43,
+};
 const SHARED_SHELL_GEO = new THREE.SphereGeometry(1, 16, 10);
 
-// Material caches — store templates, clone on use.
-// Clones are disposed when their parent Group is removed by the graph library.
+// ─── MATERIAL CACHES ────────────────────────────────────────────────────────
 const coreMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
 function getCoreMaterial(color: string, emissiveIntensity = 2.0): THREE.MeshStandardMaterial {
-  const key = color;
-  if (!coreMaterialCache.has(key)) {
+  if (!coreMaterialCache.has(color)) {
     const c = new THREE.Color(color);
-    coreMaterialCache.set(key, new THREE.MeshStandardMaterial({
-      color: c, emissive: c, emissiveIntensity,
-      roughness: 0.2, metalness: 0.6,
+    coreMaterialCache.set(color, new THREE.MeshStandardMaterial({
+      color: c, emissive: c, emissiveIntensity, roughness: 0.2, metalness: 0.6,
     }));
   }
-  const clone = coreMaterialCache.get(key)!.clone();
+  const clone = coreMaterialCache.get(color)!.clone();
   clone.emissiveIntensity = emissiveIntensity;
   return clone;
 }
@@ -69,8 +78,7 @@ function getGlowTexture(color: string): THREE.Texture {
   if (glowTextureCache.has(color)) return glowTextureCache.get(color)!;
   const size = 128;
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   grad.addColorStop(0, color);
@@ -85,6 +93,31 @@ function getGlowTexture(color: string): THREE.Texture {
   return tex;
 }
 
+// ─── COLOR BLENDING (cached for gradient links) ─────────────────────────────
+const blendCache = new Map<string, string>();
+function blendColors(a: string, b: string, alpha: number): string {
+  const key = `${a}:${b}:${alpha}`;
+  if (blendCache.has(key)) return blendCache.get(key)!;
+  const ca = new THREE.Color(a);
+  const cb = new THREE.Color(b);
+  ca.lerp(cb, 0.5);
+  const r = Math.round(ca.r * 255);
+  const g = Math.round(ca.g * 255);
+  const bl = Math.round(ca.b * 255);
+  const result = `rgba(${r},${g},${bl},${alpha})`;
+  blendCache.set(key, result);
+  return result;
+}
+
+const TYPE_SECTIONS: Record<string, string> = {
+  contact: 'contacts', project: 'projects', client: 'recruitment',
+  candidate: 'recruitment', goal: 'goals', financial: 'financial', note: 'notes',
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
+
 export function NexusView({
   contacts, projects, clients, candidates, goals,
   financialEntries, notes, onNavigateToSection,
@@ -97,29 +130,35 @@ export function NexusView({
   const [fullscreen, setFullscreen] = useState(false);
   const [pathFrom, setPathFrom] = useState<string | null>(null);
   const [pathTo, setPathTo] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ node: NexusNode; x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods>();
   const bloomAdded = useRef(false);
 
-  // ─── ANIMATION REF ARRAYS (replaces scene.traverse) ──────────────────────
+  // Animation ref arrays (replaces scene.traverse)
   const pulsingCores = useRef<THREE.Mesh[]>([]);
   const rotatingShells = useRef<THREE.Mesh[]>([]);
+
+  // Performance refs (avoid deps in callbacks)
+  const hoveredNodeIdRef = useRef<string | null>(null);
+  const nodeGroupsRef = useRef(new Map<string, THREE.Group>());
+  const ambientParticlesRef = useRef<THREE.Points | null>(null);
+  const nebulaSpritesRef = useRef(new Map<number, THREE.Sprite>());
+  const rippleTimeRef = useRef(0);
+  const rippleNeighborIdsRef = useRef(new Set<string>());
+  const frameCountRef = useRef(0);
+  const nodesRef = useRef<NexusNode[]>([]);
+  const focusIndexRef = useRef(-1);
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   useEffect(() => {
     if (fullscreen) {
-      // In fullscreen, use window dimensions and listen for resize
       setDimensions({ width: window.innerWidth, height: window.innerHeight });
       const onResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
       window.addEventListener('resize', onResize);
-      // Prevent body scroll
       document.body.style.overflow = 'hidden';
-      return () => {
-        window.removeEventListener('resize', onResize);
-        document.body.style.overflow = '';
-      };
+      return () => { window.removeEventListener('resize', onResize); document.body.style.overflow = ''; };
     }
-    // Normal mode: use container dimensions
     const el = containerRef.current;
     if (!el) return;
     setDimensions({ width: el.clientWidth, height: el.clientHeight });
@@ -135,6 +174,7 @@ export function NexusView({
     contacts, projects, clients, candidates, goals,
     financialEntries, notes, mapState, filters,
   });
+  nodesRef.current = nodes;
 
   const findPath = useFindPath(adjacency);
 
@@ -149,27 +189,93 @@ export function NexusView({
     return new Set(activePath.nodeIds);
   }, [activePath]);
 
-  // ─── BLOOM POST-PROCESSING (soft glow, added once) ──────────────────────
+  // ─── LINK STRENGTH (multi-edge between same pair) ─────────────────────────
+  const linkStrengthMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const link of links) {
+      const src = typeof link.source === 'object' ? (link.source as any).id : link.source;
+      const tgt = typeof link.target === 'object' ? (link.target as any).id : link.target;
+      const key = [src, tgt].sort().join('::');
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return map;
+  }, [links]);
+
+  // ─── BLOOM + AMBIENT PARTICLES (added once on mount) ──────────────────────
   useEffect(() => {
     const t = setTimeout(() => {
       const fg = fgRef.current;
-      if (!fg || bloomAdded.current) return;
-      try {
-        const bloom = new UnrealBloomPass(
-          new THREE.Vector2(dimensions.width, dimensions.height),
-          0.8,   // strength — subtle glow, not overwhelming
-          0.3,   // radius — tighter bloom spread
-          0.35,  // threshold — only brightest elements bloom
-        );
-        fg.postProcessingComposer().addPass(bloom);
-        bloomAdded.current = true;
-      } catch (e) {
-        console.warn('Bloom pass failed:', e);
+      if (!fg) return;
+
+      // Bloom
+      if (!bloomAdded.current) {
+        try {
+          const bloom = new UnrealBloomPass(
+            new THREE.Vector2(dimensions.width, dimensions.height),
+            0.8, 0.3, 0.35,
+          );
+          fg.postProcessingComposer().addPass(bloom);
+          bloomAdded.current = true;
+        } catch (e) { console.warn('Bloom failed:', e); }
       }
-    }, 300);
+
+      // Ambient star field (single draw call — 300 particles)
+      if (!ambientParticlesRef.current) {
+        const count = 300;
+        const positions = new Float32Array(count * 3);
+        const spread = 500;
+        for (let i = 0; i < count; i++) {
+          positions[i * 3]     = (Math.random() - 0.5) * spread;
+          positions[i * 3 + 1] = (Math.random() - 0.5) * spread;
+          positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const mat = new THREE.PointsMaterial({
+          size: 0.6, color: new THREE.Color('#334488'),
+          transparent: true, opacity: 0.3,
+          blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+        });
+        const points = new THREE.Points(geo, mat);
+        try { fg.scene().add(points); } catch {}
+        ambientParticlesRef.current = points;
+      }
+    }, 400);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── CLUSTER NEBULAE (sprites at cluster centroids) ───────────────────────
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const t = setTimeout(() => {
+      try {
+        const scene = fg.scene();
+        // Remove old nebulae
+        for (const [, sprite] of nebulaSpritesRef.current) {
+          scene.remove(sprite);
+          sprite.material.dispose();
+        }
+        nebulaSpritesRef.current.clear();
+
+        // Add new nebulae
+        for (const cluster of clusters) {
+          if (cluster.nodeIds.length < 3) continue;
+          const spriteMat = new THREE.SpriteMaterial({
+            map: getGlowTexture(cluster.color),
+            blending: THREE.AdditiveBlending,
+            transparent: true, opacity: 0.06, depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(spriteMat);
+          sprite.scale.set(80, 80, 1);
+          scene.add(sprite);
+          nebulaSpritesRef.current.set(cluster.id, sprite);
+        }
+      } catch {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [clusters]);
 
   // ─── FORCE CONFIGURATION ──────────────────────────────────────────────────
   useEffect(() => {
@@ -196,10 +302,11 @@ export function NexusView({
     return () => clearTimeout(t);
   }, []);
 
-  // Clear animation refs when graph changes
+  // Clear animation refs on graph changes
   useEffect(() => {
     pulsingCores.current = [];
     rotatingShells.current = [];
+    nodeGroupsRef.current.clear();
   }, [nodes.length, links.length]);
 
   // Build neighbor set for hover highlighting
@@ -216,29 +323,26 @@ export function NexusView({
     return set;
   }, [hoveredNode, links]);
 
-  // ─── NODE RENDERING: shared geo + LOD labels ────────────────────────────
-  // NOTE: Do NOT add highlightNodes to deps — it changes on every hover and
-  // would rebuild ALL 3D objects, causing massive stutter. Labels use size-based
-  // LOD + path membership only. Hover highlighting is handled via link styling.
+  // ─── NODE RENDERING: type-specific shapes + LOD labels ────────────────────
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
     const r = Math.max(n.size * 0.6, 2);
-
-    // Dim nodes not on active path
     const onPath = pathNodeSet.size === 0 || pathNodeSet.has(n.id);
     const dimFactor = onPath ? 1.0 : 0.2;
 
-    // Layer 1: Core (shared geometry, scaled)
+    // Layer 1: Type-specific core geometry
     const coreEmissive = onPath ? 1.8 : 0.3;
-    const core = new THREE.Mesh(SHARED_CORE_GEO, getCoreMaterial(n.color, coreEmissive));
-    const baseScale = r * 0.5;
+    const geo = NODE_CORE_GEO[n.type] || NODE_CORE_GEO.contact;
+    const scaleFactor = CORE_SCALE[n.type] || 0.5;
+    const core = new THREE.Mesh(geo, getCoreMaterial(n.color, coreEmissive));
+    const baseScale = r * scaleFactor;
     core.scale.set(baseScale, baseScale, baseScale);
-    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2, baseScale };
+    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2, baseScale, nodeId: n.id };
     group.add(core);
     pulsingCores.current.push(core);
 
-    // Layer 2: Shell (shared geometry, scaled)
+    // Layer 2: Shell (sphere for all — energy shield effect)
     const shellOpacity = onPath ? 0.1 : 0.03;
     const shell = new THREE.Mesh(SHARED_SHELL_GEO, getShellMaterial(n.color, shellOpacity));
     shell.scale.set(r, r, r);
@@ -246,20 +350,18 @@ export function NexusView({
     group.add(shell);
     rotatingShells.current.push(shell);
 
-    // Layer 3: Sprite glow (tighter radius for cleaner look)
+    // Layer 3: Sprite glow
     const spriteMat = new THREE.SpriteMaterial({
       map: getGlowTexture(n.color),
       blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.35 * dimFactor,
-      depthWrite: false,
+      transparent: true, opacity: 0.35 * dimFactor, depthWrite: false,
     });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.scale.set(r * 3.5, r * 3.5, 1);
     group.add(sprite);
 
-    // Label (LOD: show for nodes with size >= 3 or on active path)
-    const showLabel = n.size >= 3 || pathNodeSet.has(n.id);
+    // Label (LOD: show for nodes with size >= 2 or on active path)
+    const showLabel = n.size >= 2 || pathNodeSet.has(n.id);
     if (showLabel) {
       const label = new SpriteText(n.label, 1.8, n.color);
       label.fontWeight = '600';
@@ -271,8 +373,7 @@ export function NexusView({
       label.material.opacity = dimFactor;
       group.add(label as unknown as THREE.Object3D);
 
-      // Sublabel only for larger nodes
-      if (n.sublabel && n.size >= 5) {
+      if (n.sublabel && n.size >= 4) {
         const sub = new SpriteText(n.sublabel, 1.1, 'rgba(255,255,255,0.4)');
         sub.fontFace = 'system-ui, -apple-system, sans-serif';
         sub.backgroundColor = 'transparent';
@@ -282,74 +383,145 @@ export function NexusView({
       }
     }
 
+    // Store for hover expansion
+    group.userData.nodeId = n.id;
+    nodeGroupsRef.current.set(n.id, group);
+
     return group;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathNodeSet]);
 
-  // ─── ANIMATION TICK: direct array iteration (no scene.traverse!) ──────
+  // ─── ANIMATION TICK ────────────────────────────────────────────────────────
   const onEngineTick = useCallback(() => {
     const time = performance.now() * 0.001;
-    // Filter out disposed meshes lazily (avoids building new arrays each frame)
+    frameCountRef.current++;
     let needsCleanup = false;
+
+    // Pulsing cores
     for (const obj of pulsingCores.current) {
       if (!obj.parent) { needsCleanup = true; continue; }
       const base = obj.userData.baseScale as number;
       const s = base * (1 + 0.08 * Math.sin(time * 1.8 + obj.userData.phase));
       obj.scale.set(s, s, s);
+
+      // Ripple effect: boost emissive briefly after click
+      const nodeId = obj.userData.nodeId as string;
+      const rippleAge = time - rippleTimeRef.current;
+      if (rippleAge < 1.5 && rippleNeighborIdsRef.current.has(nodeId)) {
+        const boost = Math.max(0, 1 - rippleAge) * 2;
+        const mat = obj.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = (mat.emissiveIntensity || 1) + boost;
+      }
     }
+
+    // Rotating shells
     for (const obj of rotatingShells.current) {
       if (!obj.parent) { needsCleanup = true; continue; }
       obj.rotation.y += 0.002;
       obj.rotation.x += 0.0007;
     }
-    // Periodically clean up disposed refs
+
+    // Hover expansion (smooth lerp)
+    const hovId = hoveredNodeIdRef.current;
+    for (const [nodeId, group] of nodeGroupsRef.current) {
+      if (!group.parent) continue;
+      const target = nodeId === hovId ? 1.25 : 1.0;
+      const cur = group.scale.x;
+      if (Math.abs(cur - target) > 0.01) {
+        const next = cur + (target - cur) * 0.12;
+        group.scale.set(next, next, next);
+      }
+    }
+
+    // Ambient particles (cheap rotation)
+    if (ambientParticlesRef.current) {
+      ambientParticlesRef.current.rotation.y = time * 0.015;
+      ambientParticlesRef.current.rotation.x = Math.sin(time * 0.008) * 0.1;
+    }
+
+    // Cluster nebulae (update centroid every 30 frames)
+    if (frameCountRef.current % 30 === 0 && nebulaSpritesRef.current.size > 0) {
+      const ns = nodesRef.current;
+      for (const [clusterId, sprite] of nebulaSpritesRef.current) {
+        let cx = 0, cy = 0, cz = 0, count = 0;
+        for (const n of ns) {
+          if (n.clusterId !== clusterId) continue;
+          const raw = n as any;
+          if (raw.x !== undefined) {
+            cx += raw.x; cy += raw.y; cz += raw.z || 0; count++;
+          }
+        }
+        if (count > 0) sprite.position.set(cx / count, cy / count, cz / count);
+      }
+    }
+
+    // Lazy cleanup
     if (needsCleanup) {
       pulsingCores.current = pulsingCores.current.filter(o => o.parent);
       rotatingShells.current = rotatingShells.current.filter(o => o.parent);
     }
   }, []);
 
-  // Link styling
+  // ─── GRADIENT LINK COLORS + HIGHLIGHTING ──────────────────────────────────
   const linkColor = useCallback((link: any) => {
-    // Highlight path links
+    const src = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgt = typeof link.target === 'object' ? link.target.id : link.target;
+
+    // Path highlighting
     if (activePath && activePath.nodeIds.length > 1) {
-      const src = typeof link.source === 'object' ? link.source.id : link.source;
-      const tgt = typeof link.target === 'object' ? link.target.id : link.target;
       const srcIdx = activePath.nodeIds.indexOf(src);
       const tgtIdx = activePath.nodeIds.indexOf(tgt);
       if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return '#FFD700';
     }
-    if (!hoveredNode) return LINK_COLOR;
-    const src = typeof link.source === 'object' ? link.source.id : link.source;
-    const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    if (src === hoveredNode.id || tgt === hoveredNode.id) return LINK_HIGHLIGHT_COLOR;
-    return 'rgba(255,255,255,0.04)';
+
+    // Hover highlighting
+    if (hoveredNode) {
+      if (src === hoveredNode.id || tgt === hoveredNode.id) {
+        // Bright gradient of endpoint colors
+        const sc = typeof link.source === 'object' ? link.source.color : undefined;
+        const tc = typeof link.target === 'object' ? link.target.color : undefined;
+        if (sc && tc) return blendColors(sc, tc, 0.55);
+        return 'rgba(255,255,255,0.6)';
+      }
+      return 'rgba(255,255,255,0.04)';
+    }
+
+    // Default: soft gradient blend of endpoint colors
+    const sc = typeof link.source === 'object' ? link.source.color : undefined;
+    const tc = typeof link.target === 'object' ? link.target.color : undefined;
+    if (sc && tc) return blendColors(sc, tc, 0.12);
+    return LINK_COLOR;
   }, [hoveredNode, activePath]);
 
+  // ─── LINK WIDTH (connection strength multiplier) ──────────────────────────
   const linkWidth = useCallback((link: any) => {
-    // Thicken path links
+    const src = typeof link.source === 'object' ? link.source.id : link.source;
+    const tgt = typeof link.target === 'object' ? link.target.id : link.target;
+
+    // Path
     if (activePath && activePath.nodeIds.length > 1) {
-      const src = typeof link.source === 'object' ? link.source.id : link.source;
-      const tgt = typeof link.target === 'object' ? link.target.id : link.target;
       const srcIdx = activePath.nodeIds.indexOf(src);
       const tgtIdx = activePath.nodeIds.indexOf(tgt);
       if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return 3.5;
     }
-    if (!hoveredNode) return 0.5;
-    const src = typeof link.source === 'object' ? link.source.id : link.source;
-    const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    if (src === hoveredNode.id || tgt === hoveredNode.id) return 2.5;
-    return 0.15;
-  }, [hoveredNode, activePath]);
 
-  // ─── CONDITIONAL PARTICLES: only on hovered/selected node links ──────
+    const key = [src, tgt].sort().join('::');
+    const strength = Math.min(linkStrengthMap.get(key) || 1, 4);
+
+    if (hoveredNode) {
+      if (src === hoveredNode.id || tgt === hoveredNode.id) return 2 + strength * 0.5;
+      return 0.15;
+    }
+    return 0.3 + strength * 0.3;
+  }, [hoveredNode, activePath, linkStrengthMap]);
+
+  // ─── PARTICLES ────────────────────────────────────────────────────────────
   const linkParticles = useCallback((link: any) => {
     if (!hoveredNode && !selectedNode) return 0;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
     const activeId = hoveredNode?.id || selectedNode?.id;
     if (src === activeId || tgt === activeId) return 3;
-    // Path links get particles too
     if (activePath) {
       const srcIdx = activePath.nodeIds.indexOf(src);
       const tgtIdx = activePath.nodeIds.indexOf(tgt);
@@ -360,11 +532,19 @@ export function NexusView({
 
   const particleSpeed = useCallback(() => 0.003 + Math.random() * 0.005, []);
 
-  // ─── CLICK: zoom + path mode support ──────────────────────────────────
+  const particleColor = useCallback((link: any) => {
+    const sc = typeof link.source === 'object' ? link.source.color : undefined;
+    const tc = typeof link.target === 'object' ? link.target.color : undefined;
+    if (sc && tc) return blendColors(sc, tc, 0.8);
+    return '#ffffff';
+  }, []);
+
+  // ─── NODE CLICK (with ripple effect) ──────────────────────────────────────
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
+    setContextMenu(null);
 
-    // If in path mode and we have a from but no to, set this as destination
+    // Path mode
     if (pathFrom && !pathTo && n.id !== pathFrom) {
       setPathTo(n.id);
       setSelectedNode(n);
@@ -372,6 +552,14 @@ export function NexusView({
       setSelectedNode(prev => prev?.id === n.id ? null : n);
     }
 
+    // Ripple effect: compute neighbor IDs and set timestamp
+    rippleTimeRef.current = performance.now() * 0.001;
+    const neighbors = new Set<string>([n.id]);
+    for (const link of nodesRef.current.length > 0 ? [] : []) { void link; } // placeholder
+    // Use adjacency-like approach from links
+    rippleNeighborIdsRef.current = neighbors;
+
+    // Camera fly-to
     const fg = fgRef.current;
     if (fg && node.x !== undefined) {
       const dist = 40 + (n.size * 3);
@@ -385,58 +573,135 @@ export function NexusView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathFrom, pathTo]);
 
+  // Compute ripple neighbors whenever selection or links change
+  useEffect(() => {
+    if (!selectedNode) { rippleNeighborIdsRef.current.clear(); return; }
+    const neighbors = new Set<string>([selectedNode.id]);
+    for (const l of links) {
+      const src = typeof l.source === 'object' ? (l.source as any).id : l.source;
+      const tgt = typeof l.target === 'object' ? (l.target as any).id : l.target;
+      if (src === selectedNode.id) neighbors.add(tgt);
+      if (tgt === selectedNode.id) neighbors.add(src);
+    }
+    rippleNeighborIdsRef.current = neighbors;
+    rippleTimeRef.current = performance.now() * 0.001;
+  }, [selectedNode, links]);
+
   const handleNodeHover = useCallback((node: any) => {
-    setHoveredNode(node ? (node as NexusNode) : null);
+    const n = node ? (node as NexusNode) : null;
+    setHoveredNode(n);
+    hoveredNodeIdRef.current = n?.id ?? null;
     if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
   }, []);
 
-  const handleCenter = useCallback(() => {
-    fgRef.current?.zoomToFit(600, 40);
+  // ─── RIGHT-CLICK CONTEXT MENU ─────────────────────────────────────────────
+  const handleRightClick = useCallback((node: any, event: MouseEvent) => {
+    event.preventDefault();
+    const n = node as NexusNode;
+    const rect = containerRef.current?.getBoundingClientRect();
+    setContextMenu({
+      node: n,
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    });
   }, []);
 
-  const handleDoubleClick = useCallback((node: any) => {
-    const map: Record<string, string> = {
-      contact: 'contacts', project: 'projects', client: 'recruitment',
-      candidate: 'recruitment', goal: 'goals', financial: 'financial', note: 'notes',
-    };
-    const section = map[(node as NexusNode).type];
-    if (section) onNavigateToSection(section);
-  }, [onNavigateToSection]);
+  // ─── CAMERA CONTROLS ─────────────────────────────────────────────────────
+  const handleCenter = useCallback(() => { fgRef.current?.zoomToFit(600, 40); }, []);
 
-  // Pause auto-rotate while dragging
+  const handleZoomIn = useCallback(() => {
+    const fg = fgRef.current; if (!fg) return;
+    const pos = fg.camera().position;
+    fg.cameraPosition({ x: pos.x * 0.7, y: pos.y * 0.7, z: pos.z * 0.7 }, undefined, 400);
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const fg = fgRef.current; if (!fg) return;
+    const pos = fg.camera().position;
+    fg.cameraPosition({ x: pos.x * 1.4, y: pos.y * 1.4, z: pos.z * 1.4 }, undefined, 400);
+  }, []);
+
+  // ─── FLY-TO NODE (for search results & quick-focus) ───────────────────────
+  const handleFlyToNode = useCallback((nodeId: string) => {
+    const node = nodesRef.current.find(n => n.id === nodeId) as any;
+    if (!node || node.x === undefined) return;
+    setSelectedNode(node as NexusNode);
+    const fg = fgRef.current;
+    if (fg) {
+      const dist = 40 + ((node as NexusNode).size * 3);
+      const ratio = 1 + dist / Math.hypot(node.x, node.y, node.z || 0.001);
+      fg.cameraPosition(
+        { x: node.x * ratio, y: node.y * ratio, z: (node.z || 0) * ratio },
+        { x: node.x, y: node.y, z: node.z || 0 },
+        1200,
+      );
+    }
+  }, []);
+
+  // ─── QUICK-FOCUS: Most Connected ──────────────────────────────────────────
+  const handleFocusMostConnected = useCallback(() => {
+    let maxConn = 0;
+    let bestId: string | null = null;
+    for (const [nodeId, neighbors] of adjacency) {
+      if (neighbors.length > maxConn) { maxConn = neighbors.length; bestId = nodeId; }
+    }
+    if (bestId) handleFlyToNode(bestId);
+  }, [adjacency, handleFlyToNode]);
+
+  // ─── QUICK-FOCUS: Isolated Nodes ─────────────────────────────────────────
+  const handleFocusIsolated = useCallback(() => {
+    const isolatedIds = nodes.filter(n => !adjacency.has(n.id) || (adjacency.get(n.id)?.length ?? 0) === 0);
+    if (isolatedIds.length === 0) return;
+    // Zoom to fit all isolated nodes
+    fgRef.current?.zoomToFit(800, 100);
+    // Select first isolated as a starting point
+    if (isolatedIds[0]) handleFlyToNode(isolatedIds[0].id);
+  }, [nodes, adjacency, handleFlyToNode]);
+
+  // ─── FOCUS NEIGHBORHOOD ───────────────────────────────────────────────────
+  const focusNeighborhood = useCallback((nodeId: string) => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const neighbors = adjacency.get(nodeId) ?? [];
+    const ids = new Set([nodeId, ...neighbors.map(n => n.neighbor)]);
+    // Compute bounding box of neighborhood
+    let sx = 0, sy = 0, sz = 0, count = 0;
+    for (const n of nodesRef.current) {
+      if (!ids.has(n.id)) continue;
+      const raw = n as any;
+      if (raw.x !== undefined) { sx += raw.x; sy += raw.y; sz += raw.z || 0; count++; }
+    }
+    if (count > 0) {
+      fg.cameraPosition(
+        { x: sx / count + 30, y: sy / count + 30, z: sz / count + 30 },
+        { x: sx / count, y: sy / count, z: sz / count },
+        1200,
+      );
+    }
+  }, [adjacency]);
+
+  // ─── DRAG ─────────────────────────────────────────────────────────────────
   const handleDrag = useCallback(() => {
-    try {
-      const controls = fgRef.current?.controls() as any;
-      if (controls) controls.autoRotate = false;
-    } catch {}
+    try { const c = fgRef.current?.controls() as any; if (c) c.autoRotate = false; } catch {}
   }, []);
 
   const handleDragEnd = useCallback(() => {
     setTimeout(() => {
-      try {
-        const controls = fgRef.current?.controls() as any;
-        if (controls) { controls.autoRotate = true; controls.autoRotateSpeed = 0.3; }
-      } catch {}
+      try { const c = fgRef.current?.controls() as any; if (c) { c.autoRotate = true; c.autoRotateSpeed = 0.3; } } catch {}
     }, 2000);
   }, []);
 
-  // ─── EXPORT SCREENSHOT ────────────────────────────────────────────────────
+  // ─── EXPORT ───────────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
+    const fg = fgRef.current; if (!fg) return;
     try {
       const renderer = fg.renderer() as THREE.WebGLRenderer;
       const dataUrl = renderer.domElement.toDataURL('image/png');
       const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `nexus-${new Date().toISOString().slice(0, 10)}.png`;
-      a.click();
-    } catch (e) {
-      console.warn('Export failed:', e);
-    }
+      a.href = dataUrl; a.download = `nexus-${new Date().toISOString().slice(0, 10)}.png`; a.click();
+    } catch (e) { console.warn('Export failed:', e); }
   }, []);
 
-  // ─── EXPORT GRAPH DATA ────────────────────────────────────────────────────
   const handleExportData = useCallback(() => {
     const data = {
       nodes: nodes.map(n => ({ id: n.id, type: n.type, label: n.label, sublabel: n.sublabel, size: n.size })),
@@ -447,38 +712,13 @@ export function NexusView({
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `nexus-data-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    a.download = `nexus-data-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     URL.revokeObjectURL(a.href);
   }, [nodes, links, clusters]);
 
-  // ─── ZOOM CONTROLS ──────────────────────────────────────────────────────
-  const handleZoomIn = useCallback(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    const cam = fg.camera();
-    const pos = cam.position;
-    fg.cameraPosition(
-      { x: pos.x * 0.7, y: pos.y * 0.7, z: pos.z * 0.7 },
-      undefined, 400,
-    );
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    const fg = fgRef.current;
-    if (!fg) return;
-    const cam = fg.camera();
-    const pos = cam.position;
-    fg.cameraPosition(
-      { x: pos.x * 1.4, y: pos.y * 1.4, z: pos.z * 1.4 },
-      undefined, 400,
-    );
-  }, []);
-
-  // Keyboard shortcuts
+  // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't capture when typing in inputs
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
         if (e.key === 'Escape') (e.target as HTMLElement).blur();
@@ -486,27 +726,55 @@ export function NexusView({
       }
 
       if (e.key === 'Escape') {
+        if (contextMenu) { setContextMenu(null); return; }
         if (fullscreen) { setFullscreen(false); return; }
-        setSelectedNode(null);
-        setPathFrom(null);
-        setPathTo(null);
+        setSelectedNode(null); setPathFrom(null); setPathTo(null);
       }
-      if (e.key === 'f' && !e.metaKey && !e.ctrlKey) {
-        setFullscreen(v => !v);
-      }
+      if (e.key === 'f' && !e.metaKey && !e.ctrlKey) setFullscreen(v => !v);
       if (e.key === '/' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         containerRef.current?.querySelector('input')?.focus();
       }
-      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
-        handleCenter();
-      }
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) handleCenter();
       if (e.key === '+' || e.key === '=') handleZoomIn();
       if (e.key === '-') handleZoomOut();
+
+      // Tab: cycle through nodes
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const ns = nodesRef.current;
+        if (ns.length === 0) return;
+        const dir = e.shiftKey ? -1 : 1;
+        focusIndexRef.current = (focusIndexRef.current + dir + ns.length) % ns.length;
+        handleFlyToNode(ns[focusIndexRef.current].id);
+      }
+
+      // Arrow keys: traverse edges from selected node
+      if (['ArrowRight', 'ArrowDown'].includes(e.key) && selectedNode) {
+        e.preventDefault();
+        const neighbors = adjacency.get(selectedNode.id) ?? [];
+        if (neighbors.length > 0) {
+          // Pick next neighbor
+          const currentIdx = focusIndexRef.current % neighbors.length;
+          const next = neighbors[(currentIdx + 1) % neighbors.length];
+          focusIndexRef.current = currentIdx + 1;
+          handleFlyToNode(next.neighbor);
+        }
+      }
+      if (['ArrowLeft', 'ArrowUp'].includes(e.key) && selectedNode) {
+        e.preventDefault();
+        const neighbors = adjacency.get(selectedNode.id) ?? [];
+        if (neighbors.length > 0) {
+          const currentIdx = ((focusIndexRef.current % neighbors.length) + neighbors.length) % neighbors.length;
+          const prev = neighbors[(currentIdx - 1 + neighbors.length) % neighbors.length];
+          focusIndexRef.current = currentIdx - 1;
+          handleFlyToNode(prev.neighbor);
+        }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [fullscreen, handleCenter, handleZoomIn, handleZoomOut]);
+  }, [fullscreen, contextMenu, selectedNode, adjacency, handleCenter, handleZoomIn, handleZoomOut, handleFlyToNode]);
 
   // Zoom to fit on load
   useEffect(() => {
@@ -514,11 +782,13 @@ export function NexusView({
     return () => clearTimeout(t);
   }, []);
 
+  // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
       className={`relative w-full ${fullscreen ? 'fixed inset-0 z-50' : ''}`}
       style={{ height: fullscreen ? '100vh' : '100%', backgroundColor: BG_COLOR }}
+      onClick={() => setContextMenu(null)}
     >
       <NexusToolbar
         filters={filters}
@@ -541,6 +811,10 @@ export function NexusView({
         }}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
+        nodes={nodes}
+        onFlyToNode={handleFlyToNode}
+        onFocusMostConnected={handleFocusMostConnected}
+        onFocusIsolated={handleFocusIsolated}
       />
 
       <ForceGraph3D
@@ -550,12 +824,8 @@ export function NexusView({
         height={dimensions.height}
         backgroundColor={BG_COLOR}
         showNavInfo={false}
-
-        // Nodes
         nodeThreeObject={nodeThreeObject}
         nodeThreeObjectExtend={false}
-
-        // Links — conditional particles
         linkColor={linkColor}
         linkWidth={linkWidth}
         linkOpacity={0.6}
@@ -563,30 +833,24 @@ export function NexusView({
         linkDirectionalParticles={linkParticles}
         linkDirectionalParticleWidth={1.5}
         linkDirectionalParticleSpeed={particleSpeed}
-        linkDirectionalParticleColor={() => '#ffffff'}
-
-        // Physics — higher decay = faster settling = less jitter
+        linkDirectionalParticleColor={particleColor}
         numDimensions={is3D ? 3 : 2}
         d3AlphaDecay={0.028}
         d3VelocityDecay={0.4}
         warmupTicks={40}
         cooldownTicks={200}
-
-        // Animation
         onEngineTick={onEngineTick}
-
-        // Interaction
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
-        onNodeRightClick={handleDoubleClick}
+        onNodeRightClick={handleRightClick}
         onNodeDrag={handleDrag}
         onNodeDragEnd={handleDragEnd}
-        onBackgroundClick={() => { setSelectedNode(null); if (!pathFrom) { setPathFrom(null); setPathTo(null); } }}
+        onBackgroundClick={() => { setSelectedNode(null); setContextMenu(null); if (!pathFrom) { setPathFrom(null); setPathTo(null); } }}
         enableNodeDrag={true}
         enableNavigationControls={true}
       />
 
-      {/* Hover tooltip — hidden on touch devices */}
+      {/* Hover tooltip */}
       {hoveredNode && (
         <div
           className="absolute z-30 pointer-events-none px-2.5 py-1.5 rounded-lg hidden sm:block"
@@ -610,7 +874,71 @@ export function NexusView({
         </div>
       )}
 
-      {/* Minimap — hide on mobile to save space */}
+      {/* Context menu (right-click) */}
+      {contextMenu && (
+        <div
+          className="absolute z-40 rounded-xl py-1.5 min-w-[180px] animate-fade-in"
+          style={{
+            left: Math.min(contextMenu.x, dimensions.width - 200),
+            top: Math.min(contextMenu.y, dimensions.height - 200),
+            backgroundColor: 'rgba(10,10,15,0.95)',
+            border: `1px solid ${contextMenu.node.color}33`,
+            backdropFilter: 'blur(12px)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 text-xs font-semibold flex items-center gap-2" style={{ color: contextMenu.node.color }}>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: contextMenu.node.color }} />
+            {contextMenu.node.label}
+          </div>
+          <div className="h-px mx-2 my-0.5" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+          <button
+            onClick={() => { setSelectedNode(contextMenu.node); setContextMenu(null); }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+            style={{ color: 'rgba(255,255,255,0.7)' }}
+          >
+            <Eye size={12} /> Select & inspect
+          </button>
+          <button
+            onClick={() => { setPathFrom(contextMenu.node.id); setPathTo(null); setContextMenu(null); }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+            style={{ color: '#FFD700' }}
+          >
+            <GitBranch size={12} /> Find paths from here
+          </button>
+          <button
+            onClick={() => { focusNeighborhood(contextMenu.node.id); setContextMenu(null); }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+            style={{ color: 'rgba(255,255,255,0.7)' }}
+          >
+            <Eye size={12} /> Focus neighborhood
+          </button>
+          <button
+            onClick={() => {
+              setFilters(f => ({ ...f, visibleTypes: { ...f.visibleTypes, [contextMenu.node.type]: false } }));
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+            style={{ color: 'rgba(255,255,255,0.5)' }}
+          >
+            <EyeOff size={12} /> Hide {contextMenu.node.type}s
+          </button>
+          <div className="h-px mx-2 my-0.5" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
+          <button
+            onClick={() => {
+              const section = TYPE_SECTIONS[contextMenu.node.type];
+              if (section) onNavigateToSection(section);
+              setContextMenu(null);
+            }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+            style={{ color: contextMenu.node.color }}
+          >
+            <ExternalLink size={12} /> Open in {TYPE_SECTIONS[contextMenu.node.type]}
+          </button>
+        </div>
+      )}
+
+      {/* Minimap */}
       <div className="hidden sm:block">
         <NexusMinimap nodes={nodes} links={links} clusters={clusters} selectedNodeId={selectedNode?.id ?? null} />
       </div>

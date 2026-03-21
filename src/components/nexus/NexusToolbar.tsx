@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
-import { Search, Maximize2, Minimize2, RotateCcw, Box, Grid3x3, Download, Camera, GitBranch, ChevronDown, Calendar, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  Search, Maximize2, Minimize2, RotateCcw, Box, Grid3x3, Download, Camera,
+  GitBranch, ChevronDown, Calendar, ZoomIn, ZoomOut, HelpCircle, Crosshair, Unlink,
+} from 'lucide-react';
 import type { NexusNodeType, NexusFilters, NexusLinkType } from '../../types/nexus';
 import { ALL_LINK_TYPES, LINK_TYPE_LABELS } from '../../types/nexus';
 import { NODE_COLORS, NODE_LABELS } from './nexusColors';
+import type { NexusNode } from '../../types/nexus';
 
 interface Props {
   filters: NexusFilters;
@@ -22,20 +26,53 @@ interface Props {
   onTogglePathMode: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  nodes: NexusNode[];
+  onFlyToNode: (id: string) => void;
+  onFocusMostConnected: () => void;
+  onFocusIsolated: () => void;
 }
 
 const NODE_TYPES: NexusNodeType[] = ['contact', 'project', 'client', 'candidate', 'goal', 'financial', 'note'];
+
+const SHAPE_LABELS: Record<NexusNodeType, string> = {
+  contact: '●', project: '■', client: '◆', candidate: '⬠',
+  goal: '▲', financial: '▼', note: '⬡',
+};
 
 export function NexusToolbar({
   filters, onFiltersChange, is3D, onToggle3D, onCenter,
   fullscreen, onToggleFullscreen, nodeCount, linkCount, clusterCount,
   dateRange, onExportScreenshot, onExportData, pathMode, onTogglePathMode,
-  onZoomIn, onZoomOut,
+  onZoomIn, onZoomOut, nodes, onFlyToNode, onFocusMostConnected, onFocusIsolated,
 }: Props) {
   const [showEdgeFilters, setShowEdgeFilters] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showQuickFocus, setShowQuickFocus] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Search results for fly-to
+  const searchResults = useMemo(() => {
+    if (!filters.search.trim()) return [];
+    const q = filters.search.toLowerCase();
+    return nodes
+      .filter(n => n.label.toLowerCase().includes(q) || (n.sublabel?.toLowerCase().includes(q) ?? false))
+      .slice(0, 8);
+  }, [filters.search, nodes]);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    if (!searchFocused) return;
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.parentElement?.contains(e.target as Node)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [searchFocused]);
 
   const toggleType = (t: NexusNodeType) => {
     onFiltersChange({
@@ -56,6 +93,8 @@ export function NexusToolbar({
     onFiltersChange({ ...filters, visibleLinkTypes: updated });
   };
 
+  const closeAll = () => { setShowEdgeFilters(false); setShowTimeline(false); setShowExportMenu(false); setShowHelp(false); setShowQuickFocus(false); };
+
   const activeLinkCount = ALL_LINK_TYPES.filter(t => filters.visibleLinkTypes[t]).length;
 
   return (
@@ -65,19 +104,21 @@ export function NexusToolbar({
         className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl backdrop-blur-md"
         style={{ backgroundColor: 'rgba(10,10,15,0.85)', border: '1px solid rgba(255,255,255,0.08)' }}
       >
-        {/* Entity type toggles — horizontal scroll on mobile */}
+        {/* Entity type toggles with shape indicators */}
         <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[55%] sm:max-w-none sm:flex-wrap">
           {NODE_TYPES.map(t => (
             <button
               key={t}
               onClick={() => toggleType(t)}
-              className="px-2 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all whitespace-nowrap flex-shrink-0"
+              className="px-2 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all whitespace-nowrap flex-shrink-0 flex items-center gap-1"
               style={{
                 backgroundColor: filters.visibleTypes[t] ? NODE_COLORS[t] + '22' : 'rgba(255,255,255,0.04)',
                 color: filters.visibleTypes[t] ? NODE_COLORS[t] : 'rgba(255,255,255,0.3)',
                 border: `1px solid ${filters.visibleTypes[t] ? NODE_COLORS[t] + '44' : 'rgba(255,255,255,0.06)'}`,
               }}
+              title={`${NODE_LABELS[t]} (${SHAPE_LABELS[t]})`}
             >
+              <span className="text-[8px] sm:text-[9px]">{SHAPE_LABELS[t]}</span>
               {NODE_LABELS[t]}
             </button>
           ))}
@@ -86,32 +127,29 @@ export function NexusToolbar({
         {/* Divider */}
         <div className="w-px h-5 hidden sm:block" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
 
-        {/* Edge filter dropdown toggle */}
+        {/* Edge filter */}
         <button
-          onClick={() => { setShowEdgeFilters(v => !v); setShowTimeline(false); setShowExportMenu(false); setShowHelp(false); }}
+          onClick={() => { const next = !showEdgeFilters; closeAll(); if (next) setShowEdgeFilters(true); }}
           className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
           style={{
             backgroundColor: showEdgeFilters ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
             color: activeLinkCount < ALL_LINK_TYPES.length ? '#FFD700' : 'rgba(255,255,255,0.5)',
           }}
-          title="Filter edge types"
         >
           Edges {activeLinkCount < ALL_LINK_TYPES.length ? `(${activeLinkCount})` : ''}
           <ChevronDown size={10} style={{ transform: showEdgeFilters ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
         </button>
 
-        {/* Timeline toggle */}
+        {/* Timeline */}
         <button
-          onClick={() => { setShowTimeline(v => !v); setShowEdgeFilters(false); setShowExportMenu(false); setShowHelp(false); }}
+          onClick={() => { const next = !showTimeline; closeAll(); if (next) setShowTimeline(true); }}
           className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
           style={{
             backgroundColor: showTimeline ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
             color: (filters.timelineStart || filters.timelineEnd) ? '#00D4FF' : 'rgba(255,255,255,0.5)',
           }}
-          title="Timeline filter"
         >
-          <Calendar size={11} />
-          Timeline
+          <Calendar size={11} /> Timeline
         </button>
 
         {/* Path mode */}
@@ -123,23 +161,48 @@ export function NexusToolbar({
             color: pathMode ? '#FFD700' : 'rgba(255,255,255,0.5)',
             border: pathMode ? '1px solid rgba(255,215,0,0.3)' : '1px solid transparent',
           }}
-          title="Find path between nodes"
         >
-          <GitBranch size={11} />
-          Path
+          <GitBranch size={11} /> Path
         </button>
 
-        {/* Search */}
-        <div className="flex items-center gap-1.5 ml-auto" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        {/* Search with fly-to dropdown */}
+        <div className="relative flex items-center gap-1.5 ml-auto" style={{ color: 'rgba(255,255,255,0.4)' }}>
           <Search size={13} />
           <input
+            ref={searchRef}
             type="text"
             placeholder="Search..."
             value={filters.search}
             onChange={e => onFiltersChange({ ...filters, search: e.target.value })}
+            onFocus={() => setSearchFocused(true)}
             className="bg-transparent border-none outline-none text-xs w-20 sm:w-28"
             style={{ color: 'rgba(255,255,255,0.8)' }}
           />
+          {/* Search results dropdown */}
+          {searchFocused && searchResults.length > 0 && (
+            <div
+              className="absolute top-full right-0 mt-1 rounded-xl py-1.5 min-w-[220px] max-h-64 overflow-y-auto animate-fade-in"
+              style={{ backgroundColor: 'rgba(10,10,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)' }}
+            >
+              <div className="text-[10px] px-3 py-1 font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Click to fly to node
+              </div>
+              {searchResults.map(n => (
+                <button
+                  key={n.id}
+                  onClick={() => { onFlyToNode(n.id); setSearchFocused(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.8)' }}
+                >
+                  <span className="text-[9px]" style={{ color: n.color }}>{SHAPE_LABELS[n.type]}</span>
+                  <span className="flex-1 text-left truncate">{n.label}</span>
+                  {n.sublabel && (
+                    <span className="text-[10px] truncate max-w-[80px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{n.sublabel}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Controls */}
@@ -156,10 +219,51 @@ export function NexusToolbar({
           <button onClick={onCenter} className="p-1.5 rounded-lg transition-colors" style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }} title="Re-center (C)">
             <RotateCcw size={14} />
           </button>
+
+          {/* Quick Focus dropdown */}
+          <div className="relative hidden sm:block">
+            <button
+              onClick={() => { const next = !showQuickFocus; closeAll(); if (next) setShowQuickFocus(true); }}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: showQuickFocus ? '#00D4FF' : 'rgba(255,255,255,0.5)', backgroundColor: showQuickFocus ? 'rgba(0,212,255,0.1)' : 'rgba(255,255,255,0.04)' }}
+              title="Quick focus"
+            >
+              <Crosshair size={14} />
+            </button>
+            {showQuickFocus && (
+              <div
+                className="absolute right-0 top-full mt-1 rounded-xl py-1.5 min-w-[180px] animate-fade-in"
+                style={{ backgroundColor: 'rgba(10,10,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)' }}
+              >
+                <button
+                  onClick={() => { onFocusMostConnected(); setShowQuickFocus(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.7)' }}
+                >
+                  <Crosshair size={12} /> Most connected node
+                </button>
+                <button
+                  onClick={() => { onFocusIsolated(); setShowQuickFocus(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.7)' }}
+                >
+                  <Unlink size={12} /> Isolated nodes
+                </button>
+                <button
+                  onClick={() => { onCenter(); setShowQuickFocus(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.7)' }}
+                >
+                  <RotateCcw size={12} /> Re-center all
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Export dropdown */}
           <div className="relative">
             <button
-              onClick={() => { setShowExportMenu(v => !v); setShowEdgeFilters(false); setShowTimeline(false); setShowHelp(false); }}
+              onClick={() => { const next = !showExportMenu; closeAll(); if (next) setShowExportMenu(true); }}
               className="p-1.5 rounded-lg transition-colors"
               style={{ color: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(255,255,255,0.04)' }}
               title="Export"
@@ -188,8 +292,9 @@ export function NexusToolbar({
               </div>
             )}
           </div>
+
           <button
-            onClick={() => { setShowHelp(v => !v); setShowEdgeFilters(false); setShowTimeline(false); setShowExportMenu(false); }}
+            onClick={() => { const next = !showHelp; closeAll(); if (next) setShowHelp(true); }}
             className="p-1.5 rounded-lg transition-colors"
             style={{ color: showHelp ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.5)', backgroundColor: showHelp ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)' }}
             title="Help & shortcuts"
@@ -303,17 +408,17 @@ export function NexusToolbar({
             <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>C</kbd> Re-center view</span>
             <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>/</kbd> Focus search</span>
             <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>+/-</kbd> Zoom in/out</span>
-            <span>Scroll to zoom</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>Tab</kbd> Cycle nodes</span>
+            <span><kbd className="px-1 py-0.5 rounded font-mono" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>←→↑↓</kbd> Traverse edges</span>
+            <span>Right-click for context menu</span>
             <span>Click node to select</span>
-            <span>Right-click to navigate</span>
             <span>Drag node to reposition</span>
-            <span>Drag background to rotate</span>
           </div>
-          <div className="text-[11px] font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Legend</div>
+          <div className="text-[11px] font-medium mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Legend (color + shape)</div>
           <div className="flex flex-wrap gap-2">
             {NODE_TYPES.map(t => (
               <span key={t} className="flex items-center gap-1 text-[10px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: NODE_COLORS[t] }} />
+                <span style={{ color: NODE_COLORS[t] }}>{SHAPE_LABELS[t]}</span>
                 {NODE_LABELS[t]}
               </span>
             ))}
