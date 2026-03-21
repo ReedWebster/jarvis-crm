@@ -682,6 +682,8 @@ export const DEFAULT_STATE: AppState = {
 
   habitTracker: [],
   dailyMoodLogs: [],
+  healthEntries: [],
+  garminConfig: { connected: false },
   scratchpad:
     '# Quick Capture\n\nDump thoughts, links, and ideas here — process them later.\n\n---\n\n',
 };

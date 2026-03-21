@@ -364,6 +364,50 @@ export interface DailyMoodLog {
   note: string;
 }
 
+// ─── HEALTH ──────────────────────────────────────────────────────────────────
+
+export interface HealthEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  // Sleep
+  sleepHours?: number;
+  sleepQuality?: 1 | 2 | 3 | 4 | 5;
+  // Activity
+  steps?: number;
+  activeMinutes?: number;
+  workoutType?: string;
+  workoutDuration?: number; // minutes
+  caloriesBurned?: number;
+  // Vitals
+  restingHR?: number;
+  avgHR?: number;
+  hrv?: number; // heart rate variability
+  bodyBattery?: number; // 0–100 (Garmin)
+  stressLevel?: number; // 0–100 (Garmin)
+  spo2?: number; // blood oxygen %
+  // Body
+  weight?: number; // lbs
+  bodyFat?: number; // %
+  // Hydration / Nutrition
+  waterOz?: number;
+  calories?: number;
+  // Notes
+  notes?: string;
+  // Source
+  source: 'manual' | 'garmin';
+  createdAt: string;
+}
+
+export interface GarminConfig {
+  connected: boolean;
+  consumerKey?: string;
+  consumerSecret?: string;
+  accessToken?: string;
+  tokenSecret?: string;
+  lastSyncAt?: string;
+  userId?: string;
+}
+
 // ─── VOICE ───────────────────────────────────────────────────────────────────
 
 export interface VoiceSettings {
@@ -760,5 +804,7 @@ export interface AppState {
   habits: Habit[];
   habitTracker: HabitTracker[];
   dailyMoodLogs: DailyMoodLog[];
+  healthEntries: HealthEntry[];
+  garminConfig: GarminConfig;
   scratchpad: string;
 }

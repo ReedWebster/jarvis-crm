@@ -4,7 +4,7 @@ import {
   Target, Building2, FileText, Search, ChevronRight,
   GripVertical, Settings2, Check, Sun, Moon,
   Share2, Inbox, Flame, Atom,
-  Zap, BarChart3, BookHeart, Bookmark,
+  Zap, BarChart3, BookHeart, Bookmark, Activity,
 } from 'lucide-react';
 import type { Theme } from '../../hooks/useTheme';
 import {
@@ -39,6 +39,7 @@ export type NavSection =
   | 'abs'
   | 'automation'
   | 'analytics'
+  | 'health'
   | 'journal'
   | 'bookmarks'
   // Legacy aliases kept for saved navOrder migration
@@ -85,6 +86,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'abs',        label: 'ABS',                  icon: <Users size={18} /> },
   { id: 'automation', label: 'Automation',            icon: <Zap size={18} /> },
   { id: 'analytics',  label: 'Analytics & Insights', icon: <BarChart3 size={18} /> },
+  { id: 'health',     label: 'Health',               icon: <Activity size={18} /> },
   { id: 'journal',    label: 'Journal',              icon: <BookHeart size={18} /> },
   { id: 'bookmarks',  label: 'Bookmarks',            icon: <Bookmark size={18} /> },
 ];

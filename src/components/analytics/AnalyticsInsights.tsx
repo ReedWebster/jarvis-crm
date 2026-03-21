@@ -11,6 +11,7 @@ import { format, parseISO, subDays, startOfWeek, endOfWeek, isWithinInterval } f
 import type {
   Goal, Contact, TodoItem, TimeBlock, TimeCategory,
   FinancialEntry, ReadingItem, HabitTracker, Habit, DailyMoodLog, Note,
+  HealthEntry,
 } from '../../types';
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
@@ -27,6 +28,7 @@ interface Props {
   habits: Habit[];
   dailyMoodLogs: DailyMoodLog[];
   notes: Note[];
+  healthEntries: HealthEntry[];
 }
 
 // ─── COLORS ────────────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: s
 export function AnalyticsInsights({
   goals, contacts, todos, timeBlocks, timeCategories,
   financialEntries, readingItems, habitTracker, habits, dailyMoodLogs, notes,
+  healthEntries,
 }: Props) {
   const today = new Date();
   const thirtyDaysAgo = subDays(today, 30);
@@ -160,16 +163,42 @@ export function AnalyticsInsights({
     }));
   }, [goals]);
 
+  // Health summary (last 14 days)
+  const healthStats = useMemo(() => {
+    const recent = healthEntries.filter(e => {
+      try { return parseISO(e.date) >= subDays(today, 14); } catch { return false; }
+    });
+    const sleeps = recent.filter(e => e.sleepHours != null).map(e => e.sleepHours!);
+    const steps = recent.filter(e => e.steps != null).map(e => e.steps!);
+    const workouts = recent.filter(e => e.workoutDuration && e.workoutDuration > 0).length;
+    const avgSleep = sleeps.length > 0 ? (sleeps.reduce((a, b) => a + b, 0) / sleeps.length).toFixed(1) : null;
+    const avgSteps = steps.length > 0 ? Math.round(steps.reduce((a, b) => a + b, 0) / steps.length) : null;
+    return { avgSleep, avgSteps, workouts, daysLogged: recent.length };
+  }, [healthEntries, today]);
+
+  const healthTrendData = useMemo(() => {
+    return healthEntries
+      .filter(e => { try { return parseISO(e.date) >= subDays(today, 14); } catch { return false; } })
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(e => ({
+        date: format(parseISO(e.date), 'MM/dd'),
+        sleep: e.sleepHours,
+        steps: e.steps ? e.steps / 1000 : undefined,
+        rhr: e.restingHR,
+      }));
+  }, [healthEntries, today]);
+
   const fmt$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
   return (
     <div className="space-y-6">
       {/* Top stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <StatCard icon={<Target size={18} />} label="Goal Progress" value={`${goalStats.avgProgress}%`} sub={`${goalStats.completed}/${goalStats.total} completed`} />
         <StatCard icon={<CheckSquare size={18} />} label="Todo Rate" value={`${todoStats.rate}%`} sub={`${todoStats.done} done, ${todoStats.overdue} overdue`} />
         <StatCard icon={<Heart size={18} />} label="Habit Rate (14d)" value={`${habitRate}%`} />
         <StatCard icon={<Users size={18} />} label="Contacts" value={contactStats.total} sub={`${contactStats.needsFollowUp} need follow-up`} />
+        <StatCard icon={<Heart size={18} />} label="Avg Sleep (14d)" value={healthStats.avgSleep ? `${healthStats.avgSleep}h` : '--'} sub={healthStats.workouts > 0 ? `${healthStats.workouts} workouts` : 'No workouts logged'} />
       </div>
 
       {/* Charts row */}
@@ -260,6 +289,31 @@ export function AnalyticsInsights({
               <span>Notes created: {notes.length} total</span>
             </div>
           </div>
+        </div>
+
+        {/* Health snapshot */}
+        <div className="caesar-card p-4">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Heart size={14} /> Health (14d)
+          </h3>
+          {healthTrendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={healthTrendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="sleep" stroke="#818cf8" strokeWidth={2} dot={{ r: 2 }} name="Sleep (h)" />
+                <Line type="monotone" dataKey="steps" stroke="#22c55e" strokeWidth={2} dot={{ r: 2 }} name="Steps (k)" />
+                <Line type="monotone" dataKey="rhr" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} name="RHR (bpm)" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No health data logged yet</p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Log daily health data in the Health tab</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

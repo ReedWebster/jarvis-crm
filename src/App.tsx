@@ -47,6 +47,7 @@ import { AutomationWorkflows } from './components/automation/AutomationWorkflows
 import { AnalyticsInsights } from './components/analytics/AnalyticsInsights';
 import { JournalReflections } from './components/journal/JournalReflections';
 import { BookmarksInspiration } from './components/bookmarks/BookmarksInspiration';
+import { HealthTracking } from './components/health/HealthTracking';
 import { FinancialSnapshot } from './components/financial/FinancialSnapshot';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
@@ -72,7 +73,7 @@ import type {
   DocFolder, DocFile, SocialAccount, SocialPost, SocialApprovalItem,
   DailyReflection, NewsConfig, ScreenTimeEntry, EmailDraft,
   GitHubActivity, NotionPageSummary, NotionConfig, ReadwiseHighlight,
-  AutomationRule, JournalEntry, Bookmark,
+  AutomationRule, JournalEntry, Bookmark, HealthEntry, GarminConfig,
 } from './types';
 
 const SECTION_TITLES: Partial<Record<NavSection, string>> = {
@@ -91,6 +92,7 @@ const SECTION_TITLES: Partial<Record<NavSection, string>> = {
   abs: 'AI in Business Society',
   automation: 'Automation & Workflows',
   analytics: 'Analytics & Insights',
+  health: 'Health',
   journal: 'Journal & Reflections',
   bookmarks: 'Bookmarks & Inspiration',
 };
@@ -257,6 +259,8 @@ function MainApp() {
   const [automationRules, setAutomationRules] = useSupabaseStorage<AutomationRule[]>('jarvis:automationRules', []);
   const [journalEntries, setJournalEntries] = useSupabaseStorage<JournalEntry[]>('jarvis:journalEntries', []);
   const [bookmarks, setBookmarks] = useSupabaseStorage<Bookmark[]>('jarvis:bookmarks', []);
+  const [healthEntries, setHealthEntries] = useSupabaseStorage<HealthEntry[]>('jarvis:healthEntries', DEFAULT_STATE.healthEntries);
+  const [garminConfig, setGarminConfig] = useSupabaseStorage<GarminConfig>('jarvis:garminConfig', DEFAULT_STATE.garminConfig);
 
   // Bundled read-only data for WorldView data panel
   const worldAppData = useMemo(() => ({
@@ -508,6 +512,17 @@ function MainApp() {
             habits={habits}
             dailyMoodLogs={dailyMoodLogs}
             notes={notes}
+            healthEntries={healthEntries}
+          />
+        );
+      case 'health':
+        return (
+          <HealthTracking
+            entries={healthEntries}
+            setEntries={setHealthEntries}
+            garminConfig={garminConfig}
+            setGarminConfig={setGarminConfig}
+            dailyMoodLogs={dailyMoodLogs}
           />
         );
       case 'journal':
