@@ -203,9 +203,9 @@ export function JournalReflections({ entries, setEntries, reflections, setReflec
               <ChevronRight size={16} />
             </button>
           </div>
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
             {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-              <div key={d} className="text-center text-xs font-medium py-1" style={{ color: 'var(--text-muted)' }}>{d}</div>
+              <div key={d} className="text-center text-[10px] sm:text-xs font-medium py-1" style={{ color: 'var(--text-muted)' }}>{d}</div>
             ))}
             {/* Offset for first day */}
             {Array.from({ length: calDays[0]?.getDay() ?? 0 }).map((_, i) => (

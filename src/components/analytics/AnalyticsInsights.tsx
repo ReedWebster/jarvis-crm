@@ -193,7 +193,7 @@ export function AnalyticsInsights({
   return (
     <div className="space-y-6">
       {/* Top stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <StatCard icon={<Target size={18} />} label="Goal Progress" value={`${goalStats.avgProgress}%`} sub={`${goalStats.completed}/${goalStats.total} completed`} />
         <StatCard icon={<CheckSquare size={18} />} label="Todo Rate" value={`${todoStats.rate}%`} sub={`${todoStats.done} done, ${todoStats.overdue} overdue`} />
         <StatCard icon={<Heart size={18} />} label="Habit Rate (14d)" value={`${habitRate}%`} />
@@ -267,7 +267,7 @@ export function AnalyticsInsights({
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <DollarSign size={14} /> Financial (30d)
           </h3>
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
             <div className="text-center">
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Income</p>
               <p className="text-lg font-bold" style={{ color: '#22c55e' }}>{fmt$(finStats.income)}</p>

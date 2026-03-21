@@ -8,6 +8,10 @@
 ::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
 
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* ─── CSS Variables — Light (default) ──────────────────────────────────────── */
 :root {
   --bg:               #ffffff;

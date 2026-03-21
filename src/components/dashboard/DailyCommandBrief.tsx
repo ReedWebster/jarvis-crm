@@ -453,7 +453,7 @@ export default function DailyCommandBrief({
 
           {/* Greeting + date */}
           <div className="caesar-card space-y-2">
-            <h2 className="text-2xl font-bold transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
+            <h2 className="text-lg sm:text-2xl font-bold transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
               {greeting},{' '}
               <span className="text-[var(--text-muted)]">
                 {identity.name.split(' ')[0]}

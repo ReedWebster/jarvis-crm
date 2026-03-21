@@ -221,7 +221,7 @@ export function HealthTracking({ entries, setEntries, garminConfig, setGarminCon
       </div>
 
       {/* Summary Cards (always visible) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
         <StatCard icon={<Moon size={16} />} label="Avg Sleep" value={`${weekStats.avgSleep}h`} sub="last 7 days" color="#818cf8" />
         <StatCard icon={<Footprints size={16} />} label="Avg Steps" value={weekStats.avgSteps} sub="last 7 days" color="#22c55e" />
         <StatCard icon={<Heart size={16} />} label="Avg RHR" value={`${weekStats.avgRHR}`} sub="bpm" color="#ef4444" />
@@ -325,7 +325,7 @@ export function HealthTracking({ entries, setEntries, garminConfig, setGarminCon
                 <legend className="text-xs font-semibold flex items-center gap-1.5" style={{ color: '#ef4444' }}>
                   <Heart size={12} /> Vitals
                 </legend>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
                   <label className="space-y-1">
                     <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Resting HR</span>
                     <input type="number" min="30" max="200" className="caesar-input text-sm w-full" placeholder="62"
@@ -425,7 +425,7 @@ export function HealthTracking({ entries, setEntries, garminConfig, setGarminCon
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                 {currentEntry.sleepHours != null && (
                   <div>
                     <p className="text-[11px] flex items-center gap-1" style={{ color: '#818cf8' }}><Moon size={10} /> Sleep</p>

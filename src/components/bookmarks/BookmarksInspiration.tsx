@@ -111,7 +111,7 @@ export function BookmarksInspiration({ bookmarks, setBookmarks }: Props) {
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         {TYPES.map(type => {
           const count = bookmarks.filter(b => b.type === type.value).length;
           return (

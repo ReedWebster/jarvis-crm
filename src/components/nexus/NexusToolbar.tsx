@@ -59,19 +59,19 @@ export function NexusToolbar({
   const activeLinkCount = ALL_LINK_TYPES.filter(t => filters.visibleLinkTypes[t]).length;
 
   return (
-    <div className="absolute top-3 left-3 right-3 z-10 flex flex-col gap-2">
+    <div className="absolute top-2 left-2 right-2 sm:top-3 sm:left-3 sm:right-3 z-10 flex flex-col gap-2">
       {/* Main bar */}
       <div
-        className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl backdrop-blur-md"
-        style={{ backgroundColor: 'rgba(10,10,15,0.8)', border: '1px solid rgba(255,255,255,0.08)' }}
+        className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl backdrop-blur-md"
+        style={{ backgroundColor: 'rgba(10,10,15,0.85)', border: '1px solid rgba(255,255,255,0.08)' }}
       >
-        {/* Entity type toggles */}
-        <div className="flex flex-wrap gap-1">
+        {/* Entity type toggles — horizontal scroll on mobile */}
+        <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[55%] sm:max-w-none sm:flex-wrap">
           {NODE_TYPES.map(t => (
             <button
               key={t}
               onClick={() => toggleType(t)}
-              className="px-2 py-1 rounded-full text-[11px] font-medium transition-all"
+              className="px-2 py-1 rounded-full text-[10px] sm:text-[11px] font-medium transition-all whitespace-nowrap flex-shrink-0"
               style={{
                 backgroundColor: filters.visibleTypes[t] ? NODE_COLORS[t] + '22' : 'rgba(255,255,255,0.04)',
                 color: filters.visibleTypes[t] ? NODE_COLORS[t] : 'rgba(255,255,255,0.3)',
@@ -84,12 +84,12 @@ export function NexusToolbar({
         </div>
 
         {/* Divider */}
-        <div className="w-px h-5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
+        <div className="w-px h-5 hidden sm:block" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
 
         {/* Edge filter dropdown toggle */}
         <button
-          onClick={() => { setShowEdgeFilters(v => !v); setShowTimeline(false); setShowExportMenu(false); }}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
+          onClick={() => { setShowEdgeFilters(v => !v); setShowTimeline(false); setShowExportMenu(false); setShowHelp(false); }}
+          className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
           style={{
             backgroundColor: showEdgeFilters ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
             color: activeLinkCount < ALL_LINK_TYPES.length ? '#FFD700' : 'rgba(255,255,255,0.5)',
@@ -102,8 +102,8 @@ export function NexusToolbar({
 
         {/* Timeline toggle */}
         <button
-          onClick={() => { setShowTimeline(v => !v); setShowEdgeFilters(false); setShowExportMenu(false); }}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
+          onClick={() => { setShowTimeline(v => !v); setShowEdgeFilters(false); setShowExportMenu(false); setShowHelp(false); }}
+          className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
           style={{
             backgroundColor: showTimeline ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
             color: (filters.timelineStart || filters.timelineEnd) ? '#00D4FF' : 'rgba(255,255,255,0.5)',
@@ -117,7 +117,7 @@ export function NexusToolbar({
         {/* Path mode */}
         <button
           onClick={onTogglePathMode}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
+          className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors"
           style={{
             backgroundColor: pathMode ? 'rgba(255,215,0,0.15)' : 'rgba(255,255,255,0.04)',
             color: pathMode ? '#FFD700' : 'rgba(255,255,255,0.5)',
@@ -137,7 +137,7 @@ export function NexusToolbar({
             placeholder="Search..."
             value={filters.search}
             onChange={e => onFiltersChange({ ...filters, search: e.target.value })}
-            className="bg-transparent border-none outline-none text-xs w-28"
+            className="bg-transparent border-none outline-none text-xs w-20 sm:w-28"
             style={{ color: 'rgba(255,255,255,0.8)' }}
           />
         </div>

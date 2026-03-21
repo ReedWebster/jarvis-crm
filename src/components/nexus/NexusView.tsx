@@ -586,10 +586,10 @@ export function NexusView({
         enableNavigationControls={true}
       />
 
-      {/* Hover tooltip */}
+      {/* Hover tooltip — hidden on touch devices */}
       {hoveredNode && (
         <div
-          className="absolute z-30 pointer-events-none px-2.5 py-1.5 rounded-lg"
+          className="absolute z-30 pointer-events-none px-2.5 py-1.5 rounded-lg hidden sm:block"
           style={{
             left: 12, bottom: 160,
             backgroundColor: 'rgba(10,10,15,0.9)',
@@ -610,19 +610,21 @@ export function NexusView({
         </div>
       )}
 
-      {/* Minimap */}
-      <NexusMinimap nodes={nodes} links={links} clusters={clusters} selectedNodeId={selectedNode?.id ?? null} />
+      {/* Minimap — hide on mobile to save space */}
+      <div className="hidden sm:block">
+        <NexusMinimap nodes={nodes} links={links} clusters={clusters} selectedNodeId={selectedNode?.id ?? null} />
+      </div>
 
       {/* Path mode indicator */}
       {pathFrom && (
         <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-3"
+          className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-20 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-medium flex items-center justify-between sm:justify-start gap-3"
           style={{ backgroundColor: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.3)', color: '#FFD700' }}
         >
-          <span>Path mode: {pathTo ? `showing path (${activePath?.distance ?? '?'} hops)` : 'click a destination node'}</span>
+          <span>Path: {pathTo ? `${activePath?.distance ?? '?'} hops` : 'tap destination'}</span>
           <button
             onClick={() => { setPathFrom(null); setPathTo(null); }}
-            className="px-2 py-0.5 rounded-lg text-[10px]"
+            className="px-2 py-0.5 rounded-lg text-[10px] flex-shrink-0"
             style={{ backgroundColor: 'rgba(255,215,0,0.2)' }}
           >
             Exit
