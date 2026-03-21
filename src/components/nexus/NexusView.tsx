@@ -29,9 +29,9 @@ interface Props {
   onNavigateToSection: (section: string) => void;
 }
 
-// ─── SHARED GEOMETRIES PER NODE TYPE (accessibility: shapes distinguish types) ─
+// ─── SHARED GEOMETRIES (lower tessellation for performance) ─────────────────
 const NODE_CORE_GEO: Record<NexusNodeType, THREE.BufferGeometry> = {
-  contact:   new THREE.SphereGeometry(1, 20, 14),
+  contact:   new THREE.SphereGeometry(1, 14, 10),
   project:   new THREE.BoxGeometry(1.5, 1.5, 1.5),
   client:    new THREE.OctahedronGeometry(1.15),
   candidate: new THREE.DodecahedronGeometry(1.05),
@@ -43,15 +43,14 @@ const CORE_SCALE: Record<NexusNodeType, number> = {
   contact: 0.5, project: 0.36, client: 0.43, candidate: 0.43,
   goal: 0.43, financial: 0.4, note: 0.43,
 };
-const SHARED_SHELL_GEO = new THREE.SphereGeometry(1, 16, 10);
 
-// ─── MATERIAL CACHES ────────────────────────────────────────────────────────
+// ─── MATERIAL CACHE (clone from template) ───────────────────────────────────
 const coreMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
 function getCoreMaterial(color: string, emissiveIntensity = 2.0): THREE.MeshStandardMaterial {
   if (!coreMaterialCache.has(color)) {
     const c = new THREE.Color(color);
     coreMaterialCache.set(color, new THREE.MeshStandardMaterial({
-      color: c, emissive: c, emissiveIntensity, roughness: 0.2, metalness: 0.6,
+      color: c, emissive: c, emissiveIntensity, roughness: 0.25, metalness: 0.5,
     }));
   }
   const clone = coreMaterialCache.get(color)!.clone();
@@ -59,24 +58,11 @@ function getCoreMaterial(color: string, emissiveIntensity = 2.0): THREE.MeshStan
   return clone;
 }
 
-const shellMaterialCache = new Map<string, THREE.MeshPhongMaterial>();
-function getShellMaterial(color: string, opacity = 0.12): THREE.MeshPhongMaterial {
-  if (!shellMaterialCache.has(color)) {
-    shellMaterialCache.set(color, new THREE.MeshPhongMaterial({
-      color: new THREE.Color(color), transparent: true, opacity,
-      side: THREE.DoubleSide, shininess: 80,
-    }));
-  }
-  const clone = shellMaterialCache.get(color)!.clone();
-  clone.opacity = opacity;
-  return clone;
-}
-
 // ─── GLOW TEXTURE CACHE ─────────────────────────────────────────────────────
 const glowTextureCache = new Map<string, THREE.Texture>();
 function getGlowTexture(color: string): THREE.Texture {
   if (glowTextureCache.has(color)) return glowTextureCache.get(color)!;
-  const size = 128;
+  const size = 64; // smaller texture = faster
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d')!;
@@ -93,7 +79,7 @@ function getGlowTexture(color: string): THREE.Texture {
   return tex;
 }
 
-// ─── COLOR BLENDING (cached for gradient links) ─────────────────────────────
+// ─── COLOR BLENDING (cached) ────────────────────────────────────────────────
 const blendCache = new Map<string, string>();
 function blendColors(a: string, b: string, alpha: number): string {
   const key = `${a}:${b}:${alpha}`;
@@ -135,11 +121,10 @@ export function NexusView({
   const fgRef = useRef<ForceGraphMethods>();
   const bloomAdded = useRef(false);
 
-  // Animation ref arrays (replaces scene.traverse)
+  // Animation refs
   const pulsingCores = useRef<THREE.Mesh[]>([]);
-  const rotatingShells = useRef<THREE.Mesh[]>([]);
 
-  // Performance refs (avoid deps in callbacks)
+  // Performance refs — avoid React re-renders in hot paths
   const hoveredNodeIdRef = useRef<string | null>(null);
   const nodeGroupsRef = useRef(new Map<string, THREE.Group>());
   const ambientParticlesRef = useRef<THREE.Points | null>(null);
@@ -149,6 +134,7 @@ export function NexusView({
   const frameCountRef = useRef(0);
   const nodesRef = useRef<NexusNode[]>([]);
   const focusIndexRef = useRef(-1);
+  const hoverThrottleRef = useRef(0);
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   useEffect(() => {
@@ -178,7 +164,6 @@ export function NexusView({
 
   const findPath = useFindPath(adjacency);
 
-  // ─── PATH FINDING ──────────────────────────────────────────────────────────
   const activePath = useMemo(() => {
     if (!pathFrom || !pathTo) return null;
     return findPath(pathFrom, pathTo);
@@ -189,7 +174,11 @@ export function NexusView({
     return new Set(activePath.nodeIds);
   }, [activePath]);
 
-  // ─── LINK STRENGTH (multi-edge between same pair) ─────────────────────────
+  // Active path ref for stable callbacks
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  // ─── LINK STRENGTH ────────────────────────────────────────────────────────
   const linkStrengthMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const link of links) {
@@ -200,30 +189,33 @@ export function NexusView({
     }
     return map;
   }, [links]);
+  const linkStrengthRef = useRef(linkStrengthMap);
+  linkStrengthRef.current = linkStrengthMap;
 
-  // ─── BLOOM + AMBIENT PARTICLES (added once on mount) ──────────────────────
+  // ─── BLOOM + AMBIENT PARTICLES (once on mount) ────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => {
       const fg = fgRef.current;
       if (!fg) return;
 
-      // Bloom
       if (!bloomAdded.current) {
         try {
           const bloom = new UnrealBloomPass(
             new THREE.Vector2(dimensions.width, dimensions.height),
-            0.8, 0.3, 0.35,
+            0.5,   // lower strength
+            0.25,
+            0.5,   // higher threshold = fewer pixels bloom
           );
           fg.postProcessingComposer().addPass(bloom);
           bloomAdded.current = true;
         } catch (e) { console.warn('Bloom failed:', e); }
       }
 
-      // Ambient star field (single draw call — 300 particles)
+      // Ambient star field (100 particles, single draw call)
       if (!ambientParticlesRef.current) {
-        const count = 300;
+        const count = 100;
         const positions = new Float32Array(count * 3);
-        const spread = 500;
+        const spread = 400;
         for (let i = 0; i < count; i++) {
           positions[i * 3]     = (Math.random() - 0.5) * spread;
           positions[i * 3 + 1] = (Math.random() - 0.5) * spread;
@@ -232,8 +224,8 @@ export function NexusView({
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const mat = new THREE.PointsMaterial({
-          size: 0.6, color: new THREE.Color('#334488'),
-          transparent: true, opacity: 0.3,
+          size: 0.5, color: new THREE.Color('#334488'),
+          transparent: true, opacity: 0.25,
           blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
         });
         const points = new THREE.Points(geo, mat);
@@ -245,30 +237,28 @@ export function NexusView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── CLUSTER NEBULAE (sprites at cluster centroids) ───────────────────────
+  // ─── CLUSTER NEBULAE ──────────────────────────────────────────────────────
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
     const t = setTimeout(() => {
       try {
         const scene = fg.scene();
-        // Remove old nebulae
         for (const [, sprite] of nebulaSpritesRef.current) {
           scene.remove(sprite);
           sprite.material.dispose();
         }
         nebulaSpritesRef.current.clear();
 
-        // Add new nebulae
         for (const cluster of clusters) {
           if (cluster.nodeIds.length < 3) continue;
           const spriteMat = new THREE.SpriteMaterial({
             map: getGlowTexture(cluster.color),
             blending: THREE.AdditiveBlending,
-            transparent: true, opacity: 0.06, depthWrite: false,
+            transparent: true, opacity: 0.05, depthWrite: false,
           });
           const sprite = new THREE.Sprite(spriteMat);
-          sprite.scale.set(80, 80, 1);
+          sprite.scale.set(70, 70, 1);
           scene.add(sprite);
           nebulaSpritesRef.current.set(cluster.id, sprite);
         }
@@ -277,15 +267,15 @@ export function NexusView({
     return () => clearTimeout(t);
   }, [clusters]);
 
-  // ─── FORCE CONFIGURATION ──────────────────────────────────────────────────
+  // ─── FORCE CONFIG ─────────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => {
       const fg = fgRef.current;
       if (!fg) return;
       const charge = fg.d3Force('charge');
-      if (charge && typeof charge.strength === 'function') charge.strength(-40);
+      if (charge && typeof charge.strength === 'function') charge.strength(-35);
       const link = fg.d3Force('link');
-      if (link && typeof link.distance === 'function') link.distance(28);
+      if (link && typeof link.distance === 'function') link.distance(30);
       fg.d3ReheatSimulation();
     }, 100);
     return () => clearTimeout(t);
@@ -296,7 +286,7 @@ export function NexusView({
     const t = setTimeout(() => {
       try {
         const controls = fgRef.current?.controls() as any;
-        if (controls) { controls.autoRotate = true; controls.autoRotateSpeed = 0.3; }
+        if (controls) { controls.autoRotate = true; controls.autoRotateSpeed = 0.25; }
       } catch {}
     }, 500);
     return () => clearTimeout(t);
@@ -305,11 +295,10 @@ export function NexusView({
   // Clear animation refs on graph changes
   useEffect(() => {
     pulsingCores.current = [];
-    rotatingShells.current = [];
     nodeGroupsRef.current.clear();
   }, [nodes.length, links.length]);
 
-  // Build neighbor set for hover highlighting
+  // Neighbor set for tooltip display only (not used in link callbacks)
   const highlightNodes = useMemo(() => {
     const set = new Set<string>();
     if (!hoveredNode) return set;
@@ -323,7 +312,7 @@ export function NexusView({
     return set;
   }, [hoveredNode, links]);
 
-  // ─── NODE RENDERING: type-specific shapes + LOD labels ────────────────────
+  // ─── NODE RENDERING (no shell layer = half the meshes) ────────────────────
   const nodeThreeObject = useCallback((node: any) => {
     const n = node as NexusNode;
     const group = new THREE.Group();
@@ -331,38 +320,29 @@ export function NexusView({
     const onPath = pathNodeSet.size === 0 || pathNodeSet.has(n.id);
     const dimFactor = onPath ? 1.0 : 0.2;
 
-    // Layer 1: Type-specific core geometry
-    const coreEmissive = onPath ? 1.8 : 0.3;
+    // Core: type-specific geometry
+    const baseEmissive = onPath ? 1.6 : 0.3;
     const geo = NODE_CORE_GEO[n.type] || NODE_CORE_GEO.contact;
     const scaleFactor = CORE_SCALE[n.type] || 0.5;
-    const core = new THREE.Mesh(geo, getCoreMaterial(n.color, coreEmissive));
+    const core = new THREE.Mesh(geo, getCoreMaterial(n.color, baseEmissive));
     const baseScale = r * scaleFactor;
     core.scale.set(baseScale, baseScale, baseScale);
-    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2, baseScale, nodeId: n.id };
+    core.userData = { isPulsingCore: true, phase: Math.random() * Math.PI * 2, baseScale, baseEmissive, nodeId: n.id };
     group.add(core);
     pulsingCores.current.push(core);
 
-    // Layer 2: Shell (sphere for all — energy shield effect)
-    const shellOpacity = onPath ? 0.1 : 0.03;
-    const shell = new THREE.Mesh(SHARED_SHELL_GEO, getShellMaterial(n.color, shellOpacity));
-    shell.scale.set(r, r, r);
-    shell.userData = { isRotatingShell: true };
-    group.add(shell);
-    rotatingShells.current.push(shell);
-
-    // Layer 3: Sprite glow
+    // Glow sprite
     const spriteMat = new THREE.SpriteMaterial({
       map: getGlowTexture(n.color),
       blending: THREE.AdditiveBlending,
-      transparent: true, opacity: 0.35 * dimFactor, depthWrite: false,
+      transparent: true, opacity: 0.3 * dimFactor, depthWrite: false,
     });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(r * 3.5, r * 3.5, 1);
+    sprite.scale.set(r * 3, r * 3, 1);
     group.add(sprite);
 
-    // Label (LOD: show for nodes with size >= 2 or on active path)
-    const showLabel = n.size >= 2 || pathNodeSet.has(n.id);
-    if (showLabel) {
+    // Label (LOD: size >= 2 or on path)
+    if (n.size >= 2 || pathNodeSet.has(n.id)) {
       const label = new SpriteText(n.label, 1.8, n.color);
       label.fontWeight = '600';
       label.fontFace = 'system-ui, -apple-system, sans-serif';
@@ -383,10 +363,8 @@ export function NexusView({
       }
     }
 
-    // Store for hover expansion
     group.userData.nodeId = n.id;
     nodeGroupsRef.current.set(n.id, group);
-
     return group;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathNodeSet]);
@@ -397,138 +375,114 @@ export function NexusView({
     frameCountRef.current++;
     let needsCleanup = false;
 
-    // Pulsing cores
+    // Pulsing cores + ripple
+    const rippleAge = time - rippleTimeRef.current;
+    const doRipple = rippleAge < 1.5;
+
     for (const obj of pulsingCores.current) {
       if (!obj.parent) { needsCleanup = true; continue; }
       const base = obj.userData.baseScale as number;
-      const s = base * (1 + 0.08 * Math.sin(time * 1.8 + obj.userData.phase));
+      const s = base * (1 + 0.06 * Math.sin(time * 1.5 + obj.userData.phase));
       obj.scale.set(s, s, s);
 
-      // Ripple effect: boost emissive briefly after click
-      const nodeId = obj.userData.nodeId as string;
-      const rippleAge = time - rippleTimeRef.current;
-      if (rippleAge < 1.5 && rippleNeighborIdsRef.current.has(nodeId)) {
-        const boost = Math.max(0, 1 - rippleAge) * 2;
-        const mat = obj.material as THREE.MeshStandardMaterial;
-        mat.emissiveIntensity = (mat.emissiveIntensity || 1) + boost;
+      // Ripple: reset to base emissive + add decaying boost
+      if (doRipple) {
+        const nodeId = obj.userData.nodeId as string;
+        if (rippleNeighborIdsRef.current.has(nodeId)) {
+          const boost = Math.max(0, 1 - rippleAge) * 1.5;
+          const mat = obj.material as THREE.MeshStandardMaterial;
+          mat.emissiveIntensity = (obj.userData.baseEmissive as number) + boost;
+        }
       }
     }
 
-    // Rotating shells
-    for (const obj of rotatingShells.current) {
-      if (!obj.parent) { needsCleanup = true; continue; }
-      obj.rotation.y += 0.002;
-      obj.rotation.x += 0.0007;
-    }
-
-    // Hover expansion (smooth lerp)
+    // Hover expansion (smooth lerp, only check when hovering)
     const hovId = hoveredNodeIdRef.current;
-    for (const [nodeId, group] of nodeGroupsRef.current) {
-      if (!group.parent) continue;
-      const target = nodeId === hovId ? 1.25 : 1.0;
-      const cur = group.scale.x;
-      if (Math.abs(cur - target) > 0.01) {
-        const next = cur + (target - cur) * 0.12;
-        group.scale.set(next, next, next);
+    if (hovId || frameCountRef.current % 4 === 0) {
+      for (const [nodeId, group] of nodeGroupsRef.current) {
+        if (!group.parent) continue;
+        const target = nodeId === hovId ? 1.2 : 1.0;
+        const cur = group.scale.x;
+        if (Math.abs(cur - target) > 0.005) {
+          const next = cur + (target - cur) * 0.15;
+          group.scale.set(next, next, next);
+        }
       }
     }
 
     // Ambient particles (cheap rotation)
     if (ambientParticlesRef.current) {
-      ambientParticlesRef.current.rotation.y = time * 0.015;
-      ambientParticlesRef.current.rotation.x = Math.sin(time * 0.008) * 0.1;
+      ambientParticlesRef.current.rotation.y = time * 0.012;
     }
 
-    // Cluster nebulae (update centroid every 30 frames)
-    if (frameCountRef.current % 30 === 0 && nebulaSpritesRef.current.size > 0) {
+    // Cluster nebulae (update centroid every 60 frames)
+    if (frameCountRef.current % 60 === 0 && nebulaSpritesRef.current.size > 0) {
       const ns = nodesRef.current;
       for (const [clusterId, sprite] of nebulaSpritesRef.current) {
         let cx = 0, cy = 0, cz = 0, count = 0;
         for (const n of ns) {
           if (n.clusterId !== clusterId) continue;
           const raw = n as any;
-          if (raw.x !== undefined) {
-            cx += raw.x; cy += raw.y; cz += raw.z || 0; count++;
-          }
+          if (raw.x !== undefined) { cx += raw.x; cy += raw.y; cz += raw.z || 0; count++; }
         }
         if (count > 0) sprite.position.set(cx / count, cy / count, cz / count);
       }
     }
 
-    // Lazy cleanup
     if (needsCleanup) {
       pulsingCores.current = pulsingCores.current.filter(o => o.parent);
-      rotatingShells.current = rotatingShells.current.filter(o => o.parent);
     }
   }, []);
 
-  // ─── GRADIENT LINK COLORS + HIGHLIGHTING ──────────────────────────────────
+  // ─── LINK CALLBACKS (STABLE — no hoveredNode dep, use gradient colors) ────
+  // These callbacks do NOT depend on hoveredNode to avoid React re-renders
+  // on every mouse move. Hover feedback comes from node expansion + tooltip.
   const linkColor = useCallback((link: any) => {
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
 
     // Path highlighting
-    if (activePath && activePath.nodeIds.length > 1) {
-      const srcIdx = activePath.nodeIds.indexOf(src);
-      const tgtIdx = activePath.nodeIds.indexOf(tgt);
+    const ap = activePathRef.current;
+    if (ap && ap.nodeIds.length > 1) {
+      const srcIdx = ap.nodeIds.indexOf(src);
+      const tgtIdx = ap.nodeIds.indexOf(tgt);
       if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return '#FFD700';
     }
 
-    // Hover highlighting
-    if (hoveredNode) {
-      if (src === hoveredNode.id || tgt === hoveredNode.id) {
-        // Bright gradient of endpoint colors
-        const sc = typeof link.source === 'object' ? link.source.color : undefined;
-        const tc = typeof link.target === 'object' ? link.target.color : undefined;
-        if (sc && tc) return blendColors(sc, tc, 0.55);
-        return 'rgba(255,255,255,0.6)';
-      }
-      return 'rgba(255,255,255,0.04)';
-    }
-
-    // Default: soft gradient blend of endpoint colors
+    // Gradient blend of endpoint colors
     const sc = typeof link.source === 'object' ? link.source.color : undefined;
     const tc = typeof link.target === 'object' ? link.target.color : undefined;
-    if (sc && tc) return blendColors(sc, tc, 0.12);
+    if (sc && tc) return blendColors(sc, tc, 0.14);
     return LINK_COLOR;
-  }, [hoveredNode, activePath]);
+  }, []);
 
-  // ─── LINK WIDTH (connection strength multiplier) ──────────────────────────
   const linkWidth = useCallback((link: any) => {
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
 
-    // Path
-    if (activePath && activePath.nodeIds.length > 1) {
-      const srcIdx = activePath.nodeIds.indexOf(src);
-      const tgtIdx = activePath.nodeIds.indexOf(tgt);
+    const ap = activePathRef.current;
+    if (ap && ap.nodeIds.length > 1) {
+      const srcIdx = ap.nodeIds.indexOf(src);
+      const tgtIdx = ap.nodeIds.indexOf(tgt);
       if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return 3.5;
     }
 
     const key = [src, tgt].sort().join('::');
-    const strength = Math.min(linkStrengthMap.get(key) || 1, 4);
+    const strength = Math.min(linkStrengthRef.current.get(key) || 1, 4);
+    return 0.3 + strength * 0.25;
+  }, []);
 
-    if (hoveredNode) {
-      if (src === hoveredNode.id || tgt === hoveredNode.id) return 2 + strength * 0.5;
-      return 0.15;
-    }
-    return 0.3 + strength * 0.3;
-  }, [hoveredNode, activePath, linkStrengthMap]);
-
-  // ─── PARTICLES ────────────────────────────────────────────────────────────
+  // Particles only on selected node (not hover — avoids re-renders)
   const linkParticles = useCallback((link: any) => {
-    if (!hoveredNode && !selectedNode) return 0;
+    const ap = activePathRef.current;
+    if (!ap) return 0;
     const src = typeof link.source === 'object' ? link.source.id : link.source;
     const tgt = typeof link.target === 'object' ? link.target.id : link.target;
-    const activeId = hoveredNode?.id || selectedNode?.id;
-    if (src === activeId || tgt === activeId) return 3;
-    if (activePath) {
-      const srcIdx = activePath.nodeIds.indexOf(src);
-      const tgtIdx = activePath.nodeIds.indexOf(tgt);
-      if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return 3;
-    }
+    const srcIdx = ap.nodeIds.indexOf(src);
+    const tgtIdx = ap.nodeIds.indexOf(tgt);
+    if (srcIdx >= 0 && tgtIdx >= 0 && Math.abs(srcIdx - tgtIdx) === 1) return 3;
     return 0;
-  }, [hoveredNode, selectedNode, activePath]);
+  }, []);
 
   const particleSpeed = useCallback(() => 0.003 + Math.random() * 0.005, []);
 
@@ -539,12 +493,11 @@ export function NexusView({
     return '#ffffff';
   }, []);
 
-  // ─── NODE CLICK (with ripple effect) ──────────────────────────────────────
+  // ─── NODE CLICK ───────────────────────────────────────────────────────────
   const handleNodeClick = useCallback((node: any) => {
     const n = node as NexusNode;
     setContextMenu(null);
 
-    // Path mode
     if (pathFrom && !pathTo && n.id !== pathFrom) {
       setPathTo(n.id);
       setSelectedNode(n);
@@ -552,14 +505,6 @@ export function NexusView({
       setSelectedNode(prev => prev?.id === n.id ? null : n);
     }
 
-    // Ripple effect: compute neighbor IDs and set timestamp
-    rippleTimeRef.current = performance.now() * 0.001;
-    const neighbors = new Set<string>([n.id]);
-    for (const link of nodesRef.current.length > 0 ? [] : []) { void link; } // placeholder
-    // Use adjacency-like approach from links
-    rippleNeighborIdsRef.current = neighbors;
-
-    // Camera fly-to
     const fg = fgRef.current;
     if (fg && node.x !== undefined) {
       const dist = 40 + (n.size * 3);
@@ -573,7 +518,7 @@ export function NexusView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathFrom, pathTo]);
 
-  // Compute ripple neighbors whenever selection or links change
+  // Compute ripple neighbors on selection change
   useEffect(() => {
     if (!selectedNode) { rippleNeighborIdsRef.current.clear(); return; }
     const neighbors = new Set<string>([selectedNode.id]);
@@ -587,11 +532,17 @@ export function NexusView({
     rippleTimeRef.current = performance.now() * 0.001;
   }, [selectedNode, links]);
 
+  // ─── HOVER (throttled to avoid React re-render spam) ──────────────────────
   const handleNodeHover = useCallback((node: any) => {
     const n = node ? (node as NexusNode) : null;
-    setHoveredNode(n);
     hoveredNodeIdRef.current = n?.id ?? null;
     if (containerRef.current) containerRef.current.style.cursor = node ? 'pointer' : 'default';
+
+    // Throttle React state updates to max 10/sec
+    const now = Date.now();
+    if (now - hoverThrottleRef.current < 100) return;
+    hoverThrottleRef.current = now;
+    setHoveredNode(n);
   }, []);
 
   // ─── RIGHT-CLICK CONTEXT MENU ─────────────────────────────────────────────
@@ -608,20 +559,17 @@ export function NexusView({
 
   // ─── CAMERA CONTROLS ─────────────────────────────────────────────────────
   const handleCenter = useCallback(() => { fgRef.current?.zoomToFit(600, 40); }, []);
-
   const handleZoomIn = useCallback(() => {
     const fg = fgRef.current; if (!fg) return;
     const pos = fg.camera().position;
     fg.cameraPosition({ x: pos.x * 0.7, y: pos.y * 0.7, z: pos.z * 0.7 }, undefined, 400);
   }, []);
-
   const handleZoomOut = useCallback(() => {
     const fg = fgRef.current; if (!fg) return;
     const pos = fg.camera().position;
     fg.cameraPosition({ x: pos.x * 1.4, y: pos.y * 1.4, z: pos.z * 1.4 }, undefined, 400);
   }, []);
 
-  // ─── FLY-TO NODE (for search results & quick-focus) ───────────────────────
   const handleFlyToNode = useCallback((nodeId: string) => {
     const node = nodesRef.current.find(n => n.id === nodeId) as any;
     if (!node || node.x === undefined) return;
@@ -638,7 +586,6 @@ export function NexusView({
     }
   }, []);
 
-  // ─── QUICK-FOCUS: Most Connected ──────────────────────────────────────────
   const handleFocusMostConnected = useCallback(() => {
     let maxConn = 0;
     let bestId: string | null = null;
@@ -648,23 +595,18 @@ export function NexusView({
     if (bestId) handleFlyToNode(bestId);
   }, [adjacency, handleFlyToNode]);
 
-  // ─── QUICK-FOCUS: Isolated Nodes ─────────────────────────────────────────
   const handleFocusIsolated = useCallback(() => {
     const isolatedIds = nodes.filter(n => !adjacency.has(n.id) || (adjacency.get(n.id)?.length ?? 0) === 0);
     if (isolatedIds.length === 0) return;
-    // Zoom to fit all isolated nodes
     fgRef.current?.zoomToFit(800, 100);
-    // Select first isolated as a starting point
     if (isolatedIds[0]) handleFlyToNode(isolatedIds[0].id);
   }, [nodes, adjacency, handleFlyToNode]);
 
-  // ─── FOCUS NEIGHBORHOOD ───────────────────────────────────────────────────
   const focusNeighborhood = useCallback((nodeId: string) => {
     const fg = fgRef.current;
     if (!fg) return;
     const neighbors = adjacency.get(nodeId) ?? [];
     const ids = new Set([nodeId, ...neighbors.map(n => n.neighbor)]);
-    // Compute bounding box of neighborhood
     let sx = 0, sy = 0, sz = 0, count = 0;
     for (const n of nodesRef.current) {
       if (!ids.has(n.id)) continue;
@@ -680,18 +622,15 @@ export function NexusView({
     }
   }, [adjacency]);
 
-  // ─── DRAG ─────────────────────────────────────────────────────────────────
   const handleDrag = useCallback(() => {
     try { const c = fgRef.current?.controls() as any; if (c) c.autoRotate = false; } catch {}
   }, []);
-
   const handleDragEnd = useCallback(() => {
     setTimeout(() => {
-      try { const c = fgRef.current?.controls() as any; if (c) { c.autoRotate = true; c.autoRotateSpeed = 0.3; } } catch {}
+      try { const c = fgRef.current?.controls() as any; if (c) { c.autoRotate = true; c.autoRotateSpeed = 0.25; } } catch {}
     }, 2000);
   }, []);
 
-  // ─── EXPORT ───────────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {
     const fg = fgRef.current; if (!fg) return;
     try {
@@ -724,7 +663,6 @@ export function NexusView({
         if (e.key === 'Escape') (e.target as HTMLElement).blur();
         return;
       }
-
       if (e.key === 'Escape') {
         if (contextMenu) { setContextMenu(null); return; }
         if (fullscreen) { setFullscreen(false); return; }
@@ -738,8 +676,6 @@ export function NexusView({
       if (e.key === 'c' && !e.metaKey && !e.ctrlKey) handleCenter();
       if (e.key === '+' || e.key === '=') handleZoomIn();
       if (e.key === '-') handleZoomOut();
-
-      // Tab: cycle through nodes
       if (e.key === 'Tab') {
         e.preventDefault();
         const ns = nodesRef.current;
@@ -748,27 +684,22 @@ export function NexusView({
         focusIndexRef.current = (focusIndexRef.current + dir + ns.length) % ns.length;
         handleFlyToNode(ns[focusIndexRef.current].id);
       }
-
-      // Arrow keys: traverse edges from selected node
       if (['ArrowRight', 'ArrowDown'].includes(e.key) && selectedNode) {
         e.preventDefault();
         const neighbors = adjacency.get(selectedNode.id) ?? [];
         if (neighbors.length > 0) {
-          // Pick next neighbor
-          const currentIdx = focusIndexRef.current % neighbors.length;
-          const next = neighbors[(currentIdx + 1) % neighbors.length];
-          focusIndexRef.current = currentIdx + 1;
-          handleFlyToNode(next.neighbor);
+          const idx = (focusIndexRef.current + 1) % neighbors.length;
+          focusIndexRef.current = idx;
+          handleFlyToNode(neighbors[idx].neighbor);
         }
       }
       if (['ArrowLeft', 'ArrowUp'].includes(e.key) && selectedNode) {
         e.preventDefault();
         const neighbors = adjacency.get(selectedNode.id) ?? [];
         if (neighbors.length > 0) {
-          const currentIdx = ((focusIndexRef.current % neighbors.length) + neighbors.length) % neighbors.length;
-          const prev = neighbors[(currentIdx - 1 + neighbors.length) % neighbors.length];
-          focusIndexRef.current = currentIdx - 1;
-          handleFlyToNode(prev.neighbor);
+          const idx = ((focusIndexRef.current - 1) + neighbors.length) % neighbors.length;
+          focusIndexRef.current = idx;
+          handleFlyToNode(neighbors[idx].neighbor);
         }
       }
     };
@@ -776,7 +707,6 @@ export function NexusView({
     return () => window.removeEventListener('keydown', handler);
   }, [fullscreen, contextMenu, selectedNode, adjacency, handleCenter, handleZoomIn, handleZoomOut, handleFlyToNode]);
 
-  // Zoom to fit on load
   useEffect(() => {
     const t = setTimeout(() => fgRef.current?.zoomToFit(600, 40), 2000);
     return () => clearTimeout(t);
@@ -829,16 +759,16 @@ export function NexusView({
         linkColor={linkColor}
         linkWidth={linkWidth}
         linkOpacity={0.6}
-        linkCurvature={0.08}
+        linkCurvature={0.06}
         linkDirectionalParticles={linkParticles}
         linkDirectionalParticleWidth={1.5}
         linkDirectionalParticleSpeed={particleSpeed}
         linkDirectionalParticleColor={particleColor}
         numDimensions={is3D ? 3 : 2}
-        d3AlphaDecay={0.028}
-        d3VelocityDecay={0.4}
-        warmupTicks={40}
-        cooldownTicks={200}
+        d3AlphaDecay={0.035}
+        d3VelocityDecay={0.5}
+        warmupTicks={50}
+        cooldownTicks={120}
         onEngineTick={onEngineTick}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
@@ -874,7 +804,7 @@ export function NexusView({
         </div>
       )}
 
-      {/* Context menu (right-click) */}
+      {/* Context menu */}
       {contextMenu && (
         <div
           className="absolute z-40 rounded-xl py-1.5 min-w-[180px] animate-fade-in"
@@ -892,47 +822,20 @@ export function NexusView({
             {contextMenu.node.label}
           </div>
           <div className="h-px mx-2 my-0.5" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-          <button
-            onClick={() => { setSelectedNode(contextMenu.node); setContextMenu(null); }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
-            style={{ color: 'rgba(255,255,255,0.7)' }}
-          >
+          <button onClick={() => { setSelectedNode(contextMenu.node); setContextMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors" style={{ color: 'rgba(255,255,255,0.7)' }}>
             <Eye size={12} /> Select & inspect
           </button>
-          <button
-            onClick={() => { setPathFrom(contextMenu.node.id); setPathTo(null); setContextMenu(null); }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
-            style={{ color: '#FFD700' }}
-          >
+          <button onClick={() => { setPathFrom(contextMenu.node.id); setPathTo(null); setContextMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors" style={{ color: '#FFD700' }}>
             <GitBranch size={12} /> Find paths from here
           </button>
-          <button
-            onClick={() => { focusNeighborhood(contextMenu.node.id); setContextMenu(null); }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
-            style={{ color: 'rgba(255,255,255,0.7)' }}
-          >
+          <button onClick={() => { focusNeighborhood(contextMenu.node.id); setContextMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors" style={{ color: 'rgba(255,255,255,0.7)' }}>
             <Eye size={12} /> Focus neighborhood
           </button>
-          <button
-            onClick={() => {
-              setFilters(f => ({ ...f, visibleTypes: { ...f.visibleTypes, [contextMenu.node.type]: false } }));
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
-            style={{ color: 'rgba(255,255,255,0.5)' }}
-          >
+          <button onClick={() => { setFilters(f => ({ ...f, visibleTypes: { ...f.visibleTypes, [contextMenu.node.type]: false } })); setContextMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors" style={{ color: 'rgba(255,255,255,0.5)' }}>
             <EyeOff size={12} /> Hide {contextMenu.node.type}s
           </button>
           <div className="h-px mx-2 my-0.5" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }} />
-          <button
-            onClick={() => {
-              const section = TYPE_SECTIONS[contextMenu.node.type];
-              if (section) onNavigateToSection(section);
-              setContextMenu(null);
-            }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors"
-            style={{ color: contextMenu.node.color }}
-          >
+          <button onClick={() => { const section = TYPE_SECTIONS[contextMenu.node.type]; if (section) onNavigateToSection(section); setContextMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 transition-colors" style={{ color: contextMenu.node.color }}>
             <ExternalLink size={12} /> Open in {TYPE_SECTIONS[contextMenu.node.type]}
           </button>
         </div>
@@ -943,20 +846,14 @@ export function NexusView({
         <NexusMinimap nodes={nodes} links={links} clusters={clusters} selectedNodeId={selectedNode?.id ?? null} />
       </div>
 
-      {/* Path mode indicator */}
+      {/* Path indicator */}
       {pathFrom && (
         <div
           className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-20 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-medium flex items-center justify-between sm:justify-start gap-3"
           style={{ backgroundColor: 'rgba(255,215,0,0.15)', border: '1px solid rgba(255,215,0,0.3)', color: '#FFD700' }}
         >
           <span>Path: {pathTo ? `${activePath?.distance ?? '?'} hops` : 'tap destination'}</span>
-          <button
-            onClick={() => { setPathFrom(null); setPathTo(null); }}
-            className="px-2 py-0.5 rounded-lg text-[10px] flex-shrink-0"
-            style={{ backgroundColor: 'rgba(255,215,0,0.2)' }}
-          >
-            Exit
-          </button>
+          <button onClick={() => { setPathFrom(null); setPathTo(null); }} className="px-2 py-0.5 rounded-lg text-[10px] flex-shrink-0" style={{ backgroundColor: 'rgba(255,215,0,0.2)' }}>Exit</button>
         </div>
       )}
 
