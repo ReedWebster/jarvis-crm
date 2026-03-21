@@ -685,6 +685,58 @@ export interface MorningBriefing {
   };
 }
 
+// ─── AUTOMATION & WORKFLOWS ─────────────────────────────────────────────────
+
+export type AutomationTrigger = 'new-contact' | 'meeting-ended' | 'todo-overdue' | 'goal-stalled' | 'follow-up-due' | 'habit-missed' | 'custom';
+export type AutomationAction = 'create-todo' | 'create-note' | 'send-notification' | 'update-status' | 'tag-contact' | 'custom';
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description: string;
+  trigger: AutomationTrigger;
+  triggerConfig: Record<string, string>;
+  action: AutomationAction;
+  actionConfig: Record<string, string>;
+  enabled: boolean;
+  lastTriggeredAt?: string;
+  runCount: number;
+  createdAt: string;
+}
+
+// ─── JOURNAL & REFLECTIONS ──────────────────────────────────────────────────
+
+export type JournalMood = 'great' | 'good' | 'okay' | 'rough' | 'bad';
+
+export interface JournalEntry {
+  id: string;
+  date: string;
+  title: string;
+  body: string;
+  mood?: JournalMood;
+  gratitude: string[];
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── BOOKMARKS & INSPIRATION ────────────────────────────────────────────────
+
+export type BookmarkType = 'link' | 'idea' | 'quote' | 'screenshot' | 'reference';
+
+export interface Bookmark {
+  id: string;
+  title: string;
+  url?: string;
+  content: string;
+  type: BookmarkType;
+  tags: string[];
+  pinned: boolean;
+  linkedProjectId?: string;
+  linkedNoteId?: string;
+  createdAt: string;
+}
+
 // ─── ROOT APP STATE ──────────────────────────────────────────────────────────
 
 export interface AppState {

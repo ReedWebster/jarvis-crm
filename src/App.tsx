@@ -39,16 +39,15 @@ import CoreIdentityPanel from './components/identity/CoreIdentityPanel';
 import { ProjectsTracker } from './components/projects/ProjectsTracker';
 import { Calendar } from './components/time/TimeTracker';
 import ContactsCRM from './components/contacts/ContactsCRM';
-import AcademicTracker from './components/academic/AcademicTracker';
-import { ClassNotes } from './components/academic/ClassNotes';
-import { FinancialSnapshot } from './components/financial/FinancialSnapshot';
 import { GoalHierarchy } from './components/goals/GoalHierarchy';
-import { ReadingPipeline } from './components/reading/ReadingPipeline';
 import { RecruitmentTracker } from './components/recruitment/RecruitmentTracker';
-import { NotesHub } from './components/notes/NotesHub';
-import { TodoList } from './components/todos/TodoList';
-const WorldView = React.lazy(() => import('./components/world/WorldViewNew').then(m => ({ default: m.WorldView })));
-import { DocHub } from './components/dochub/DocHub';
+import { LearningHub } from './components/learning/LearningHub';
+import { NotesDocsHub } from './components/notesdocs/NotesDocsHub';
+import { AutomationWorkflows } from './components/automation/AutomationWorkflows';
+import { AnalyticsInsights } from './components/analytics/AnalyticsInsights';
+import { JournalReflections } from './components/journal/JournalReflections';
+import { BookmarksInspiration } from './components/bookmarks/BookmarksInspiration';
+import { FinancialSnapshot } from './components/financial/FinancialSnapshot';
 import { SocialHub } from './components/social/SocialHub';
 import { MessagingHub } from './components/messaging/MessagingHub';
 import { ABSHub, getABSContacts, INITIAL_MEMBERS } from './components/abs/ABSHub';
@@ -73,28 +72,27 @@ import type {
   DocFolder, DocFile, SocialAccount, SocialPost, SocialApprovalItem,
   DailyReflection, NewsConfig, ScreenTimeEntry, EmailDraft,
   GitHubActivity, NotionPageSummary, NotionConfig, ReadwiseHighlight,
+  AutomationRule, JournalEntry, Bookmark,
 } from './types';
 
-const SECTION_TITLES: Record<NavSection, string> = {
+const SECTION_TITLES: Partial<Record<NavSection, string>> = {
   command: 'Daily Command Brief',
   nexus: 'Nexus',
   identity: 'Core Identity',
-  projects: 'Projects & Ventures',
+  projects: 'Projects & Finance',
   time: 'Calendar',
   contacts: 'Contacts CRM',
-  academic: 'Academic Tracker',
-  'class-notes': 'Class Notes',
-  financial: 'Financial Snapshot',
+  learning: 'Learning',
+  'notes-docs': 'Notes & Docs',
   goals: 'Goal Hierarchy',
-  reading: 'Reading Pipeline',
   recruitment: 'Clients',
-  notes: 'Notes & Intelligence',
-  todos: 'Todo List',
-  world: 'World View',
   social: 'Social Command Center',
-  dochub: 'Doc Hub',
   messaging: 'Messaging',
   abs: 'AI in Business Society',
+  automation: 'Automation & Workflows',
+  analytics: 'Analytics & Insights',
+  journal: 'Journal & Reflections',
+  bookmarks: 'Bookmarks & Inspiration',
 };
 
 // Route to TeamView for co-founders; all hooks live in MainApp so Rules of Hooks are satisfied
@@ -105,7 +103,22 @@ export default function App() {
 }
 
 function MainApp() {
-  const [activeSection, setActiveSection] = useState<NavSection>('command');
+  // Map legacy section IDs to their consolidated replacements
+  const LEGACY_SECTION_MAP: Partial<Record<NavSection, NavSection>> = {
+    academic: 'learning',
+    'class-notes': 'learning',
+    reading: 'learning',
+    financial: 'projects',
+    notes: 'notes-docs',
+    dochub: 'notes-docs',
+    todos: 'command',
+    world: 'nexus',
+  };
+
+  const [activeSection, setActiveSectionRaw] = useState<NavSection>('command');
+  const setActiveSection = (section: NavSection) => {
+    setActiveSectionRaw(LEGACY_SECTION_MAP[section] ?? section);
+  };
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -240,6 +253,11 @@ function MainApp() {
     'Harbor': 'Other',              'Bay Front': 'Other',           'Marina': 'Other',           'River District': 'Other',
   });
 
+  // New consolidated tab state
+  const [automationRules, setAutomationRules] = useSupabaseStorage<AutomationRule[]>('jarvis:automationRules', []);
+  const [journalEntries, setJournalEntries] = useSupabaseStorage<JournalEntry[]>('jarvis:journalEntries', []);
+  const [bookmarks, setBookmarks] = useSupabaseStorage<Bookmark[]>('jarvis:bookmarks', []);
+
   // Bundled read-only data for WorldView data panel
   const worldAppData = useMemo(() => ({
     projects, todos, goals, contacts, financialEntries,
@@ -365,7 +383,21 @@ function MainApp() {
       case 'identity':
         return <CoreIdentityPanel identity={identity} setIdentity={setIdentity} />;
       case 'projects':
-        return <ProjectsTracker projects={projects} setProjects={setProjects} contacts={contacts} onNavigate={setActiveSection} />;
+        return (
+          <>
+            <ProjectsTracker projects={projects} setProjects={setProjects} contacts={contacts} onNavigate={setActiveSection} />
+            <div className="mt-6">
+              <FinancialSnapshot
+                financialEntries={financialEntries}
+                setFinancialEntries={setFinancialEntries}
+                savingsGoals={savingsGoals}
+                setSavingsGoals={setSavingsGoals}
+                ventureFinancials={ventureFinancials}
+                setVentureFinancials={setVentureFinancials}
+              />
+            </div>
+          </>
+        );
       case 'time':
         return (
           <Calendar
@@ -388,35 +420,31 @@ function MainApp() {
             contactTags={contactTags}
             setContactTags={setContactTags}
             projects={projects}
-            onNavigateToNetworking={() => setActiveSection('world')}
+            onNavigateToNetworking={() => setActiveSection('nexus')}
           />
         );
-      case 'academic':
+      case 'learning':
         return (
-          <AcademicTracker
+          <LearningHub
             courses={courses}
             setCourses={setCourses}
-            onNavigateToClassNotes={() => setActiveSection('class-notes')}
-          />
-        );
-      case 'class-notes':
-        return (
-          <ClassNotes
             notes={notes}
             setNotes={setNotes}
-            courses={courses}
-            onBack={() => setActiveSection('academic')}
+            readingItems={readingItems}
+            setReadingItems={setReadingItems}
           />
         );
-      case 'financial':
+      case 'notes-docs':
         return (
-          <FinancialSnapshot
-            financialEntries={financialEntries}
-            setFinancialEntries={setFinancialEntries}
-            savingsGoals={savingsGoals}
-            setSavingsGoals={setSavingsGoals}
-            ventureFinancials={ventureFinancials}
-            setVentureFinancials={setVentureFinancials}
+          <NotesDocsHub
+            notes={notes}
+            setNotes={setNotes}
+            scratchpad={scratchpad}
+            setScratchpad={setScratchpad}
+            docFolders={docFolders}
+            setDocFolders={setDocFolders}
+            docFiles={docFiles}
+            setDocFiles={setDocFiles}
           />
         );
       case 'goals':
@@ -431,45 +459,8 @@ function MainApp() {
             projects={projects}
           />
         );
-      case 'reading':
-        return <ReadingPipeline readingItems={readingItems} setReadingItems={setReadingItems} />;
       case 'recruitment':
         return <RecruitmentTracker clients={clients} setClients={setClients} />;
-      case 'notes':
-        return (
-          <NotesHub
-            notes={notes}
-            setNotes={setNotes}
-            scratchpad={scratchpad}
-            setScratchpad={setScratchpad}
-          />
-        );
-      case 'todos':
-        return (
-          <TodoList
-            todos={todos}
-            setTodos={setTodos}
-            contacts={contacts}
-            projects={projects}
-            goals={goals}
-            courses={courses}
-            notes={notes}
-            readingItems={readingItems}
-            candidates={candidates}
-          />
-        );
-      case 'world':
-        return (
-          <React.Suspense fallback={<div className="caesar-card text-sm" style={{ color: 'var(--text-muted)' }}>Loading World…</div>}>
-            <WorldView
-              contactTags={contactTags}
-              districtTagMap={districtTagMap}
-              onDistrictTagMapChange={setDistrictTagMap}
-              appData={worldAppData}
-              onNavigateToSection={(section) => setActiveSection(section as typeof activeSection)}
-            />
-          </React.Suspense>
-        );
       case 'social':
         return (
           <SocialHub
@@ -480,15 +471,6 @@ function MainApp() {
             setSocialPosts={setSocialPosts}
             approvals={socialApprovals}
             setApprovals={setSocialApprovals}
-          />
-        );
-      case 'dochub':
-        return (
-          <DocHub
-            folders={docFolders}
-            setFolders={setDocFolders}
-            files={docFiles}
-            setFiles={setDocFiles}
           />
         );
       case 'messaging':
@@ -510,6 +492,35 @@ function MainApp() {
             />
           </React.Suspense>
         );
+      case 'automation':
+        return <AutomationWorkflows rules={automationRules} setRules={setAutomationRules} />;
+      case 'analytics':
+        return (
+          <AnalyticsInsights
+            goals={goals}
+            contacts={contacts}
+            todos={todos}
+            timeBlocks={timeBlocks}
+            timeCategories={timeCategories}
+            financialEntries={financialEntries}
+            readingItems={readingItems}
+            habitTracker={habitTracker}
+            habits={habits}
+            dailyMoodLogs={dailyMoodLogs}
+            notes={notes}
+          />
+        );
+      case 'journal':
+        return (
+          <JournalReflections
+            entries={journalEntries}
+            setEntries={setJournalEntries}
+            reflections={reflections}
+            setReflections={setReflections}
+          />
+        );
+      case 'bookmarks':
+        return <BookmarksInspiration bookmarks={bookmarks} setBookmarks={setBookmarks} />;
       default:
         return null;
     }
@@ -553,7 +564,7 @@ function MainApp() {
 
         <TopBar
           identity={identity}
-          sectionTitle={SECTION_TITLES[activeSection]}
+          sectionTitle={SECTION_TITLES[activeSection] ?? activeSection}
           onStatusChange={handleStatusChange}
           onThemeToggle={toggle}
           isDark={theme === 'dark'}
@@ -575,10 +586,10 @@ function MainApp() {
           }}
         >
           <div
-            className={activeSection === 'world' || activeSection === 'nexus'
+            className={activeSection === 'nexus'
               ? 'animate-fade-in h-full overflow-hidden'
               : 'p-3 sm:p-4 md:p-6 max-w-[1600px] mx-auto w-full animate-fade-in'}
-            style={activeSection === 'world' || activeSection === 'nexus'
+            style={activeSection === 'nexus'
               ? { height: 'calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom))' }
               : undefined}
             key={activeSection}

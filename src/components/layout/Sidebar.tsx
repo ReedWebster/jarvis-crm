@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard, User, Briefcase, Clock, Users, GraduationCap,
-  DollarSign, Target, BookOpen, Building2, FileText, Search, ChevronRight,
-  CheckSquare, FolderOpen, GripVertical, Settings2, Check, Sun, Moon,
-  Share2, Inbox, Flame, Globe, Atom,
+  Target, Building2, FileText, Search, ChevronRight,
+  GripVertical, Settings2, Check, Sun, Moon,
+  Share2, Inbox, Flame, Atom,
+  Zap, BarChart3, BookHeart, Bookmark,
 } from 'lucide-react';
 import type { Theme } from '../../hooks/useTheme';
 import {
@@ -25,23 +26,30 @@ import { CSS } from '@dnd-kit/utilities';
 export type NavSection =
   | 'command'
   | 'identity'
+  | 'nexus'
   | 'projects'
   | 'time'
   | 'contacts'
-  | 'academic'
-  | 'financial'
+  | 'learning'
+  | 'notes-docs'
   | 'goals'
-  | 'reading'
   | 'recruitment'
+  | 'social'
+  | 'messaging'
+  | 'abs'
+  | 'automation'
+  | 'analytics'
+  | 'journal'
+  | 'bookmarks'
+  // Legacy aliases kept for saved navOrder migration
+  | 'academic'
+  | 'class-notes'
+  | 'financial'
+  | 'reading'
   | 'notes'
   | 'todos'
   | 'world'
-  | 'social'
-  | 'dochub'
-  | 'messaging'
-  | 'abs'
-  | 'class-notes'
-  | 'nexus';
+  | 'dochub';
 
 interface NavItem {
   id: NavSection;
@@ -49,35 +57,51 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
+// Map legacy nav IDs from saved orders to their consolidated replacements
+const LEGACY_MAP: Partial<Record<string, NavSection>> = {
+  academic: 'learning',
+  'class-notes': 'learning',
+  reading: 'learning',
+  financial: 'projects',
+  notes: 'notes-docs',
+  dochub: 'notes-docs',
+  todos: 'command',
+  world: 'nexus',
+};
+
 const NAV_ITEMS: NavItem[] = [
-  { id: 'command',     label: 'Command Brief',   icon: <LayoutDashboard size={18} /> },
-  { id: 'nexus',      label: 'Nexus',            icon: <Atom size={18} /> },
-  { id: 'identity',   label: 'Core Identity',    icon: <User size={18} /> },
-  { id: 'projects',   label: 'Projects',         icon: <Briefcase size={18} /> },
-  { id: 'time',       label: 'Calendar',          icon: <Clock size={18} /> },
-  { id: 'contacts',   label: 'Contacts CRM',     icon: <Users size={18} /> },
-  { id: 'academic',   label: 'Academic',         icon: <GraduationCap size={18} /> },
-  { id: 'financial',  label: 'Financial',        icon: <DollarSign size={18} /> },
-  { id: 'goals',      label: 'Goal Hierarchy',   icon: <Target size={18} /> },
-  { id: 'reading',    label: 'Reading Pipeline', icon: <BookOpen size={18} /> },
-  { id: 'notes',      label: 'Notes & Intel',    icon: <FileText size={18} /> },
-  { id: 'todos',      label: 'Todo List',        icon: <CheckSquare size={18} /> },
-  { id: 'world',      label: 'World View',       icon: <Globe size={18} /> },
-  { id: 'social',     label: 'Social Command',   icon: <Share2 size={18} /> },
-  { id: 'dochub',     label: 'Doc Hub',          icon: <FolderOpen size={18} /> },
-  { id: 'messaging',  label: 'Messaging',        icon: <Inbox size={18} /> },
+  { id: 'command',     label: 'Command Brief',       icon: <LayoutDashboard size={18} /> },
+  { id: 'nexus',      label: 'Nexus',                icon: <Atom size={18} /> },
+  { id: 'identity',   label: 'Core Identity',        icon: <User size={18} /> },
+  { id: 'projects',   label: 'Projects & Finance',   icon: <Briefcase size={18} /> },
+  { id: 'time',       label: 'Calendar',             icon: <Clock size={18} /> },
+  { id: 'contacts',   label: 'Contacts CRM',         icon: <Users size={18} /> },
+  { id: 'learning',   label: 'Learning',             icon: <GraduationCap size={18} /> },
+  { id: 'notes-docs', label: 'Notes & Docs',         icon: <FileText size={18} /> },
+  { id: 'goals',      label: 'Goal Hierarchy',       icon: <Target size={18} /> },
+  { id: 'recruitment',label: 'Clients',              icon: <Building2 size={18} /> },
+  { id: 'social',     label: 'Social Command',       icon: <Share2 size={18} /> },
+  { id: 'messaging',  label: 'Messaging',            icon: <Inbox size={18} /> },
+  { id: 'abs',        label: 'ABS',                  icon: <Users size={18} /> },
+  { id: 'automation', label: 'Automation',            icon: <Zap size={18} /> },
+  { id: 'analytics',  label: 'Analytics & Insights', icon: <BarChart3 size={18} /> },
+  { id: 'journal',    label: 'Journal',              icon: <BookHeart size={18} /> },
+  { id: 'bookmarks',  label: 'Bookmarks',            icon: <Bookmark size={18} /> },
 ];
 
 const DEFAULT_ORDER = NAV_ITEMS.map(i => i.id);
 
 function buildOrderedItems(navOrder: NavSection[]): NavItem[] {
-  // Start with saved order (filter to valid items)
   const ordered: NavItem[] = [];
   const remaining = new Set(NAV_ITEMS);
+  const added = new Set<string>();
 
   for (const id of navOrder) {
-    const item = NAV_ITEMS.find(i => i.id === id);
-    if (item) { ordered.push(item); remaining.delete(item); }
+    // Remap legacy IDs to their new consolidated tab
+    const mapped = LEGACY_MAP[id] ?? id;
+    if (added.has(mapped)) continue;
+    const item = NAV_ITEMS.find(i => i.id === mapped);
+    if (item) { ordered.push(item); remaining.delete(item); added.add(mapped); }
   }
   // Append any new items not yet in saved order
   for (const item of remaining) ordered.push(item);
